@@ -1,0 +1,35 @@
+name: TubeRemote
+options:
+  bundleIdPrefix: dev.tuberemote
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  TubeRemote:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tuberemote.app
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: TubeRemote
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: Find and control your other devices running TubeRemote on your Wi-Fi network.
+        NSBonjourServices: ["_ytremote._tcp"]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight

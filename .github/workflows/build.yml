@@ -1,0 +1,29 @@
+name: Build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build (unsigned, device)
+        run: |
+          xcodebuild -project TubeRemote.xcodeproj -scheme TubeRemote \
+            -sdk iphoneos -configuration Release -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package unsigned IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/TubeRemote.app Payload/
+          zip -qr TubeRemote-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TubeRemote-unsigned-ipa
+          path: TubeRemote-unsigned.ipa
