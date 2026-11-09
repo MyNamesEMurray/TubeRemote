@@ -93,24 +93,60 @@ final class Pairing: ObservableObject {
 struct PairingPrompt: ViewModifier {
     @EnvironmentObject var pairing: Pairing
 
+    private func spaced(_ code: String) -> String {
+        code.count == 6 ? "\(code.prefix(3)) \(code.suffix(3))" : code
+    }
+
     func body(content: Content) -> some View {
         content.overlay {
             if let p = pairing.prompt {
                 ZStack {
-                    Color.black.opacity(0.5).ignoresSafeArea()
+                    Color.black.opacity(0.4).ignoresSafeArea()
                     VStack(spacing: 14) {
-                        Text("Pair with \(p.name)?").font(.headline)
-                        Text(p.code).font(.system(size: 40, weight: .bold, design: .monospaced))
-                        Text("Do both devices show this code?").font(.subheadline).foregroundStyle(.secondary)
-                        HStack(spacing: 12) {
-                            Button("No", role: .cancel) { pairing.answer(false) }.buttonStyle(.bordered)
-                            Button("Yes") { pairing.answer(true) }.buttonStyle(.borderedProminent)
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
+                        Text("Pair with \(p.name)?")
+                            .font(.title3.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                        Text(spaced(p.code))
+                            .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                            .tracking(4)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                            .accessibilityLabel("Code \(p.code.map(String.init).joined(separator: " "))")
+                        Text("Make sure this code matches the one on the other device.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        VStack(spacing: 8) {
+                            Button {
+                                Haptics.tap()
+                                pairing.answer(true)
+                            } label: {
+                                Text("Pair").font(.headline).frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            Button {
+                                Haptics.tap()
+                                pairing.answer(false)
+                            } label: {
+                                Text("Cancel").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
+                            .padding(.vertical, 8)
                         }
+                        .padding(.top, 6)
                     }
                     .padding(24)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .frame(maxWidth: 340)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding()
                 }
+                .accessibilityAddTraits(.isModal)
             }
         }
     }

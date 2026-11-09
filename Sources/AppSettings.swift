@@ -10,6 +10,9 @@ final class AppSettings: ObservableObject {
     @Published var queueAction: QueueAction {
         didSet { UserDefaults.standard.set(queueAction.rawValue, forKey: "queueAction") }
     }
+    @Published var hasOnboarded: Bool {
+        didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
+    }
     @Published var paired: [PairedDevice] {
         didSet { Store.write("paired.json", try? JSONEncoder().encode(paired)) }
     }
@@ -39,6 +42,7 @@ final class AppSettings: ObservableObject {
         deviceName = d.string(forKey: "deviceName") ?? UIDevice.current.name
         defaultMode = Mode(rawValue: d.string(forKey: "defaultMode") ?? "") ?? .remote
         queueAction = QueueAction(rawValue: d.string(forKey: "queueAction") ?? "") ?? .playNow
+        hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {
             deviceKey = k

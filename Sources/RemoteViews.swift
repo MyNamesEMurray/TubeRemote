@@ -10,36 +10,56 @@ struct RemoteView: View {
     @State private var showNow = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                if browser.canGoBack {
-                    Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                }
-                Spacer()
-                ConnectionChip { showPicker = true }
-                ModeMenu()
-                Button { showSettings = true } label: { Image(systemName: "gearshape") }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
+        NavigationStack {
             HostedWebView(webView: browser.webView)
-
-            if browser.videoID != nil {
-                if let c = remote.active {
-                    ActiveActionBar(client: c)
-                } else {
-                    Button("Choose a viewer…") { showPicker = true }
-                        .buttonStyle(.bordered)
-                        .padding(8)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        if browser.canGoBack {
+                            Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left") }
+                                .accessibilityLabel("Back")
+                        }
+                    }
+                    ToolbarItem(placement: .principal) {
+                        ConnectionChip { showPicker = true }
+                    }
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        ModeMenu()
+                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("Settings")
+                    }
                 }
-            }
-            if let c = remote.active {
-                MiniPlayer(client: c) { showNow = true }
-            }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        if browser.videoID != nil {
+                            if let c = remote.active {
+                                ActiveActionBar(client: c)
+                            } else {
+                                Button { showPicker = true } label: {
+                                    Label("Choose a Viewer", systemImage: "tv").frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .buttonBorderShape(.capsule)
+                                .controlSize(.large)
+                                .padding(.horizontal)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity)
+                                .background(.bar)
+                            }
+                        }
+                        if let c = remote.active {
+                            MiniPlayer(client: c) { showNow = true }
+                        }
+                    }
+                }
         }
         .sheet(isPresented: $showPicker) { DevicePicker() }
-        .sheet(isPresented: $showNow) { NowPlayingView() }
+        .sheet(isPresented: $showNow) {
+            NowPlayingView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
     }
 }
 
@@ -51,8 +71,16 @@ struct ConnectionChip: View {
         if let c = remote.active {
             ChipInner(client: c, onTap: onTap)
         } else {
-            Button(action: onTap) { Label("Choose viewer", systemImage: "tv") }
-                .buttonStyle(.bordered)
+            Button(action: onTap) {
+                Label("Choose Viewer", systemImage: "tv")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 32)
+                    .background(.thinMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+            .accessibilityHint("Opens the viewer list")
         }
     }
 }
@@ -65,10 +93,16 @@ struct ChipInner: View {
         Button(action: onTap) {
             HStack(spacing: 6) {
                 Circle().fill(client.connected ? Color.green : Color.orange).frame(width: 8, height: 8)
-                Text(client.title).lineLimit(1)
+                Text(client.title).font(.subheadline.weight(.medium)).lineLimit(1)
             }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(.thinMaterial, in: Capsule())
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .accessibilityLabel("\(client.title), \(client.connected ? "connected" : "connecting")")
+        .accessibilityHint("Opens the viewer list")
     }
 }
 
@@ -81,24 +115,38 @@ struct ActionBar: View {
     var onHere: () -> Void = {}
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack {
-                ForEach(QueueAction.allCases) { a in
-                    Button { onAction(a) } label: { Label(a.title(on: target), systemImage: a.icon) }
-                        .buttonStyle(.bordered)
-                        .tint(a == settings.queueAction ? Color.accentColor : Color.gray)
+        HStack(spacing: 8) {
+            Button {
+                Haptics.tap()
+                onAction(settings.queueAction)
+            } label: {
+                Label(settings.queueAction.title(on: target), systemImage: settings.queueAction.icon)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .disabled(!enabled)
+
+            Menu {
+                ForEach(QueueAction.allCases.filter { $0 != settings.queueAction }) { a in
+                    Button { Haptics.tap(); onAction(a) } label: { Label(a.title(on: target), systemImage: a.icon) }
                         .disabled(!enabled)
                 }
                 if showHere {
-                    Button(action: onHere) { Label("Play here", systemImage: "iphone") }
-                        .buttonStyle(.bordered)
-                        .tint(.gray)
+                    Button { Haptics.tap(); onHere() } label: { Label("Play here", systemImage: "iphone") }
                 }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+            .accessibilityLabel("More ways to send")
         }
-        .controlSize(.small)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
         .background(.bar)
     }
 }
@@ -113,6 +161,7 @@ struct ActiveActionBar: View {
                 guard let item = await browser.makeItem() else { return }
                 client.send(a.command(item))
                 browser.pause()
+                Haptics.success()
             }
         }, onHere: { browser.play() })
     }
@@ -122,27 +171,57 @@ struct MiniPlayer: View {
     @ObservedObject var client: RemoteClient
     let open: () -> Void
 
+    private var fraction: Double {
+        guard let s = client.state, s.duration > 0 else { return 0 }
+        return min(max(s.position / s.duration, 0), 1)
+    }
+
     var body: some View {
         if let cur = client.state?.current {
-            HStack(spacing: 12) {
-                Thumb(url: cur.thumbnailURL).frame(width: 64, height: 36)
-                VStack(alignment: .leading) {
-                    Text(cur.title).font(.subheadline.bold()).lineLimit(1)
-                    Text(client.title).font(.caption).foregroundStyle(.secondary)
+            let playing = client.state?.isPlaying == true
+            HStack(spacing: 4) {
+                Button(action: open) {
+                    HStack(spacing: 12) {
+                        Thumb(url: cur.thumbnailURL, radius: 8).frame(width: 44, height: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(cur.title).font(.headline).lineLimit(1)
+                            Text(client.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
                 }
-                Spacer()
+                .buttonStyle(.plain)
+                .accessibilityLabel("Now playing: \(cur.title) on \(client.title)")
+                .accessibilityHint("Opens Now Playing")
+
                 Button {
-                    client.send(client.state?.isPlaying == true ? .pause : .resume)
+                    Haptics.tap()
+                    client.send(playing ? .pause : .resume)
                 } label: {
-                    Image(systemName: client.state?.isPlaying == true ? "pause.fill" : "play.fill")
+                    Image(systemName: playing ? "pause.fill" : "play.fill").font(.title2).frame(width: 44, height: 44)
                 }
-                Button { client.send(.next) } label: { Image(systemName: "forward.fill") }
+                .accessibilityLabel(playing ? "Pause" : "Play")
+                Button {
+                    Haptics.tap()
+                    client.send(.next)
+                } label: {
+                    Image(systemName: "forward.fill").font(.title2).frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Next")
             }
-            .font(.title3)
-            .padding(10)
+            .foregroundStyle(.primary)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
             .background(.bar)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: open)
+            .overlay(alignment: .top) {
+                GeometryReader { geo in
+                    Rectangle().fill(Color.accentColor)
+                        .frame(width: geo.size.width * fraction, height: 2)
+                        .animation(.linear(duration: 0.5), value: fraction)
+                }
+                .frame(height: 2)
+            }
         }
     }
 }
@@ -156,25 +235,38 @@ struct DevicePicker: View {
     var body: some View {
         NavigationStack {
             List {
-                if remote.devices.isEmpty {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Looking for viewers on your network…")
+                Section {
+                    if remote.devices.isEmpty {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Searching for Viewers").font(.headline)
+                                Text("Make sure other devices are on the same Wi-Fi network.")
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .accessibilityElement(children: .combine)
                     }
+                    ForEach(remote.devices) { c in
+                        DeviceRow(client: c, selected: c.key == remote.selectedKey, onTap: {
+                            Haptics.tap()
+                            remote.select(c)
+                            dismiss()
+                        }, onPair: {
+                            Haptics.tap()
+                            remote.select(c)
+                            c.beginPair()
+                            dismiss()
+                        })
+                    }
+                } footer: {
+                    Text("Open the app on another device and switch it to Viewer mode.")
                 }
-                ForEach(remote.devices) { c in
-                    DeviceRow(client: c, selected: c.key == remote.selectedKey, onTap: {
-                        remote.select(c)
-                        dismiss()
-                    }, onPair: {
-                        remote.select(c)
-                        c.beginPair()
-                        dismiss()
-                    })
-                }
-                Section(footer: Text("Open the app on another device and switch it to Viewer mode.")) { EmptyView() }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Viewers")
+            .navigationBarTitleDisplayMode(.inline)
             .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
@@ -198,18 +290,33 @@ struct DeviceRow: View {
     }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(client.title).foregroundStyle(.primary)
-                Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "tv").font(.title3).foregroundStyle(Color.accentColor).frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(client.title).font(.body).foregroundStyle(.primary)
+                    Text(status).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Circle().fill(client.connected ? Color.green : Color.orange).frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityHint("Selects this viewer")
+
             if client.needsPairing {
-                Button("Pair", action: onPair).buttonStyle(.borderless)
+                Button("Pair", action: onPair)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .accessibilityLabel("Pair with \(client.title)")
             } else if selected {
-                Image(systemName: "checkmark")
+                Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -225,36 +332,67 @@ struct NowPlayingView: View {
         if let c = remote.active {
             NowPlayingContent(client: c, dismiss: { dismiss() })
         } else {
-            Text("No viewer selected").foregroundStyle(.secondary)
+            EmptyState(symbol: "tv", title: "No Viewer Selected", message: "Choose a viewer to control playback.")
         }
     }
 }
 
 struct NowPlayingContent: View {
+    private enum Panel { case queue, history }
+
     @ObservedObject var client: RemoteClient
     let dismiss: () -> Void
-    @State private var tab = 0
+    @State private var panel: Panel?
     @State private var showPicker = false
+
+    private func toggle(_ p: Panel, symbol: String, label: String) -> some View {
+        let on = panel == p
+        return Button {
+            Haptics.tap()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { panel = on ? nil : p }
+        } label: {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(on ? Color.white : Color.secondary)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(on ? Color.accentColor : Color.clear))
+        }
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 if !client.connected {
-                    Text("Reconnecting to \(client.title)…")
-                        .font(.footnote).frame(maxWidth: .infinity).padding(6).background(Color.orange.opacity(0.3))
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Reconnecting to \(client.title)…").font(.footnote)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(.top, 4)
+                    .transition(.opacity)
                 }
-                Picker("", selection: $tab) {
-                    Text("Controls").tag(0)
-                    Text("Queue").tag(1)
-                    Text("History").tag(2)
+                Group {
+                    switch panel {
+                    case .queue: RemoteQueue(client: client)
+                    case .history: RemoteHistory(client: client)
+                    case nil: ControlsPane(client: client)
+                    }
                 }
-                .pickerStyle(.segmented)
-                .padding()
-                switch tab {
-                case 0: ControlsPane(client: client)
-                case 1: RemoteQueue(client: client)
-                default: RemoteHistory(client: client)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: client.connected)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                HStack(spacing: 48) {
+                    toggle(.queue, symbol: "list.bullet", label: "Queue")
+                    toggle(.history, symbol: "clock", label: "History")
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(.bar)
             }
             .navigationTitle("Now Playing")
             .navigationBarTitleDisplayMode(.inline)
@@ -262,6 +400,8 @@ struct NowPlayingContent: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Done", action: dismiss) }
                 ToolbarItem(placement: .primaryAction) {
                     Button { showPicker = true } label: { Label(client.title, systemImage: "tv") }
+                        .accessibilityLabel("Viewer: \(client.title)")
+                        .accessibilityHint("Opens the viewer list")
                 }
             }
             .sheet(isPresented: $showPicker) { DevicePicker() }
@@ -277,59 +417,94 @@ struct ControlsPane: View {
 
     var body: some View {
         if let s = client.state, let cur = s.current {
+            let pos = scrub ?? s.position
             ScrollView {
-                VStack(spacing: 18) {
-                    Thumb(url: cur.thumbnailURL)
+                VStack(spacing: 20) {
+                    Thumb(url: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                        .padding(.top, 8)
                     VStack(spacing: 4) {
                         Text(cur.title).font(.title3.bold()).multilineTextAlignment(.center)
-                        Text(cur.channel).foregroundStyle(.secondary)
+                        if !cur.channel.isEmpty {
+                            Text(cur.channel).font(.subheadline).foregroundStyle(.secondary)
+                        }
                     }
+                    .accessibilityElement(children: .combine)
                     VStack(spacing: 2) {
                         Slider(
-                            value: Binding(get: { scrub ?? s.position }, set: { scrub = $0 }),
+                            value: Binding(get: { pos }, set: { scrub = $0 }),
                             in: 0...max(s.duration, 1)
                         ) { editing in
                             if !editing, let v = scrub {
                                 client.state?.position = v
                                 client.send(.seek(v))
                                 scrub = nil
+                                Haptics.tap()
                             }
                         }
+                        .accessibilityLabel("Playback position")
+                        .accessibilityValue("\(clock(pos)) of \(clock(s.duration))")
                         HStack {
-                            Text(clock(scrub ?? s.position))
+                            Text(clock(pos))
                             Spacer()
-                            Text(clock(s.duration))
+                            Text("-" + clock(max(s.duration - pos, 0)))
                         }
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     }
-                    HStack(spacing: 28) {
-                        Button { client.send(.previous) } label: { Image(systemName: "backward.end.fill") }
-                        Button { client.send(.skip(-10)) } label: { Image(systemName: "gobackward.10") }
-                        Button { client.send(s.isPlaying ? .pause : .resume) } label: {
-                            Image(systemName: s.isPlaying ? "pause.circle.fill" : "play.circle.fill").font(.system(size: 60))
+                    HStack(spacing: 0) {
+                        transport("backward.end.fill", "Previous track", size: 28) { client.send(.previous) }
+                        transport("gobackward.10", "Back 10 seconds", size: 28) { client.send(.skip(-10)) }
+                        transport(s.isPlaying ? "pause.fill" : "play.fill", s.isPlaying ? "Pause" : "Play", size: 44) {
+                            client.send(s.isPlaying ? .pause : .resume)
                         }
-                        Button { client.send(.skip(10)) } label: { Image(systemName: "goforward.10") }
-                        Button { client.send(.next) } label: { Image(systemName: "forward.end.fill") }
+                        transport("goforward.10", "Forward 10 seconds", size: 28) { client.send(.skip(10)) }
+                        transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
                     }
-                    .font(.title)
-                    HStack {
-                        Button { client.send(.setMuted(!s.muted)) } label: {
-                            Image(systemName: s.muted ? "speaker.slash.fill" : "speaker.wave.2.fill").frame(width: 28)
+                    HStack(spacing: 12) {
+                        Button {
+                            Haptics.tap()
+                            client.send(.setMuted(!s.muted))
+                        } label: {
+                            Image(systemName: s.muted ? "speaker.slash.fill" : "speaker.fill")
+                                .frame(width: 44, height: 44)
                         }
+                        .accessibilityLabel(s.muted ? "Unmute" : "Mute")
                         Slider(
                             value: Binding(get: { vol ?? s.volume }, set: { vol = $0; client.send(.setVolume($0)) }),
                             in: 0...1
                         ) { editing in if !editing { vol = nil } }
+                        .accessibilityLabel("Volume")
+                        Image(systemName: "speaker.wave.3.fill")
+                            .frame(width: 44, height: 44)
+                            .accessibilityHidden(true)
                     }
+                    .foregroundStyle(.secondary)
                 }
-                .padding()
+                .padding(.horizontal, 24)
+                .padding(.bottom, 16)
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
                 .disabled(!client.connected)
             }
         } else {
-            Text("Nothing playing").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
+    }
+
+    private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: size))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
     }
 }
 
