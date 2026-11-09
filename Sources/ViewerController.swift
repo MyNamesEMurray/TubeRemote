@@ -12,12 +12,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published var queue: [VideoItem] = []
     @Published var history: [VideoItem] = []
     @Published var toast: String?
+    @Published var pending: [PendingPeer] = []
     @Published var volume: Float = AVAudioSession.sharedInstance().outputVolume
 
     let webView: WKWebView
     let volumeView = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
 
     private let settings: AppSettings
+    private let pairing: Pairing
     private let server = ViewerServer()
     private var jsReady = false
     private var pendingJS: [String] = []
@@ -61,8 +63,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     </body></html>
     """
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, pairing: Pairing) {
         self.settings = settings
+        self.pairing = pairing
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
@@ -91,6 +94,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         UIApplication.shared.isIdleTimerDisabled = true
         server.onCommand = { [weak self] cmd, who in self?.handle(cmd, from: who) }
         server.snapshot = { [weak self] in self?.snapshot() }
+        server.paired = { [weak self] in self?.settings.paired($0) }
+        server.onPair = { [weak self] m, reply in self?.pairing.receive(m, send: reply) }
+        server.onPeers = { [weak self] in self?.pending = self?.server.pending ?? [] }
+        pairing.onPaired = { [weak self] d in self?.server.markAuthed(key: d.key) }
         server.start(name: settings.name, key: settings.deviceKey)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.broadcast() }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
@@ -134,6 +141,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         UIApplication.shared.isIdleTimerDisabled = false
         js("player&&player.pauseVideo&&player.pauseVideo()")
         isPlaying = false
+    }
+
+    func beginPair(_ p: PendingPeer) {
+        pairing.begin { [weak self] in self?.server.send(.pair($0), to: p.id) }
     }
 
     /// Re-advertise under a new device name.

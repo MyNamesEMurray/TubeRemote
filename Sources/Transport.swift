@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 
@@ -48,15 +49,39 @@ enum Transport {
     }
 }
 
-/// Viewer side: accepts any number of remotes and broadcasts state to all of them.
+struct PendingPeer: Identifiable {
+    let id: ObjectIdentifier
+    let name: String
+}
+
+/// Viewer side: accepts any number of remotes. Only authenticated remotes get state and may send commands.
 final class ViewerServer {
+    private struct Peer {
+        let conn: NWConnection
+        var name = "a remote"
+        var last = Date()
+        var hello = false
+        var key: String?
+        var nonce: Data?
+        var authed = false
+    }
+
     private var listener: NWListener?
-    private var conns: [ObjectIdentifier: (conn: NWConnection, name: String, last: Date, hello: Bool)] = [:]
+    private var conns: [ObjectIdentifier: Peer] = [:]
     private var running = false
     private var sweeper: Timer?
 
     var onCommand: ((Command, String) -> Void)?
     var snapshot: (() -> ViewerState?)?
+    var paired: ((String) -> PairedDevice?)?
+    var onPair: ((PairMessage, @escaping (PairMessage) -> Void) -> Void)?
+    var onPeers: (() -> Void)?
+
+    /// Remotes that said hello but are not authenticated, so they can be offered for pairing.
+    var pending: [PendingPeer] {
+        conns.compactMap { $0.value.hello && !$0.value.authed ? PendingPeer(id: $0.key, name: $0.value.name) : nil }
+            .sorted { $0.name < $1.name }
+    }
 
     func start(name: String, key: String) {
         stop()
@@ -82,7 +107,7 @@ final class ViewerServer {
             for (id, e) in self.conns where Date().timeIntervalSince(e.last) > (e.hello ? 15 : 5) {
                 Log.add("dropping silent remote \(e.name) hello=\(e.hello)")
                 e.conn.cancel()
-                self.conns[id] = nil
+                self.remove(id)
             }
         }
     }
@@ -99,20 +124,46 @@ final class ViewerServer {
         listener = nil
         conns.values.forEach { $0.conn.cancel() }
         conns = [:]
+        onPeers?()
     }
 
     func broadcast(_ state: ViewerState) {
-        conns.values.forEach { Transport.send(state, on: $0.conn) }
+        for p in conns.values {
+            if p.authed {
+                Transport.send(ServerMessage.state(state), on: p.conn)
+            } else if p.hello, p.nonce == nil {
+                Transport.send(ServerMessage.unpaired, on: p.conn)
+            }
+        }
+    }
+
+    func send(_ m: ServerMessage, to id: ObjectIdentifier) {
+        if let c = conns[id]?.conn { Transport.send(m, on: c) }
+    }
+
+    /// A pairing just finished: let the remote with this key in without a challenge.
+    func markAuthed(key: String) {
+        for id in conns.keys where conns[id]?.key == key {
+            conns[id]?.authed = true
+            conns[id]?.nonce = nil
+            if let s = snapshot?() { send(.state(s), to: id) }
+        }
+        onPeers?()
+    }
+
+    private func remove(_ id: ObjectIdentifier) {
+        conns[id] = nil
+        onPeers?()
     }
 
     private func accept(_ c: NWConnection) {
         let id = ObjectIdentifier(c)
-        conns[id] = (c, "a remote", Date(), false)
+        conns[id] = Peer(conn: c)
         Log.add("accepted \(c.endpoint)")
         c.stateUpdateHandler = { [weak self] s in
             Log.add("inbound \(s)")
             switch s {
-            case .failed, .cancelled: self?.conns[id] = nil
+            case .failed, .cancelled: self?.remove(id)
             default: break
             }
         }
@@ -121,19 +172,49 @@ final class ViewerServer {
             self?.conns[id]?.last = Date()
             self?.handle(m, id: id, conn: c)
         }, onEnd: { [weak self] in
-            self?.conns[id] = nil
+            self?.remove(id)
             c.cancel()
         })
     }
 
     private func handle(_ m: ClientMessage, id: ObjectIdentifier, conn: NWConnection) {
         switch m {
-        case .hello(let name):
+        case .hello(let name, let key):
             if conns[id]?.hello == false { Log.add("hello from \(name)") }
             conns[id]?.name = name
             conns[id]?.hello = true
-            if let s = snapshot?() { Transport.send(s, on: conn) }
+            conns[id]?.key = key
+            conns[id]?.authed = false
+            if paired?(key) != nil {
+                let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+                conns[id]?.nonce = nonce
+                send(.challenge(nonce), to: id)
+            } else {
+                conns[id]?.nonce = nil
+                send(.unpaired, to: id)
+            }
+            onPeers?()
+        case .auth(let mac):
+            guard let p = conns[id], let nonce = p.nonce, let key = p.key, let d = paired?(key),
+                  HMAC<SHA256>.isValidAuthenticationCode(mac, authenticating: nonce, using: SymmetricKey(data: d.secret))
+            else {
+                Log.add("auth failed for \(conns[id]?.name ?? "?")")
+                conns[id]?.nonce = nil
+                send(.unpaired, to: id)
+                return
+            }
+            conns[id]?.authed = true
+            conns[id]?.nonce = nil
+            Log.add("authenticated \(p.name)")
+            if let s = snapshot?() { send(.state(s), to: id) }
+            onPeers?()
+        case .ping:
+            break
+        case .pair(let pm):
+            guard conns[id]?.hello == true else { return }
+            onPair?(pm) { Transport.send(ServerMessage.pair($0), on: conn) }
         case .command(let cmd):
+            guard conns[id]?.authed == true else { return Log.add("ignored command from unauthenticated remote") }
             Log.add("command \(cmd) from \(conns[id]?.name ?? "?")")
             onCommand?(cmd, conns[id]?.name ?? "a remote")
         }

@@ -163,14 +163,19 @@ struct DevicePicker: View {
                     }
                 }
                 ForEach(remote.devices) { c in
-                    DeviceRow(client: c, selected: c.key == remote.selectedKey) {
+                    DeviceRow(client: c, selected: c.key == remote.selectedKey, onTap: {
                         remote.select(c)
                         dismiss()
-                    }
+                    }, onPair: {
+                        remote.select(c)
+                        c.beginPair()
+                        dismiss()
+                    })
                 }
                 Section(footer: Text("Open the app on another device and switch it to Viewer mode.")) { EmptyView() }
             }
             .navigationTitle("Viewers")
+            .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
@@ -182,8 +187,10 @@ struct DeviceRow: View {
     @ObservedObject var client: RemoteClient
     let selected: Bool
     let onTap: () -> Void
+    let onPair: () -> Void
 
     private var status: String {
+        if client.needsPairing { return "Not paired" }
         guard client.connected, let s = client.state else {
             return client.detail.isEmpty ? "Connecting…" : "Connecting… \(client.detail)"
         }
@@ -191,14 +198,18 @@ struct DeviceRow: View {
     }
 
     var body: some View {
-        Button(action: onTap) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(client.title).foregroundStyle(.primary)
-                    Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                if selected { Image(systemName: "checkmark") }
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(client.title).foregroundStyle(.primary)
+                Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+            if client.needsPairing {
+                Button("Pair", action: onPair).buttonStyle(.borderless)
+            } else if selected {
+                Image(systemName: "checkmark")
             }
         }
     }
@@ -254,6 +265,7 @@ struct NowPlayingContent: View {
                 }
             }
             .sheet(isPresented: $showPicker) { DevicePicker() }
+            .pairingPrompt()
         }
     }
 }
