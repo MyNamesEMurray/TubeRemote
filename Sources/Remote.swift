@@ -7,6 +7,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var name: String
     @Published var state: ViewerState?
     @Published var connected = false
+    @Published var detail = ""
     var endpoint: NWEndpoint
     var id: String { key }
     var title: String { state?.deviceName ?? name }
@@ -52,11 +53,17 @@ final class RemoteClient: ObservableObject, Identifiable {
                     self.lastActivity = Date()
                     self.state = st
                     self.connected = true
+                    self.detail = ""
                 }, onEnd: { [weak self] in
                     if let self, c === self.conn { self.drop() }
                 })
-            case .failed, .cancelled:
+            case .failed(let e):
+                self.detail = "failed: \(e)"
                 self.drop()
+            case .cancelled:
+                self.drop()
+            case .waiting(let e):
+                self.detail = "waiting: \(e)"
             default:
                 break
             }

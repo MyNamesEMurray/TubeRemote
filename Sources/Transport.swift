@@ -1,35 +1,38 @@
 import Foundation
 import Network
 
-/// JSON messages over WebSocket (Network.framework), advertised via Bonjour.
+/// JSON messages over plain TCP, each prefixed by a 4-byte big-endian length, advertised via Bonjour.
 /// Everything runs on the main queue. A relay server for remote-over-internet can speak the same messages.
 enum Transport {
     static let serviceType = "_ytremote._tcp"
+    static let maxMessage = 1 << 20
 
     static func parameters() -> NWParameters {
         let p = NWParameters.tcp
-        let ws = NWProtocolWebSocket.Options()
-        ws.autoReplyPing = true
-        p.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
+        if let tcp = p.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
+            tcp.noDelay = true
+        }
         return p
     }
 
     static func send<T: Encodable>(_ msg: T, on c: NWConnection) {
-        guard let data = try? JSONEncoder().encode(msg) else { return }
-        let ctx = NWConnection.ContentContext(
-            identifier: "msg", metadata: [NWProtocolWebSocket.Metadata(opcode: .text)])
-        c.send(content: data, contentContext: ctx, isComplete: true, completion: .idempotent)
+        guard let body = try? JSONEncoder().encode(msg) else { return }
+        var len = UInt32(body.count).bigEndian
+        let frame = Data(bytes: &len, count: 4) + body
+        c.send(content: frame, completion: .idempotent)
     }
 
     static func receiveLoop<T: Decodable>(
         _ c: NWConnection, as type: T.Type,
         onMessage: @escaping (T) -> Void, onEnd: @escaping () -> Void
     ) {
-        c.receiveMessage { data, _, _, error in
-            if let data, let m = try? JSONDecoder().decode(T.self, from: data) { onMessage(m) }
-            if error != nil {
-                onEnd()
-            } else {
+        c.receive(minimumIncompleteLength: 4, maximumLength: 4) { head, _, _, error in
+            guard error == nil, let head, head.count == 4 else { return onEnd() }
+            let n = Int(head.reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
+            guard n > 0, n <= maxMessage else { return onEnd() }
+            c.receive(minimumIncompleteLength: n, maximumLength: n) { body, _, _, error in
+                guard error == nil, let body, body.count == n else { return onEnd() }
+                if let m = try? JSONDecoder().decode(T.self, from: body) { onMessage(m) }
                 receiveLoop(c, as: type, onMessage: onMessage, onEnd: onEnd)
             }
         }
