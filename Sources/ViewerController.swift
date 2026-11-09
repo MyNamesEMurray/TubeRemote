@@ -26,6 +26,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var volumeObs: NSKeyValueObservation?
     private var premuteVolume: Float = 0.5
     private var running = false
+    private var interruptObs: NSObjectProtocol?
+    private var wasPlaying = false
 
     private static let playerHTML = """
     <!DOCTYPE html><html><head>
@@ -36,7 +38,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var player, pending, post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
     function build(id){
       player = new YT.Player('p', {width:'100%', height:'100%', videoId:id,
-        playerVars:{playsinline:1, autoplay:1, rel:0, origin:'https://www.youtube.com'},
+        playerVars:{playsinline:1, autoplay:1, rel:0},
         events:{
           onReady:function(e){ e.target.playVideo() },
           onStateChange:function(e){ post({t:'state', s:e.data}) },
@@ -73,7 +75,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     // MARK: Lifecycle
 
     func start() {
-        stop()
+        guard !running else { return }
         running = true
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback)
@@ -87,13 +89,43 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.snapshot = { [weak self] in self?.snapshot() }
         server.start(name: settings.name, key: settings.deviceKey)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.broadcast() }
+        interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
+            guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            if type == .began {
+                self.wasPlaying = self.isPlaying
+                self.handle(.pause, from: nil)
+            } else if wasPlaying, let o = n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
+                      AVAudioSession.InterruptionOptions(rawValue: o).contains(.shouldResume) {
+                self.wasPlaying = false
+                try? AVAudioSession.sharedInstance().setActive(true)
+                self.handle(.resume, from: nil)
+            }
+        }
+        let rc = MPRemoteCommandCenter.shared()
+        for (c, cmd) in [(rc.playCommand, Command.resume), (rc.pauseCommand, .pause),
+                         (rc.nextTrackCommand, .next), (rc.previousTrackCommand, .previous)] {
+            c.addTarget { [weak self] _ in self?.handle(cmd, from: nil); return .success }
+        }
+        rc.changePlaybackPositionCommand.addTarget { [weak self] e in
+            guard let e = e as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self?.handle(.seek(e.positionTime), from: nil)
+            return .success
+        }
     }
 
     func stop() {
+        guard running else { return }
         running = false
         server.stop()
         timer?.invalidate()
         volumeObs = nil
+        if let o = interruptObs { NotificationCenter.default.removeObserver(o) }
+        interruptObs = nil
+        let rc = MPRemoteCommandCenter.shared()
+        [rc.playCommand, rc.pauseCommand, rc.nextTrackCommand, rc.previousTrackCommand,
+         rc.changePlaybackPositionCommand].forEach { $0.removeTarget(nil) }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         UIApplication.shared.isIdleTimerDisabled = false
         js("player&&player.pauseVideo&&player.pauseVideo()")
         isPlaying = false
@@ -116,7 +148,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         switch cmd {
         case .play(let i):
             guard i.isValid else { return nil }
-            start(i.fresh)
+            start(i.fresh, pushPrevious: current?.videoID != i.videoID)
             return "Playing \(i.title)"
         case .playNext(let i):
             guard i.isValid else { return nil }
@@ -287,7 +319,15 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     queue: queue, history: history)
     }
 
-    private func broadcast() { server.broadcast(snapshot()) }
+    private func broadcast() {
+        server.broadcast(snapshot())
+        guard running else { return }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = current.map { c -> [String: Any] in
+            [MPMediaItemPropertyTitle: c.title, MPMediaItemPropertyArtist: c.channel,
+             MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
+             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0]
+        }
+    }
 
     private func flash(_ s: String) {
         toast = s
