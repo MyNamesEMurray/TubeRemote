@@ -135,7 +135,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     /// Re-advertise under a new device name.
     func rename() {
-        if running { server.start(name: settings.name, key: settings.deviceKey) }
+        if running { server.rename(name: settings.name, key: settings.deviceKey) }
     }
 
     // MARK: Commands
