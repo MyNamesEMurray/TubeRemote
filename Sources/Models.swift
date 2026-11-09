@@ -79,10 +79,34 @@ enum Command: Codable {
     case clearQueue, clearHistory
 }
 
-/// Remote -> viewer. Viewer -> remote is a bare ViewerState.
+struct PairedDevice: Codable, Identifiable {
+    var id: String { key }
+    let key: String
+    var name: String
+    let secret: Data
+}
+
+/// Same message in both directions: each side sends its ephemeral public key, then its yes/no.
+enum PairMessage: Codable {
+    case key(pub: Data, deviceKey: String, name: String)
+    case decision(Bool)
+}
+
+/// Remote -> viewer.
 enum ClientMessage: Codable {
-    case hello(name: String)
+    case hello(name: String, key: String)
+    case auth(Data)
+    case ping
+    case pair(PairMessage)
     case command(Command)
+}
+
+/// Viewer -> remote. `state` is only sent to authenticated remotes.
+enum ServerMessage: Codable {
+    case state(ViewerState)
+    case unpaired
+    case challenge(Data)
+    case pair(PairMessage)
 }
 
 func parseVideoID(_ url: URL?) -> String? {

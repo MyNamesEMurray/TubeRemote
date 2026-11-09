@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Network
 
@@ -8,33 +9,35 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var state: ViewerState?
     @Published var connected = false
     @Published var detail = ""
+    @Published var needsPairing = false
     var endpoints: [NWEndpoint]
     private var attempt = 0
     var id: String { key }
     var title: String { state?.deviceName ?? name }
 
-    private let myName: () -> String
+    private let settings: AppSettings
+    private let pairing: Pairing
     private var conn: NWConnection?
+    private var ready = false
     private var lastActivity = Date()
     private var watchdog: Timer?
     private var keepalive: Timer?
     private var stopped = false
     private var retryPending = false
 
-    init(key: String, name: String, endpoints: [NWEndpoint], myName: @escaping () -> String) {
+    init(key: String, name: String, endpoints: [NWEndpoint], settings: AppSettings, pairing: Pairing) {
         self.key = key
         self.name = name
         self.endpoints = endpoints
-        self.myName = myName
+        self.settings = settings
+        self.pairing = pairing
         // The viewer broadcasts at least once a second; silence means the link is dead.
         watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, self.conn != nil, Date().timeIntervalSince(self.lastActivity) > (self.connected ? 6 : 20) else { return }
             self.drop()
         }
-        // shortcut: hello resend doubles as ping; the viewer answers with a snapshot
         keepalive = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            guard let self, self.connected, let c = self.conn else { return }
-            Transport.send(ClientMessage.hello(name: self.myName()), on: c)
+            self?.sendRaw(.ping)
         }
     }
 
@@ -53,14 +56,12 @@ final class RemoteClient: ObservableObject, Identifiable {
             Log.add("outbound \(self.title): \(s)")
             switch s {
             case .ready:
-                Transport.send(ClientMessage.hello(name: self.myName()), on: c)
-                Transport.receiveLoop(c, as: ViewerState.self, onMessage: { [weak self] st in
+                self.ready = true
+                Transport.send(ClientMessage.hello(name: self.settings.name, key: self.settings.deviceKey), on: c)
+                Transport.receiveLoop(c, as: ServerMessage.self, onMessage: { [weak self] m in
                     guard let self, c === self.conn else { return }
                     self.lastActivity = Date()
-                    if !self.connected { Log.add("first state from \(self.title)") }
-                    self.state = st
-                    self.connected = true
-                    self.detail = ""
+                    self.handle(m)
                 }, onEnd: { [weak self] in
                     if let self, c === self.conn { self.drop() }
                 })
@@ -78,10 +79,42 @@ final class RemoteClient: ObservableObject, Identifiable {
         c.start(queue: .main)
     }
 
+    var isPaired: Bool { settings.paired(key) != nil }
+
+    func beginPair() {
+        pairing.begin { [weak self] in self?.sendRaw(.pair($0)) }
+    }
+
+    private func handle(_ m: ServerMessage) {
+        switch m {
+        case .state(let st):
+            if !connected { Log.add("first state from \(title)") }
+            state = st
+            connected = true
+            needsPairing = false
+            detail = ""
+        case .unpaired:
+            connected = false
+            needsPairing = true
+            detail = ""
+        case .challenge(let nonce):
+            guard let d = settings.paired(key) else { return }
+            let mac = HMAC<SHA256>.authenticationCode(for: nonce, using: SymmetricKey(data: d.secret))
+            sendRaw(.auth(Data(mac)))
+        case .pair(let pm):
+            pairing.receive(pm) { [weak self] in self?.sendRaw(.pair($0)) }
+        }
+    }
+
+    private func sendRaw(_ m: ClientMessage) {
+        guard ready, let conn else { return }
+        Transport.send(m, on: conn)
+    }
+
     func send(_ cmd: Command) {
-        guard connected, let conn else { return Log.add("send \(cmd) dropped: not connected") }
+        guard connected else { return Log.add("send \(cmd) dropped: not connected") }
         Log.add("send \(cmd)")
-        Transport.send(ClientMessage.command(cmd), on: conn)
+        sendRaw(.command(cmd))
     }
 
     func stop() {
@@ -90,6 +123,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         keepalive?.invalidate()
         conn?.cancel()
         conn = nil
+        ready = false
         connected = false
     }
 
@@ -98,6 +132,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         let old = conn
         conn = nil
         old?.cancel()
+        ready = false
         connected = false
         guard !stopped, !retryPending else { return }
         retryPending = true
@@ -117,9 +152,11 @@ final class RemoteController: ObservableObject {
     private var missing: [String: Date] = [:]
     private var browser: NWBrowser?
     private let settings: AppSettings
+    private let pairing: Pairing
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, pairing: Pairing) {
         self.settings = settings
+        self.pairing = pairing
         selectedKey = settings.lastViewerKey
     }
 
@@ -173,8 +210,7 @@ final class RemoteController: ObservableObject {
                 c.name = v.name
                 c.endpoints = v.endpoints
             } else {
-                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints,
-                                     myName: { [weak self] in self?.settings.name ?? "Remote" })
+                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints, settings: settings, pairing: pairing)
                 clients[k] = c
                 c.connect()
             }

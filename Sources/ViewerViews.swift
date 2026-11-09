@@ -8,6 +8,7 @@ struct ViewerView: View {
     @Binding var showSettings: Bool
     @State private var showQueue = false
     @State private var showBrowse = false
+    @State private var showPair = false
 
     var body: some View {
         ZStack {
@@ -37,12 +38,15 @@ struct ViewerView: View {
         .animation(.default, value: viewer.toast)
         .animation(.default, value: showQueue)
         .sheet(isPresented: $showBrowse) { LocalBrowse() }
+        .sheet(isPresented: $showPair) { PairSheet() }
+        .pairingPrompt()
         .preferredColorScheme(.dark)
     }
 
     private var menu: some View {
         Menu {
             Button { showBrowse = true } label: { Label("Browse YouTube", systemImage: "safari") }
+            Button { showPair = true } label: { Label("Pair a device", systemImage: "link") }
             Button { showQueue.toggle() } label: { Label(showQueue ? "Hide queue" : "Show queue", systemImage: "list.bullet") }
             Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
             ModeMenu()
@@ -136,5 +140,33 @@ struct LocalBrowse: View {
                 })
             }
         }
+    }
+}
+
+/// Remotes that connected but are not paired yet; picking one starts the code comparison.
+struct PairSheet: View {
+    @EnvironmentObject var viewer: ViewerController
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if viewer.pending.isEmpty {
+                    Text("No unpaired devices found. Open the app on the other device in Remote mode.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(viewer.pending) { p in
+                    Button(p.name) {
+                        viewer.beginPair(p)
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("Pair a device")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .pairingPrompt()
     }
 }

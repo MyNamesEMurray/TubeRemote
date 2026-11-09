@@ -10,8 +10,18 @@ final class AppSettings: ObservableObject {
     @Published var queueAction: QueueAction {
         didSet { UserDefaults.standard.set(queueAction.rawValue, forKey: "queueAction") }
     }
+    @Published var paired: [PairedDevice] {
+        didSet { Store.write("paired.json", try? JSONEncoder().encode(paired)) }
+    }
     /// Stable per-install id, used to recognise a viewer even after it is renamed.
     let deviceKey: String
+
+    func paired(_ key: String) -> PairedDevice? { paired.first { $0.key == key } }
+
+    func addPaired(_ d: PairedDevice) {
+        paired.removeAll { $0.key == d.key }
+        paired.append(d)
+    }
 
     var lastViewerKey: String? {
         get { UserDefaults.standard.string(forKey: "lastViewer") }
@@ -29,6 +39,7 @@ final class AppSettings: ObservableObject {
         deviceName = d.string(forKey: "deviceName") ?? UIDevice.current.name
         defaultMode = Mode(rawValue: d.string(forKey: "defaultMode") ?? "") ?? .remote
         queueAction = QueueAction(rawValue: d.string(forKey: "queueAction") ?? "") ?? .playNow
+        paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {
             deviceKey = k
         } else {
@@ -36,5 +47,21 @@ final class AppSettings: ObservableObject {
             d.set(k, forKey: "deviceKey")
             deviceKey = k
         }
+    }
+}
+
+/// Small files in Application Support, readable after first unlock so a locked viewer can still authenticate.
+enum Store {
+    private static func url(_ name: String) -> URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent(name)
+    }
+
+    static func read(_ name: String) -> Data? { try? Data(contentsOf: url(name)) }
+
+    static func write(_ name: String, _ data: Data?) {
+        guard let data else { return }
+        try? data.write(to: url(name), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }

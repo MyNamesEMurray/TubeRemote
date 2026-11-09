@@ -5,13 +5,16 @@ final class AppModel: ObservableObject {
     let browser = Browser()
     let viewer: ViewerController
     let remote: RemoteController
+    let pairing: Pairing
     @Published var mode: Mode { didSet { apply() } }
 
     init() {
         let s = AppSettings()
         settings = s
-        viewer = ViewerController(settings: s)
-        remote = RemoteController(settings: s)
+        let p = Pairing(settings: s)
+        pairing = p
+        viewer = ViewerController(settings: s, pairing: p)
+        remote = RemoteController(settings: s, pairing: p)
         mode = s.defaultMode
     }
 
@@ -43,6 +46,7 @@ struct TubeRemoteApp: App {
                 .environmentObject(model.browser)
                 .environmentObject(model.viewer)
                 .environmentObject(model.remote)
+                .environmentObject(model.pairing)
         }
     }
 }
@@ -61,6 +65,7 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
+        .pairingPrompt()
         .onAppear { model.apply() }
         .onChange(of: phase) { if $0 == .active { model.apply() } }
     }
@@ -92,6 +97,11 @@ struct SettingsView: View {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }
                 }
+                Section("Paired devices") {
+                    if settings.paired.isEmpty { Text("None yet").foregroundStyle(.secondary) }
+                    ForEach(settings.paired) { Text($0.name) }
+                        .onDelete { settings.paired.remove(atOffsets: $0) }
+                }
                 Section { NavigationLink("Debug log") { DebugLogView() } }
                 Section("Defaults") {
                     Picker("Mode on launch", selection: $settings.defaultMode) {
@@ -103,6 +113,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
