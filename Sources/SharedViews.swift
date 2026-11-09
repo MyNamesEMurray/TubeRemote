@@ -16,6 +16,17 @@ struct Thumb: View {
     }
 }
 
+struct GatedBadge: View {
+    var body: some View {
+        Label("Pro", systemImage: "lock.fill")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+    }
+}
+
 struct EmptyState: View {
     let symbol: String
     let title: String

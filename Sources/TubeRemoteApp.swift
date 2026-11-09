@@ -1,6 +1,7 @@
 import SwiftUI
 
 final class AppModel: ObservableObject {
+    static weak var shared: AppModel?
     let settings: AppSettings
     let browser = Browser()
     let viewer: ViewerController
@@ -16,6 +17,7 @@ final class AppModel: ObservableObject {
         viewer = ViewerController(settings: s, pairing: p)
         remote = RemoteController(settings: s, pairing: p)
         mode = s.defaultMode
+        Self.shared = self
     }
 
     /// Idempotent: also used to restart networking when the app returns to the foreground.
@@ -47,6 +49,7 @@ struct TubeRemoteApp: App {
                 .environmentObject(model.viewer)
                 .environmentObject(model.remote)
                 .environmentObject(model.pairing)
+                .environmentObject(ProStore.shared)
         }
     }
 }
@@ -72,6 +75,7 @@ struct RootView: View {
         .pairingPrompt()
         .onAppear { model.apply() }
         .onChange(of: phase) { if $0 == .active { model.apply() } }
+        .tint(settings.accent)
     }
 }
 
@@ -207,7 +211,16 @@ struct OnboardingView: View {
 struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showPaywall = false
+    @State private var iconName = UIApplication.shared.alternateIconName
+
+    private static let icons: [(String, String?)] = [("Default", nil), ("Light", "AppIconLight"), ("Sunset", "AppIconSunset"), ("Mono", "AppIconMono")]
+
+    private func setIcon(_ name: String?) {
+        UIApplication.shared.setAlternateIconName(name) { if $0 == nil { iconName = name } }
+    }
 
     private var version: String {
         let i = Bundle.main.infoDictionary
@@ -221,6 +234,59 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("TubeRemote Pro") {
+                    if pro.isPro {
+                        Label("Pro unlocked", systemImage: "checkmark.seal.fill")
+                    } else {
+                        Button { showPaywall = true } label: {
+                            Label("Unlock TubeRemote Pro", systemImage: "star.fill").font(.headline)
+                        }
+                    }
+                    Button("Restore Purchases") { Task { await pro.restore() } }
+                }
+                Section {
+                    HStack(spacing: 12) {
+                        Text("Accent")
+                        Spacer()
+                        ForEach(AppSettings.accents, id: \.name) { a in
+                            Button {
+                                if pro.isPro { settings.accentName = a.name } else { showPaywall = true }
+                            } label: {
+                                Circle().fill(a.color).frame(width: 24, height: 24)
+                                    .overlay(Circle().stroke(Color.primary, lineWidth: settings.accentName == a.name ? 2 : 0).padding(-3))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(a.name.capitalized)
+                        }
+                    }
+                    if pro.isPro {
+                        Menu {
+                            ForEach(Self.icons, id: \.0) { i in
+                                Button { setIcon(i.1) } label: {
+                                    if iconName == i.1 { Label(i.0, systemImage: "checkmark") } else { Text(i.0) }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text("App Icon").foregroundStyle(.primary)
+                                Spacer()
+                                Text(Self.icons.first { $0.1 == iconName }?.0 ?? "Default").foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        Button { showPaywall = true } label: {
+                            HStack {
+                                Text("App Icon").foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "lock.fill").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    if !pro.isPro { Text("Themes and alternate icons are part of TubeRemote Pro.") }
+                }
                 Section {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }
@@ -261,6 +327,9 @@ struct SettingsView: View {
                     LabeledContent("Build", value: build)
                     NavigationLink("Debug Log") { DebugLogView() }
                 }
+                Section("Debug") {
+                    Toggle("Debug: unlock Pro", isOn: $pro.debugUnlocked)
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -268,6 +337,7 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
         }
         .onDisappear { model.viewer.rename() }
     }

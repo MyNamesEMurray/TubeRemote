@@ -12,6 +12,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published var queue: [VideoItem] = []
     @Published var history: [VideoItem] = []
     @Published var toast: String?
+    @Published var sleepEndsAt: Date?
     @Published var pending: [PendingPeer] = []
     @Published var volume: Float = AVAudioSession.sharedInstance().outputVolume
 
@@ -30,6 +31,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var running = false
     private var interruptObs: NSObjectProtocol?
     private var wasPlaying = false
+    private var sleepAtEnd = false
 
     // YouTube rejects embeds whose origin is youtube.com itself (error 152); any other https origin works.
     private static let embedOrigin = "https://com.exaltedpixels.tuberemote"
@@ -99,7 +101,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.onPeers = { [weak self] in self?.pending = self?.server.pending ?? [] }
         pairing.onPaired = { [weak self] d in self?.server.markAuthed(key: d.key) }
         server.start(name: settings.name, key: settings.deviceKey)
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.broadcast() }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tickSleep(); self?.broadcast() }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
@@ -131,6 +133,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         Log.add("viewer stop")
         server.stop()
         timer?.invalidate()
+        sleepEndsAt = nil
+        sleepAtEnd = false
         volumeObs = nil
         if let o = interruptObs { NotificationCenter.default.removeObserver(o) }
         interruptObs = nil
@@ -228,12 +232,45 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .clearHistory:
             history = []
             return nil
+        case .setSleepTimer(let s):
+            sleepAtEnd = false
+            guard let s, s >= 0 else {
+                sleepEndsAt = nil
+                return "Sleep timer off"
+            }
+            if s == 0 {
+                guard current != nil else { return nil }
+                sleepAtEnd = true
+                sleepEndsAt = Date().addingTimeInterval(max(duration - position, 0))
+            } else {
+                sleepEndsAt = Date().addingTimeInterval(s)
+            }
+            return "Sleep timer set"
         }
     }
 
     // MARK: Playback
 
+    private func tickSleep() {
+        if sleepAtEnd {
+            sleepEndsAt = Date().addingTimeInterval(max(duration - position, 0))
+        } else if let d = sleepEndsAt, d <= Date() {
+            sleepFire()
+        }
+    }
+
+    private func sleepFire() {
+        sleepEndsAt = nil
+        sleepAtEnd = false
+        _ = apply(.pause)
+        flash("Sleep timer ended")
+    }
+
     private func start(_ item: VideoItem, pushPrevious: Bool = true) {
+        if sleepAtEnd {
+            sleepAtEnd = false
+            sleepEndsAt = nil
+        }
         if pushPrevious, let c = current { pushHistory(c) }
         current = item
         position = 0
@@ -314,7 +351,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             case 2: isPlaying = false
             case 0:
                 isPlaying = false
-                advance()
+                if sleepAtEnd { sleepFire() } else { advance() }
             default: break
             }
             broadcast()
@@ -334,7 +371,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func snapshot() -> ViewerState {
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
                     position: position, duration: duration, volume: volume, muted: volume < 0.01,
-                    queue: queue, history: history)
+                    queue: queue, history: history, sleepEndsAt: sleepEndsAt)
     }
 
     private func broadcast() {

@@ -13,9 +13,19 @@ final class AppSettings: ObservableObject {
     @Published var hasOnboarded: Bool {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
     }
+    @Published var accentName: String {
+        didSet { UserDefaults.standard.set(accentName, forKey: "accentName") }
+    }
     @Published var paired: [PairedDevice] {
         didSet { Store.write("paired.json", try? JSONEncoder().encode(paired)) }
     }
+    static let accents: [(name: String, color: Color)] = [
+        ("blue", .blue), ("indigo", .indigo), ("purple", .purple), ("pink", .pink),
+        ("red", .red), ("orange", .orange), ("green", .green), ("teal", .teal),
+    ]
+
+    var accent: Color { Self.accents.first { $0.name == accentName }?.color ?? .blue }
+
     /// Stable per-install id, used to recognise a viewer even after it is renamed.
     let deviceKey: String
 
@@ -43,6 +53,7 @@ final class AppSettings: ObservableObject {
         defaultMode = Mode(rawValue: d.string(forKey: "defaultMode") ?? "") ?? .remote
         queueAction = QueueAction(rawValue: d.string(forKey: "queueAction") ?? "") ?? .playNow
         hasOnboarded = d.bool(forKey: "hasOnboarded")
+        accentName = d.string(forKey: "accentName") ?? "blue"
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {
             deviceKey = k

@@ -41,4 +41,11 @@ final class ModelsTests: XCTestCase {
             XCTAssertEqual(s, 12.5)
         } else { XCTFail("wrong case") }
     }
+
+    func testSavedQueueRoundTrip() throws {
+        let item = VideoItem(videoID: "dQw4w9WgXcQ", title: "t", channel: "c", duration: 10)
+        let q = SavedQueue(name: "Mix", items: [item, item.fresh])
+        let again = try JSONDecoder().decode(SavedQueue.self, from: JSONEncoder().encode(q))
+        XCTAssertEqual(q, again)
+    }
 }

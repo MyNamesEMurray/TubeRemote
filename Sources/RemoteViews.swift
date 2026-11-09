@@ -154,12 +154,15 @@ struct ActionBar: View {
 struct ActiveActionBar: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var browser: Browser
+    @EnvironmentObject var remote: RemoteController
 
     var body: some View {
-        ActionBar(target: client.title, enabled: client.connected, onAction: { a in
+        let targets = remote.targets
+        ActionBar(target: targets.count > 1 ? "\(targets.count) viewers" : client.title,
+                  enabled: targets.contains { $0.connected }, onAction: { a in
             Task { @MainActor in
                 guard let item = await browser.makeItem() else { return }
-                client.send(a.command(item))
+                remote.targets.forEach { $0.send(a.command(item)) }
                 browser.pause()
                 Haptics.success()
             }
@@ -230,11 +233,32 @@ struct MiniPlayer: View {
 
 struct DevicePicker: View {
     @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
+    @State private var groupMode = false
+    @State private var showPaywall = false
+
+    private var groupBinding: Binding<Bool> {
+        Binding(get: { groupMode }, set: { on in
+            if on && !pro.isPro { showPaywall = true; return }
+            groupMode = on
+            remote.groupKeys = on ? Set(remote.selectedKey.map { [$0] } ?? []) : []
+        })
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Toggle(isOn: groupBinding) {
+                        HStack(spacing: 8) {
+                            Text("Group")
+                            if !pro.isPro { GatedBadge() }
+                        }
+                    }
+                } footer: {
+                    Text("Send videos to several viewers at once. Playback controls still use the main viewer.")
+                }
                 Section {
                     if remote.devices.isEmpty {
                         HStack(spacing: 12) {
@@ -249,8 +273,13 @@ struct DevicePicker: View {
                         .accessibilityElement(children: .combine)
                     }
                     ForEach(remote.devices) { c in
-                        DeviceRow(client: c, selected: c.key == remote.selectedKey, onTap: {
+                        DeviceRow(client: c, selected: groupMode ? remote.groupKeys.contains(c.key) : c.key == remote.selectedKey, onTap: {
                             Haptics.tap()
+                            if groupMode {
+                                if remote.groupKeys.contains(c.key) { remote.groupKeys.remove(c.key) } else { remote.groupKeys.insert(c.key) }
+                                if remote.selectedKey == nil { remote.select(c) }
+                                return
+                            }
                             remote.select(c)
                             dismiss()
                         }, onPair: {
@@ -271,6 +300,8 @@ struct DevicePicker: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
+            .onAppear { groupMode = pro.isPro && !remote.groupKeys.isEmpty }
         }
     }
 }
@@ -344,6 +375,7 @@ struct NowPlayingContent: View {
     let dismiss: () -> Void
     @State private var panel: Panel?
     @State private var showPicker = false
+    @StateObject private var playlists = PlaylistStore()
 
     private func toggle(_ p: Panel, symbol: String, label: String) -> some View {
         let on = panel == p
@@ -377,7 +409,7 @@ struct NowPlayingContent: View {
                 }
                 Group {
                     switch panel {
-                    case .queue: RemoteQueue(client: client)
+                    case .queue: RemoteQueue(client: client, playlists: playlists)
                     case .history: RemoteHistory(client: client)
                     case nil: ControlsPane(client: client)
                     }
@@ -481,6 +513,7 @@ struct ControlsPane: View {
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(.secondary)
+                    SleepTimerButton(client: client, endsAt: s.sleepEndsAt)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
@@ -508,10 +541,64 @@ struct ControlsPane: View {
     }
 }
 
-struct RemoteQueue: View {
+struct SleepTimerButton: View {
     @ObservedObject var client: RemoteClient
+    let endsAt: Date?
+    @EnvironmentObject var pro: ProStore
+    @State private var showPaywall = false
+
+    private func set(_ seconds: Double?) {
+        Haptics.tap()
+        client.send(.setSleepTimer(seconds))
+    }
+
+    private var label: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "moon.zzz.fill")
+            if let endsAt {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text("Sleep in " + clock(endsAt.timeIntervalSince(ctx.date))).monospacedDigit()
+                }
+            } else {
+                Text("Sleep Timer")
+            }
+            if !pro.isPro { GatedBadge() }
+        }
+        .font(.subheadline.weight(.medium))
+        .frame(minHeight: 44)
+    }
 
     var body: some View {
+        Group {
+            if pro.isPro {
+                Menu {
+                    Button { set(nil) } label: { Label("Off", systemImage: "xmark") }
+                    Button("15 minutes") { set(15 * 60) }
+                    Button("30 minutes") { set(30 * 60) }
+                    Button("45 minutes") { set(45 * 60) }
+                    Button("1 hour") { set(60 * 60) }
+                    Button("End of video") { set(0) }
+                } label: { label }
+            } else {
+                Button { showPaywall = true } label: { label }
+            }
+        }
+        .sheet(isPresented: $showPaywall) { PaywallView() }
+    }
+}
+
+struct RemoteQueue: View {
+    @ObservedObject var client: RemoteClient
+    @ObservedObject var playlists: PlaylistStore
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PlaylistBar(client: client, store: playlists)
+            queueList
+        }
+    }
+
+    private var queueList: some View {
         QueueList(
             items: client.state?.queue ?? [],
             onPlay: { client.send(.playQueueItem($0.id)) },

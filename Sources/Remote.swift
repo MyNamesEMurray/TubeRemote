@@ -146,7 +146,12 @@ final class RemoteController: ObservableObject {
     @Published var selectedKey: String? {
         didSet { settings.lastViewerKey = selectedKey }
     }
+    @Published var groupKeys: Set<String> = []
     var active: RemoteClient? { devices.first { $0.key == selectedKey } }
+    var targets: [RemoteClient] {
+        let g = devices.filter { groupKeys.contains($0.key) && $0.connected }
+        return g.isEmpty ? active.map { [$0] } ?? [] : g
+    }
 
     private var clients: [String: RemoteClient] = [:]
     private var missing: [String: Date] = [:]

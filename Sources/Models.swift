@@ -67,6 +67,7 @@ struct ViewerState: Codable, Equatable {
     var muted: Bool
     var queue: [VideoItem]
     var history: [VideoItem]
+    var sleepEndsAt: Date? = nil
 }
 
 enum Command: Codable {
@@ -77,6 +78,7 @@ enum Command: Codable {
     case setVolume(Float), setMuted(Bool)
     case remove(UUID), reorder([UUID]), playQueueItem(UUID)
     case clearQueue, clearHistory
+    case setSleepTimer(Double?)
 }
 
 struct PairedDevice: Codable, Identifiable {
