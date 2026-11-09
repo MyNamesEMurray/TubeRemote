@@ -29,6 +29,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var interruptObs: NSObjectProtocol?
     private var wasPlaying = false
 
+    // YouTube rejects embeds whose origin is youtube.com itself (error 152); any other https origin works.
+    private static let embedOrigin = "https://com.exaltedpixels.tuberemote"
+
     private static let playerHTML = """
     <!DOCTYPE html><html><head>
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -38,7 +41,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var player, pending, post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
     function build(id){
       player = new YT.Player('p', {width:'100%', height:'100%', videoId:id,
-        playerVars:{playsinline:1, autoplay:1, rel:0},
+        playerVars:{playsinline:1, autoplay:1, rel:0, origin:'\(embedOrigin)'},
         events:{
           onReady:function(e){ e.target.playVideo() },
           onStateChange:function(e){ post({t:'state', s:e.data}) },
@@ -69,7 +72,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.scrollView.isScrollEnabled = false
-        webView.loadHTMLString(Self.playerHTML, baseURL: URL(string: "https://www.youtube.com"))
+        webView.loadHTMLString(Self.playerHTML, baseURL: URL(string: Self.embedOrigin))
     }
 
     // MARK: Lifecycle
