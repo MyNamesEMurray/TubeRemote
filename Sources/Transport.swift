@@ -39,8 +39,9 @@ enum Transport {
 /// Viewer side: accepts any number of remotes and broadcasts state to all of them.
 final class ViewerServer {
     private var listener: NWListener?
-    private var conns: [ObjectIdentifier: (conn: NWConnection, name: String)] = [:]
+    private var conns: [ObjectIdentifier: (conn: NWConnection, name: String, last: Date, hello: Bool)] = [:]
     private var running = false
+    private var sweeper: Timer?
 
     var onCommand: ((Command, String) -> Void)?
     var snapshot: (() -> ViewerState?)?
@@ -61,9 +62,18 @@ final class ViewerServer {
         }
         l.start(queue: .main)
         listener = l
+        sweeper = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            for (id, e) in self.conns where Date().timeIntervalSince(e.last) > (e.hello ? 15 : 5) {
+                e.conn.cancel()
+                self.conns[id] = nil
+            }
+        }
     }
 
     func stop() {
+        sweeper?.invalidate()
+        sweeper = nil
         running = false
         listener?.cancel()
         listener = nil
@@ -77,7 +87,7 @@ final class ViewerServer {
 
     private func accept(_ c: NWConnection) {
         let id = ObjectIdentifier(c)
-        conns[id] = (c, "a remote")
+        conns[id] = (c, "a remote", Date(), false)
         c.stateUpdateHandler = { [weak self] s in
             switch s {
             case .failed, .cancelled: self?.conns[id] = nil
@@ -86,6 +96,7 @@ final class ViewerServer {
         }
         c.start(queue: .main)
         Transport.receiveLoop(c, as: ClientMessage.self, onMessage: { [weak self] m in
+            self?.conns[id]?.last = Date()
             self?.handle(m, id: id, conn: c)
         }, onEnd: { [weak self] in
             self?.conns[id] = nil
@@ -97,6 +108,7 @@ final class ViewerServer {
         switch m {
         case .hello(let name):
             conns[id]?.name = name
+            conns[id]?.hello = true
             if let s = snapshot?() { Transport.send(s, on: conn) }
         case .command(let cmd):
             onCommand?(cmd, conns[id]?.name ?? "a remote")
