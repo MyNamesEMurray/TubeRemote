@@ -184,7 +184,9 @@ struct DeviceRow: View {
     let onTap: () -> Void
 
     private var status: String {
-        guard client.connected, let s = client.state else { return "Connecting…" }
+        guard client.connected, let s = client.state else {
+            return client.detail.isEmpty ? "Connecting…" : "Connecting… \(client.detail)"
+        }
         return s.current.map { "Playing: \($0.title)" } ?? "Idle"
     }
 

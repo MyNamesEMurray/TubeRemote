@@ -15,7 +15,7 @@ Change the bundle id in `project.yml` if signing complains it is taken.
 ## How it works
 
 - Discovery: Bonjour `_ytremote._tcp`; service name is `<device name>#<device key>`.
-- Transport: JSON over WebSocket (Network.framework), see `Sources/Transport.swift` and `Sources/Models.swift` (`Command`, `ViewerState`). The viewer broadcasts its full state at least once a second; remotes treat 6 s of silence as a dead link and reconnect.
+- Transport: length-prefixed JSON over TCP (Network.framework), see `Sources/Transport.swift` and `Sources/Models.swift` (`Command`, `ViewerState`). The viewer broadcasts its full state at least once a second; remotes treat 6 s of silence as a dead link and reconnect.
 - The viewer is the single source of truth for queue/history. Remotes only send commands.
 - Playback runs in the YouTube IFrame player on the viewer. Volume is the system volume (iOS web views cannot set their own).
 - Internet/account control later: keep the same messages and put a relay server between viewer and remote.
