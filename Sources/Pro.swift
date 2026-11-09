@@ -21,9 +21,10 @@ final class ProStore: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        entitled = d.bool(forKey: "proEntitled")
-        debugUnlocked = d.bool(forKey: "proDebugUnlocked")
-        isPro = entitled || debugUnlocked
+        let e = d.bool(forKey: "proEntitled"), g = d.bool(forKey: "proDebugUnlocked")
+        entitled = e
+        isPro = e || g
+        debugUnlocked = g
         updates = Task { [weak self] in
             for await result in Transaction.updates {
                 if case .verified(let t) = result { await t.finish() }
