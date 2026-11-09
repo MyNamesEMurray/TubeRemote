@@ -9,11 +9,12 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1,2"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 targets:
   TubeRemote:
     type: application
     platform: iOS
-    sources: [Sources]
+    sources: [Sources, Assets]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tuberemote.app
@@ -22,6 +23,8 @@ targets:
       properties:
         CFBundleDisplayName: TubeRemote
         UILaunchScreen: {}
+        UIBackgroundModes: [audio]
+        ITSAppUsesNonExemptEncryption: false
         NSLocalNetworkUsageDescription: Find and control your other devices running TubeRemote on your Wi-Fi network.
         NSBonjourServices: ["_ytremote._tcp"]
         UISupportedInterfaceOrientations:
@@ -33,3 +36,16 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+  TubeRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: TubeRemote
+schemes:
+  TubeRemote:
+    build:
+      targets:
+        TubeRemote: all
+    test:
+      targets: [TubeRemoteTests]
