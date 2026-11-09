@@ -77,6 +77,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     func start() {
         guard !running else { return }
         running = true
+        Log.add("viewer start")
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback)
         try? session.setActive(true)
@@ -117,6 +118,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     func stop() {
         guard running else { return }
         running = false
+        Log.add("viewer stop")
         server.stop()
         timer?.invalidate()
         volumeObs = nil
@@ -292,6 +294,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 if current?.duration != d { current?.duration = d }
             }
         case "state":
+            Log.add("player state \(b["s"] ?? "?")")
             switch b["s"] as? Int ?? -1 {
             case 1: isPlaying = true
             case 2: isPlaying = false
@@ -302,6 +305,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }
             broadcast()
         case "error":
+            Log.add("player error code \(b["c"] ?? "?") for \(current?.videoID ?? "-")")
             // Typically a video whose owner disabled embedding.
             flash("Can't play \(current?.title ?? "video") here, skipping")
             advance()

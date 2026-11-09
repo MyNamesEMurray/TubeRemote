@@ -42,15 +42,18 @@ final class RemoteClient: ObservableObject, Identifiable {
         retryPending = false
         lastActivity = Date()
         let c = NWConnection(to: endpoint, using: Transport.parameters())
+        Log.add("connecting to \(title) at \(endpoint)")
         conn = c
         c.stateUpdateHandler = { [weak self, weak c] s in
             guard let self, let c, c === self.conn else { return }
+            Log.add("outbound \(self.title): \(s)")
             switch s {
             case .ready:
                 Transport.send(ClientMessage.hello(name: self.myName()), on: c)
                 Transport.receiveLoop(c, as: ViewerState.self, onMessage: { [weak self] st in
                     guard let self, c === self.conn else { return }
                     self.lastActivity = Date()
+                    if !self.connected { Log.add("first state from \(self.title)") }
                     self.state = st
                     self.connected = true
                     self.detail = ""
@@ -72,7 +75,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     func send(_ cmd: Command) {
-        guard connected, let conn else { return }
+        guard connected, let conn else { return Log.add("send \(cmd) dropped: not connected") }
+        Log.add("send \(cmd)")
         Transport.send(ClientMessage.command(cmd), on: conn)
     }
 
@@ -86,6 +90,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     private func drop() {
+        Log.add("drop \(title)")
         let old = conn
         conn = nil
         old?.cancel()
@@ -117,7 +122,11 @@ final class RemoteController: ObservableObject {
     func start() {
         stop()
         let b = NWBrowser(for: .bonjour(type: Transport.serviceType, domain: nil), using: .tcp)
-        b.browseResultsChangedHandler = { [weak self] results, _ in self?.update(results) }
+        b.stateUpdateHandler = { Log.add("browser \($0)") }
+        b.browseResultsChangedHandler = { [weak self] results, _ in
+            Log.add("browse results: \(results.map { "\($0.endpoint)" })")
+            self?.update(results)
+        }
         b.start(queue: .main)
         browser = b
     }

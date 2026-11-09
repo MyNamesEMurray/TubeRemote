@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
 
     /// Idempotent: also used to restart networking when the app returns to the foreground.
     func apply() {
+        Log.tag = mode == .viewer ? "V" : "R"
+        Log.add("apply \(mode.rawValue)")
         switch mode {
         case .viewer:
             remote.stop()
@@ -90,6 +92,7 @@ struct SettingsView: View {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }
                 }
+                Section { NavigationLink("Debug log") { DebugLogView() } }
                 Section("Defaults") {
                     Picker("Mode on launch", selection: $settings.defaultMode) {
                         ForEach(Mode.allCases) { Text($0.label).tag($0) }
