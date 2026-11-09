@@ -1,6 +1,6 @@
 name: TubeRemote
 options:
-  bundleIdPrefix: dev.tuberemote
+  bundleIdPrefix: com.exaltedpixels
   deploymentTarget:
     iOS: "16.0"
 settings:
@@ -17,7 +17,7 @@ targets:
     sources: [Sources, Assets]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.tuberemote.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.exaltedpixels.TubeRemote
     info:
       path: Config/Info.plist
       properties:
