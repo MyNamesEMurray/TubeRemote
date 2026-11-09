@@ -15,6 +15,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     private var conn: NWConnection?
     private var lastActivity = Date()
     private var watchdog: Timer?
+    private var keepalive: Timer?
     private var stopped = false
     private var retryPending = false
 
@@ -27,6 +28,11 @@ final class RemoteClient: ObservableObject, Identifiable {
         watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, self.conn != nil, Date().timeIntervalSince(self.lastActivity) > 6 else { return }
             self.drop()
+        }
+        // shortcut: hello resend doubles as ping; the viewer answers with a snapshot
+        keepalive = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self, self.connected, let c = self.conn else { return }
+            Transport.send(ClientMessage.hello(name: self.myName()), on: c)
         }
     }
 
@@ -66,6 +72,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     func stop() {
         stopped = true
         watchdog?.invalidate()
+        keepalive?.invalidate()
         conn?.cancel()
         conn = nil
         connected = false
@@ -91,6 +98,7 @@ final class RemoteController: ObservableObject {
     var active: RemoteClient? { devices.first { $0.key == selectedKey } }
 
     private var clients: [String: RemoteClient] = [:]
+    private var missing: [String: Date] = [:]
     private var browser: NWBrowser?
     private let settings: AppSettings
 
@@ -112,6 +120,7 @@ final class RemoteController: ObservableObject {
         browser = nil
         clients.values.forEach { $0.stop() }
         clients = [:]
+        missing = [:]
         devices = []
     }
 
@@ -132,6 +141,7 @@ final class RemoteController: ObservableObject {
             }
         }
         for (k, v) in found {
+            missing[k] = nil
             if let c = clients[k] {
                 c.name = v.name
                 c.endpoint = v.endpoint
@@ -142,9 +152,16 @@ final class RemoteController: ObservableObject {
                 c.connect()
             }
         }
-        for k in Array(clients.keys) where found[k] == nil {
-            clients[k]?.stop()
-            clients[k] = nil
+        for k in clients.keys where found[k] == nil && missing[k] == nil {
+            let t = Date()
+            missing[k] = t
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self, self.missing[k] == t else { return }
+                self.missing[k] = nil
+                self.clients[k]?.stop()
+                self.clients[k] = nil
+                self.devices.removeAll { $0.key == k }
+            }
         }
         devices = clients.values.sorted { $0.name < $1.name }
         if selectedKey == nil, devices.count == 1 { selectedKey = devices[0].key }
