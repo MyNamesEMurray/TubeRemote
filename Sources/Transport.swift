@@ -63,6 +63,7 @@ final class ViewerServer {
         running = true
         guard let l = try? NWListener(using: Transport.parameters()) else { return }
         l.service = NWListener.Service(name: "\(name.prefix(40))#\(key)", type: Transport.serviceType)
+        l.serviceRegistrationUpdateHandler = { Log.add("service \($0)") }
         l.newConnectionHandler = { [weak self] c in self?.accept(c) }
         l.stateUpdateHandler = { [weak self] state in
             Log.add("listener \(state) port \(self?.listener?.port.map { "\($0)" } ?? "-")")
@@ -84,6 +85,10 @@ final class ViewerServer {
                 self.conns[id] = nil
             }
         }
+    }
+
+    func rename(name: String, key: String) {
+        listener?.service = NWListener.Service(name: "\(name.prefix(40))#\(key)", type: Transport.serviceType)
     }
 
     func stop() {

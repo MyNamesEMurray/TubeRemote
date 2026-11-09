@@ -8,7 +8,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var state: ViewerState?
     @Published var connected = false
     @Published var detail = ""
-    var endpoint: NWEndpoint
+    var endpoints: [NWEndpoint]
+    private var attempt = 0
     var id: String { key }
     var title: String { state?.deviceName ?? name }
 
@@ -20,14 +21,14 @@ final class RemoteClient: ObservableObject, Identifiable {
     private var stopped = false
     private var retryPending = false
 
-    init(key: String, name: String, endpoint: NWEndpoint, myName: @escaping () -> String) {
+    init(key: String, name: String, endpoints: [NWEndpoint], myName: @escaping () -> String) {
         self.key = key
         self.name = name
-        self.endpoint = endpoint
+        self.endpoints = endpoints
         self.myName = myName
         // The viewer broadcasts at least once a second; silence means the link is dead.
         watchdog = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, self.conn != nil, Date().timeIntervalSince(self.lastActivity) > 6 else { return }
+            guard let self, self.conn != nil, Date().timeIntervalSince(self.lastActivity) > (self.connected ? 6 : 20) else { return }
             self.drop()
         }
         // shortcut: hello resend doubles as ping; the viewer answers with a snapshot
@@ -41,6 +42,9 @@ final class RemoteClient: ObservableObject, Identifiable {
         guard !stopped, conn == nil else { return }
         retryPending = false
         lastActivity = Date()
+        // shortcut: a renamed or stale Bonjour twin may share the key, so rotate endpoints on each retry
+        let endpoint = endpoints[attempt % endpoints.count]
+        attempt += 1
         let c = NWConnection(to: endpoint, using: Transport.parameters())
         Log.add("connecting to \(title) at \(endpoint)")
         conn = c
@@ -120,9 +124,12 @@ final class RemoteController: ObservableObject {
     }
 
     func start() {
-        stop()
+        guard browser == nil else { return }
         let b = NWBrowser(for: .bonjour(type: Transport.serviceType, domain: nil), using: .tcp)
-        b.stateUpdateHandler = { Log.add("browser \($0)") }
+        b.stateUpdateHandler = { [weak self] s in
+            Log.add("browser \(s)")
+            if case .failed = s { self?.stop() }
+        }
         b.browseResultsChangedHandler = { [weak self] results, _ in
             Log.add("browse results: \(results.map { "\($0.endpoint)" })")
             self?.update(results)
@@ -149,20 +156,24 @@ final class RemoteController: ObservableObject {
     }
 
     private func update(_ results: Set<NWBrowser.Result>) {
-        var found: [String: (name: String, endpoint: NWEndpoint)] = [:]
+        var found: [String: (name: String, endpoints: [NWEndpoint])] = [:]
         for r in results {
             if case let .service(name, _, _, _) = r.endpoint {
                 let p = Self.split(name)
-                found[p.key] = (p.name, r.endpoint)
+                var f = found[p.key] ?? (name: p.name, endpoints: [])
+                f.endpoints.append(r.endpoint)
+                if p.name.count < f.name.count { f.name = p.name }
+                f.endpoints.sort { "\($0)" < "\($1)" }
+                found[p.key] = f
             }
         }
         for (k, v) in found {
             missing[k] = nil
             if let c = clients[k] {
                 c.name = v.name
-                c.endpoint = v.endpoint
+                c.endpoints = v.endpoints
             } else {
-                let c = RemoteClient(key: k, name: v.name, endpoint: v.endpoint,
+                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints,
                                      myName: { [weak self] in self?.settings.name ?? "Remote" })
                 clients[k] = c
                 c.connect()
