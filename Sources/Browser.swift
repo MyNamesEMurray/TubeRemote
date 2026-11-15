@@ -55,6 +55,10 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         super.init()
         cfg.userContentController.add(self, name: "tr")
         webView.navigationDelegate = self
+        // The strip under the page (the home indicator area) takes this colour, so YouTube's own bottom bar
+        // looks as if it reaches the edge of the screen.
+        webView.underPageBackgroundColor = .youTubePage
+        webView.scrollView.backgroundColor = .youTubePage
         webView.allowsBackForwardNavigationGestures = true
         obs = [
             webView.observe(\.url) { [weak self] w, _ in
@@ -165,6 +169,15 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         let page = (webView.title ?? "").replacingOccurrences(of: " - YouTube", with: "")
         return await VideoMetadata.item(videoID: id, duration: dur, fallbackTitle: page)
     }
+}
+
+extension UIColor {
+    /// YouTube's page background: near-black in dark mode, white in light mode.
+    static let youTubePage = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 15 / 255, alpha: 1) : .white }
+}
+
+extension Color {
+    static let youTubePage = Color(UIColor.youTubePage)
 }
 
 enum WebIdentity {

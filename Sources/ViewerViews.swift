@@ -423,7 +423,7 @@ struct LocalBrowse: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Hosted(view: browser.webView)
+                Hosted(view: browser.webView).background(Color.youTubePage.ignoresSafeArea())
                 if browser.videoID != nil {
                     ActionBar(target: "this device", enabled: !sending, onAction: send)
                 }

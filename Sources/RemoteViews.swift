@@ -14,6 +14,7 @@ struct RemoteView: View {
     var body: some View {
         NavigationStack {
             Hosted(view: browser.webView)
+                .background(Color.youTubePage.ignoresSafeArea())
                 .overlay(alignment: .top) {
                     if !seenTip { tip }
                 }
