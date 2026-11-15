@@ -11,7 +11,7 @@ iPhone/iPad app: browse YouTube in an embedded web view, send videos to another 
 
 GitHub Actions (`.github/workflows/build.yml`) generates the Xcode project with [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml` and builds an **unsigned** `.ipa`. Download it from the run's artifacts, then sign and install it with Sideloadly or AltStore using your Apple ID (free accounts: 7-day expiry).
 
-TestFlight: `.github/workflows/testflight.yml` runs the tests, archives and uploads. Push a tag such as `v1.0` (the tag sets the app version) or run it by hand. It needs the secrets `ASC_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID` and `APPLE_TEAM_ID`.
+TestFlight: `.github/workflows/testflight.yml` runs the tests, archives and uploads. Push a tag such as `v1.0` (the tag sets the app version) or run it by hand. It needs the secrets `ASC_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID` and `APPLE_TEAM_ID`. The archive is built unsigned and signed only at export, so runs do not use up the account's certificate slots. To make that certain, also set `APPLE_DISTRIBUTION_CERT_P12` and `APPLE_DISTRIBUTION_CERT_PASSWORD` (one team distribution certificate, reused by every run); the workflow file explains how.
 
 Change the bundle id in `project.yml` if signing complains it is taken.
 
