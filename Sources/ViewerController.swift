@@ -69,6 +69,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var lastPos = -1.0
     private var lastMove = Date()
     private var kickCount = 0
+    private var unmuteTries = 0
+    /// The video is still muted after the automatic attempts, so the overlay offers a button.
+    @Published private(set) var needsUnmute = false
     private var pairedObs: AnyCancellable?
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
@@ -107,6 +110,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       // Hide YouTube's top bar, then pin the player's wrappers over the whole screen. The wrappers are pinned
       // rather than the player itself because WebKit placed a pinned player below the top bar.
       css.textContent = 'ytm-mobile-topbar-renderer,ytm-pivot-bar-renderer,#header-bar{display:none!important}' +
+        // YouTube's own "tap to unmute" button cannot be used here, because taps on the video are taken over by the app.
+        '.ytp-unmute{display:none!important}' +
         '#player-container-id,#player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;transform:none!important;z-index:2147483647!important;background:#000!important}' +
         '#movie_player{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;background:#000!important}' +
         // YouTube sizes captions for a small phone player; scale them to the screen instead.
@@ -363,6 +368,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     func disconnect(_ p: PendingPeer) { server.disconnect(p.id) }
 
+    /// Called from a real tap on the overlay's button, which is the one kind of call that always unmutes.
+    func unmuteVideo() {
+        lastKick = Date()
+        js("__tr.unmute()")
+    }
+
     func beginPair(_ p: PendingPeer) {
         pairing.begin(peer: p.id) { [weak self] in self?.server.send(.pair($0), to: p.id) }
     }
@@ -493,6 +504,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         lastPos = -1
         lastMove = Date()
         kickCount = 0
+        unmuteTries = 0
+        needsUnmute = false
         loading = true
         adSkippable = false
         captionsNone = false
@@ -627,9 +640,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 js("__tr.kick(\(kickCount % 3))")
                 kickCount += 1
             } else if wantPlaying, !notMoving, b["muted"] as? Bool == true, now.timeIntervalSince(lastKick) > 1 {
-                lastKick = now
-                js("__tr.unmute()")
+                // Each attempt can pause the video, so only a few; after that the person gets a button.
+                if unmuteTries < 3 {
+                    unmuteTries += 1
+                    lastKick = now
+                    js("__tr.unmute()")
+                } else if !needsUnmute {
+                    needsUnmute = true
+                }
             }
+            if needsUnmute, b["muted"] as? Bool != true { needsUnmute = false }
             let q = b["q"] as? String
             if q != quality { quality = q }
             // "highres" is 8K, which no iPad decodes; forcing it ends in a playback error. 4K plays.

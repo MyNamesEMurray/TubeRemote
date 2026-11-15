@@ -82,6 +82,23 @@ struct ViewerView: View {
                 .allowsHitTesting(visible)
                 .accessibilityHidden(!visible)
         }
+        .overlay(alignment: .topLeading) {
+            if viewer.needsUnmute {
+                Button {
+                    Haptics.tap()
+                    viewer.unmuteVideo()
+                } label: {
+                    Label("Tap to unmute", systemImage: "speaker.slash.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .padding(12)
+                .transition(.opacity)
+            }
+        }
         // The page reports taps on the video; nothing native sits on top of it to catch them.
         .onReceive(viewer.tapped) { _ in
             closeMenu()
@@ -89,6 +106,7 @@ struct ViewerView: View {
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showControls)
         .animation(.easeInOut(duration: 0.4), value: showMenu)
+        .animation(.easeInOut(duration: 0.3), value: viewer.needsUnmute)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.toast)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showQueue)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
