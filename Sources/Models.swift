@@ -78,6 +78,8 @@ struct ViewerState: Codable, Equatable {
     var adSkippable: Bool?
     /// No quality is forced; `quality` is then whatever YouTube picked.
     var autoQuality: Bool?
+    /// "searching": captions were asked for and none are showing yet. "none": this video has none.
+    var captionsStatus: String?
 
     var muted: Bool { volume < 0.01 }
 }

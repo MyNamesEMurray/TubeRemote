@@ -646,11 +646,18 @@ struct ControlsPane: View {
             .accessibilityLabel("Playback speed, \(rate(speed))")
             Button {
                 Haptics.tap()
-                client.send(.setCaptions(s.captions != true))
+                // While searching, a tap cancels the request.
+                client.send(.setCaptions(s.captions != true && s.captionsStatus == nil))
             } label: {
-                option("Captions", s.captions == true ? "captions.bubble.fill" : "captions.bubble")
+                switch s.captionsStatus {
+                case "none": option("No captions", "captions.bubble").opacity(0.5)
+                case "searching": option("Finding captions…", "captions.bubble")
+                default: option("Captions", s.captions == true ? "captions.bubble.fill" : "captions.bubble")
+                }
             }
-            .accessibilityLabel(s.captions == true ? "Turn captions off" : "Turn captions on")
+            .disabled(s.captionsStatus == "none")
+            .accessibilityLabel(s.captionsStatus == "none" ? "This video has no captions"
+                                : s.captions == true ? "Turn captions off" : "Turn captions on")
             if let qs = s.qualities, qs.count > 1 {
                 Menu {
                     let auto = s.autoQuality != false

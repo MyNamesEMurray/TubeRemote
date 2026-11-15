@@ -38,7 +38,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var loading = false
     // What the remote asked for; re-applied on every new video.
     private var wantSpeed = 1.0
-    private var wantCaptions: Bool?
+    @Published private(set) var wantCaptions: Bool?
+    /// The video has no captions to show.
+    @Published private(set) var captionsNone = false
+    /// "searching" while captions are wanted but not showing yet, "none" when the video has none, else nil.
+    var captionsStatus: String? {
+        if captionsNone { return "none" }
+        return wantCaptions == true && !captions ? "searching" : nil
+    }
     private var wantQuality: String?
     // What the player reports back.
     private var speed = 1.0
@@ -176,8 +183,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             var p = mp(), q = null, qs = [];
             if (started) {
               if (v.playbackRate !== wr) v.playbackRate = wr;
-              // Twenty seconds of trying; after that the video has no captions to show.
-              if (wc !== null && cc() !== wc && tc < 40) { setCC(wc, tc === 0); tc++; if (tc === 40 && wc) post({t:'nocc'}) }
+              // Twelve seconds of trying; after that the video has no captions to show.
+              if (wc !== null && cc() !== wc && tc < 24) { setCC(wc, tc === 0); tc++; if (tc === 24 && wc) post({t:'nocc'}) }
               try { if (wq && p.getPlaybackQuality() !== wq && tq++ < 20) p.setPlaybackQualityRange(wq, wq) } catch(e) {}
             }
             try { q = p.getPlaybackQuality(); qs = p.getAvailableQualityLevels() } catch(e) {}
@@ -383,10 +390,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             pushSettings()
             return nil
         case .setCaptions(let on):
+            // No message here: it would claim success before the player has done anything. The state
+            // reports "searching", then captions on, or "none" if the video has no captions.
             wantCaptions = on
-            captions = on
+            captionsNone = false
+            if !on { captions = false }
             pushSettings()
-            return on ? "Captions on" : "Captions off"
+            return nil
         case .setQuality(let q):
             // The name is put into script on the page and arrives over the network: whitelist it.
             guard q.range(of: "^[a-z0-9]{1,12}$", options: .regularExpression) != nil else { return nil }
@@ -409,6 +419,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         firstPlay = nil
         loading = true
         adSkippable = false
+        captionsNone = false
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
@@ -487,7 +498,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             tapped.send()
         case "nocc":
             captions = false
-            flash("No captions found for this video")
+            captionsNone = true
+            flash("This video has no captions")
+            broadcast()
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
         case _ where loading:
@@ -553,7 +566,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
-                    adSkippable: adSkippable, autoQuality: autoQuality)
+                    adSkippable: adSkippable, autoQuality: autoQuality, captionsStatus: captionsStatus)
     }
 
     private func broadcast() {

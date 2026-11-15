@@ -172,11 +172,18 @@ struct ViewerControls: View {
             Button {
                 Haptics.tap()
                 touched()
-                viewer.handle(.setCaptions(!viewer.captions), from: nil)
+                // While searching, a tap cancels the request.
+                viewer.handle(.setCaptions(!viewer.captions && viewer.captionsStatus == nil), from: nil)
             } label: {
-                option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+                switch viewer.captionsStatus {
+                case "none": option("No captions", "captions.bubble").opacity(0.5)
+                case "searching": option("Finding captions…", "captions.bubble")
+                default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+                }
             }
-            .accessibilityLabel(viewer.captions ? "Turn captions off" : "Turn captions on")
+            .disabled(viewer.captionsStatus == "none")
+            .accessibilityLabel(viewer.captionsStatus == "none" ? "This video has no captions"
+                                : viewer.captions ? "Turn captions off" : "Turn captions on")
             if viewer.qualities.count > 1 {
                 Menu {
                     check("Auto", viewer.autoQuality) { viewer.handle(.setQuality("auto"), from: nil) }
