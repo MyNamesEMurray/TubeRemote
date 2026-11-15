@@ -75,8 +75,12 @@ struct ViewerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            // Always on screen so taps reach the player itself (Skip Ad).
-            menu.opacity(showMenu || showControls || showQueue || viewer.current == nil ? 1 : 0.5)
+            // Shown with the overlay, and while the menu or queue is open. Hidden, it also lets taps through.
+            let visible = showMenu || showControls || showQueue || viewer.current == nil
+            menu
+                .opacity(visible ? 1 : 0)
+                .allowsHitTesting(visible)
+                .accessibilityHidden(!visible)
         }
         // The page reports taps on the video; nothing native sits on top of it to catch them.
         .onReceive(viewer.tapped) { _ in
