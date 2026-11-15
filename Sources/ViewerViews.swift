@@ -202,27 +202,30 @@ struct ViewerControls: View {
     }
 
     var body: some View {
-        let pos = scrub ?? viewer.position
         VStack(spacing: 6) {
             if let c = viewer.current {
                 Text(c.title).font(.headline).lineLimit(1)
             }
-            HStack(spacing: 12) {
-                Text(clock(pos))
-                Slider(
-                    value: Binding(get: { pos }, set: { scrub = $0; touched() }),
-                    in: 0...max(viewer.duration, 1)
-                ) { editing in
-                    if !editing, let v = scrub {
-                        viewer.handle(.seek(v), from: nil)
-                        scrub = nil
+            // Position is read on a timer here instead of being published, so only this row redraws.
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                let pos = scrub ?? viewer.position
+                HStack(spacing: 12) {
+                    Text(clock(pos))
+                    Slider(
+                        value: Binding(get: { pos }, set: { scrub = $0; touched() }),
+                        in: 0...max(viewer.duration, 1)
+                    ) { editing in
+                        if !editing, let v = scrub {
+                            viewer.handle(.seek(v), from: nil)
+                            scrub = nil
+                        }
                     }
+                    .accessibilityLabel("Playback position")
+                    .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
+                    Text(clock(viewer.duration))
                 }
-                .accessibilityLabel("Playback position")
-                .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
-                Text(clock(viewer.duration))
+                .font(.caption.monospacedDigit())
             }
-            .font(.caption.monospacedDigit())
             HStack(spacing: 16) {
                 button("backward.end.fill", "Previous", .previous)
                 button("gobackward.10", "Back 10 seconds", .skip(-10))

@@ -8,8 +8,10 @@ import MediaPlayer
 final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler {
     @Published var current: VideoItem?
     @Published var isPlaying = false
-    @Published var position = 0.0
-    @Published var duration = 0.0
+    // Not published: they change twice a second, and publishing re-drew the whole viewer screen each time,
+    // which made its menu flicker. The overlay's slider reads them on its own timer.
+    var position = 0.0
+    var duration = 0.0
     @Published var queue: [VideoItem] = []
     @Published var history: [VideoItem] = []
     @Published var toast: String?
@@ -576,7 +578,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 if current?.duration != d { current?.duration = d }
             }
             if let r = b["rate"] as? Double { speed = r }
-            if let c = b["cc"] as? Bool { captions = c }
+            // Published values are only set when they change, so a steady player causes no redraw.
+            if let c = b["cc"] as? Bool, c != captions { captions = c }
             // YouTube starts the first video of a session muted, and it can stall while starting.
             // Until it has played for a few seconds, push it along; a muted video is always unmuted.
             let starting = firstPlay.map { Date().timeIntervalSince($0) < 8 } ?? true
@@ -585,9 +588,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 lastKick = Date()
                 js("__tr.kick()")
             }
-            quality = b["q"] as? String
+            let q = b["q"] as? String
+            if q != quality { quality = q }
             // "highres" is 8K, which no iPad decodes; forcing it ends in a playback error. 4K plays.
-            qualities = (b["qs"] as? [String] ?? []).filter { $0 != "auto" && $0 != "highres" }
+            let qs = (b["qs"] as? [String] ?? []).filter { $0 != "auto" && $0 != "highres" }
+            if qs != qualities { qualities = qs }
         case "state":
             Log.add("player state \(b["s"] ?? "?")")
             switch b["s"] as? Int ?? -1 {
