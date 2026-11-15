@@ -369,6 +369,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     func disconnect(_ p: PendingPeer) { server.disconnect(p.id) }
 
+    /// Ends the session in one step: stops playback, empties the queue and disconnects every remote, which
+    /// leaves the viewer on its ready screen. Pairings and history stay.
+    func endSession() {
+        Log.add("session ended")
+        queue = []
+        advance()
+        wantPlaying = false
+        server.disconnectAll()
+    }
+
     /// Called from a real tap on the overlay's button, which is the one kind of call that always unmutes.
     func unmuteVideo() {
         lastKick = Date()

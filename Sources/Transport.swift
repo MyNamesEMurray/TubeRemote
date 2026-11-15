@@ -214,6 +214,11 @@ final class ViewerServer {
             .sorted { $0.name < $1.name }
     }
 
+    /// Disconnects every signed-in remote. Devices still waiting to pair are left alone.
+    func disconnectAll() {
+        for (id, p) in conns where p.authed { disconnect(id) }
+    }
+
     /// Tells the remote, then closes the connection once the message has had time to leave.
     func disconnect(_ id: ObjectIdentifier) {
         guard let c = conns[id]?.conn else { return }

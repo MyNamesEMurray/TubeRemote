@@ -68,6 +68,17 @@ final class ViewerTests: XCTestCase {
         XCTAssertNil(v.snapshot().captionsStatus)
     }
 
+    func testEndSessionStopsEverythingAndKeepsHistory() {
+        let v = makeViewer()
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.enqueue(item("bbbbbbbbbbb")), from: nil)
+        v.endSession()
+        XCTAssertNil(v.current)
+        XCTAssertTrue(v.queue.isEmpty)
+        XCTAssertFalse(v.isPlaying)
+        XCTAssertEqual(v.history.map(\.videoID), ["aaaaaaaaaaa"])
+    }
+
     func testChannelEncryptsBothWaysAndRejectsReplay() throws {
         let secret = Data(repeating: 7, count: 32), salt = Data(repeating: 1, count: 32)
         var remote = Channel(secret: secret, salt: salt, viewer: false)

@@ -188,6 +188,11 @@ struct ViewerView: View {
                     menuRow(showQueue ? "Hide queue" : "Show queue", "list.bullet") { showQueue.toggle() }
                     Divider()
                     menuRow("Settings", "gearshape") { showSettings = true }
+                    Divider()
+                    menuRow("End session", "stop.circle") {
+                        showQueue = false
+                        viewer.endSession()
+                    }
                 }
                 .foregroundStyle(.white)
                 .frame(width: 240)
