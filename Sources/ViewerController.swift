@@ -23,9 +23,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     private let settings: AppSettings
     private let pairing: Pairing
+    private let browser: Browser
     private let server = ViewerServer()
-    private var jsReady = false
-    private var pendingJS: [String] = []
     private var timer: Timer?
     private var toastWork: DispatchWorkItem?
     private var volumeObs: NSKeyValueObservation?
@@ -33,53 +32,76 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var running = false
     private var interruptObs: NSObjectProtocol?
     private var wasPlaying = false
+    /// True from asking for a video until its page reports in; the outgoing page's last events are ignored.
+    private var loading = false
     private var pairedObs: AnyCancellable?
 
-    // YouTube rejects embeds whose origin is youtube.com itself (error 152); any other https origin works.
-    private static let embedOrigin = "https://com.exaltedpixels.tuberemote"
-
-    private static let playerHTML = """
-    <!DOCTYPE html><html><head>
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}</style></head>
-    <body><div id="p"></div>
-    <script>
-    var player, pending, post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
-    function build(id){
-      player = new YT.Player('p', {width:'100%', height:'100%', videoId:id,
-        playerVars:{playsinline:1, autoplay:1, rel:0, origin:'\(embedOrigin)'},
-        events:{
-          onReady:function(e){ e.target.playVideo() },
-          onStateChange:function(e){ post({t:'state', s:e.data}) },
-          onError:function(e){ post({t:'error', c:e.data}) }}});
-    }
-    function load(id){
-      if (player && player.loadVideoById) { player.loadVideoById(id); return }
-      if (window.YT && YT.Player) { if (!player) build(id) } else { pending = id }
-    }
-    function onYouTubeIframeAPIReady(){ if (pending) { build(pending); pending = null } }
-    setInterval(function(){
-      if (player && player.getCurrentTime) post({t:'time', pos:player.getCurrentTime(), dur:player.getDuration()})
-    }, 500);
-    post({t:'page'});
-    </script>
-    <script src="https://www.youtube.com/iframe_api"></script>
-    </body></html>
+    // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
+    // sign-in, so Premium applies and videos that forbid embedding still play.
+    // It fills the screen with the player, starts it with sound, and reports time and state.
+    private static let bridge = """
+    (function(){
+      if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
+      var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
+      var want = true, started = false, alive = false, failed = false, ticks = 0;
+      var css = document.createElement('style');
+      css.textContent = '#movie_player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important}' +
+        '#movie_player video{width:100%!important;height:100%!important;left:0!important;top:0!important;object-fit:contain!important}' +
+        'html,body{overflow:hidden!important;background:#000!important}';
+      document.documentElement.appendChild(css);
+      function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
+      function ad(){ return !!document.querySelector('.ad-showing,.ad-interrupting') }
+      window.__tr = {
+        play: function(){ want = true; var v = vid(); if (v) v.play() },
+        pause: function(){ want = false; var v = vid(); if (v) v.pause() },
+        seek: function(t){ var v = vid(); if (v) v.currentTime = t }
+      };
+      document.addEventListener('playing', function(e){
+        if (e.target.tagName !== 'VIDEO') return;
+        alive = true;
+        if (ad()) return;
+        if (!started) { started = true; if (!want) { e.target.pause(); return } }
+        post({t:'state', s:1});
+      }, true);
+      document.addEventListener('pause', function(e){
+        if (e.target.tagName === 'VIDEO' && started && !e.target.ended && !ad()) post({t:'state', s:2});
+      }, true);
+      document.addEventListener('ended', function(e){
+        if (e.target.tagName === 'VIDEO' && !ad()) post({t:'state', s:0});
+      }, true);
+      setInterval(function(){
+        var v = vid(); ticks++;
+        if (v) {
+          var u = document.querySelector('.ytp-unmute'); if (u && u.offsetParent) u.click();
+          if (v.muted) v.muted = false;
+          if (!started && want && v.paused) v.play();
+          if (!ad()) post({t:'time', pos:v.currentTime, dur:v.duration});
+        }
+        if (!alive && !failed && ticks > 40) { failed = true; post({t:'error'}) }
+      }, 500);
+      post({t:'page'});
+    })()
     """
 
-    init(settings: AppSettings, pairing: Pairing) {
+    init(settings: AppSettings, pairing: Pairing, browser: Browser) {
         self.settings = settings
         self.pairing = pairing
+        self.browser = browser
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
+        // Same Safari-like UA as the browser, so the shared YouTube sign-in is accepted here too.
+        cfg.applicationNameForUserAgent = "Version/17.0 Safari/605.1.15"
+        // iPad asks for desktop sites by default; the bridge is written for the mobile watch page.
+        cfg.defaultWebpagePreferences.preferredContentMode = .mobile
+        cfg.userContentController.addUserScript(WKUserScript(
+            source: Self.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: cfg)
         super.init()
         cfg.userContentController.add(self, name: "yt")
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.scrollView.isScrollEnabled = false
-        webView.loadHTMLString(Self.playerHTML, baseURL: URL(string: Self.embedOrigin))
     }
 
     // MARK: Lifecycle
@@ -149,7 +171,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
          rc.changePlaybackPositionCommand].forEach { $0.removeTarget(nil) }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         UIApplication.shared.isIdleTimerDisabled = false
-        js("player&&player.pauseVideo&&player.pauseVideo()")
+        js("__tr.pause()")
         isPlaying = false
     }
 
@@ -188,11 +210,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return "Added to queue: \(i.title)"
         case .pause:
             isPlaying = false
-            js("player&&player.pauseVideo&&player.pauseVideo()")
+            js("__tr.pause()")
             return "Paused"
         case .resume:
             isPlaying = true
-            js("player&&player.playVideo&&player.playVideo()")
+            js("__tr.play()")
             return "Resumed"
         case .seek(let t):
             seek(t)
@@ -249,7 +271,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         position = 0
         duration = item.duration ?? 0
         isPlaying = true
-        js("load('\(item.videoID)')")
+        loading = true
+        // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
+        browser.restoreCookies { [weak self] in
+            guard let self, self.current?.id == item.id else { return }
+            self.webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(item.videoID)")!))
+        }
     }
 
     private func startIfIdle() {
@@ -264,7 +291,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             isPlaying = false
             position = 0
             duration = 0
-            js("player&&player.stopVideo&&player.stopVideo()")
+            webView.loadHTMLString("<body style='background:#000'>", baseURL: nil)
         } else {
             start(queue.removeFirst())
         }
@@ -280,7 +307,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func seek(_ t: Double) {
         let clamped = max(0, duration > 0 ? min(t, duration) : t)
         position = clamped
-        js("player&&player.seekTo&&player.seekTo(\(clamped),true)")
+        js("__tr.seek(\(clamped))")
     }
 
     private func pushHistory(_ item: VideoItem) {
@@ -300,17 +327,20 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Player bridge
 
+    /// `__tr` only exists on a watch page; calls made on any other page do nothing.
     private func js(_ s: String) {
-        if jsReady { webView.evaluateJavaScript(s) } else { pendingJS.append(s) }
+        webView.evaluateJavaScript("window.__tr&&\(s)")
     }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         guard let b = m.body as? [String: Any], let t = b["t"] as? String else { return }
         switch t {
         case "page":
-            jsReady = true
-            pendingJS.forEach { webView.evaluateJavaScript($0) }
-            pendingJS = []
+            loading = false
+            // A pause that arrived while the page was still loading must hold once it starts.
+            if !isPlaying { js("__tr.pause()") }
+        case _ where loading:
+            break
         case "time":
             if let p = b["pos"] as? Double, p.isFinite { position = p }
             if let d = b["dur"] as? Double, d.isFinite, d > 0 {
@@ -323,17 +353,17 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             case 1: isPlaying = true
             case 2: isPlaying = false
             case 0:
+                // An advert finishing also reports "ended"; only the video's own end moves the queue on.
+                guard duration <= 0 || position >= duration - 3 else { break }
                 isPlaying = false
                 advance()
-            case -1, 5:
-                // Loaded but not started: start it, so a sent video always begins without a tap on this device.
-                if current != nil, isPlaying { webView.evaluateJavaScript("player&&player.playVideo&&player.playVideo()") }
             default: break
             }
             broadcast()
         case "error":
-            Log.add("player error code \(b["c"] ?? "?") for \(current?.videoID ?? "-")")
-            // Typically a video whose owner disabled embedding.
+            Log.add("player never started for \(current?.videoID ?? "-")")
+            // Private, removed or region-blocked, or YouTube is asking for something on this screen.
+            guard current != nil else { break }
             flash("Can't play \(current?.title ?? "video") here, skipping")
             advance()
             broadcast()

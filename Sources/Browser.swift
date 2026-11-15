@@ -11,6 +11,9 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
     let playTapped = PassthroughSubject<Void, Never>()
     private var obs: [NSKeyValueObservation] = []
     private var loaded = false
+    private var restored = false
+    /// nil until the cookie restore starts; callers queued while it runs.
+    private var waiting: [() -> Void]?
 
     // The viewer plays the video, so block local playback unless "Play here" allows it.
     // A blocked play that follows a touch on the player is reported, so that tap can send the video instead.
@@ -56,6 +59,18 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
     func ensureLoaded() {
         guard !loaded else { return }
         loaded = true
+        restoreCookies { [weak self] in
+            self?.webView.load(URLRequest(url: URL(string: "https://www.youtube.com")!))
+        }
+    }
+
+    /// Puts the saved sign-in cookies back, once, then runs `done`. The viewer's player shares this cookie store.
+    func restoreCookies(_ done: @escaping () -> Void) {
+        if let w = waiting {
+            if w.isEmpty && restored { done() } else { waiting?.append(done) }
+            return
+        }
+        waiting = [done]
         let store = webView.configuration.websiteDataStore.httpCookieStore
         let saved = Self.savedCookies()
         Log.add("restoring \(saved.count) saved cookies")
@@ -63,8 +78,11 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         saved.forEach { group.enter(); store.setCookie($0) { group.leave() } }
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
-            self.webView.load(URLRequest(url: URL(string: "https://www.youtube.com")!))
             store.add(self)
+            self.restored = true
+            let run = self.waiting ?? []
+            self.waiting = []
+            run.forEach { $0() }
         }
     }
 

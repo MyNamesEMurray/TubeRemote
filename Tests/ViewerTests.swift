@@ -6,7 +6,7 @@ final class ViewerTests: XCTestCase {
 
     private func makeViewer() -> ViewerController {
         let settings = AppSettings()
-        return ViewerController(settings: settings, pairing: Pairing(settings: settings))
+        return ViewerController(settings: settings, pairing: Pairing(settings: settings), browser: Browser())
     }
 
     func testQueueAdvanceAndPrevious() {

@@ -22,13 +22,14 @@ Change the bundle id in `project.yml` if signing complains it is taken.
 - Sign-in: the viewer challenges each remote; a paired remote proves it holds the secret. After that every state and command message is encrypted and counted (`Channel` in `Sources/Transport.swift`). Unpaired devices can only ask to pair.
 - Versions: `hello` carries `Transport.version`. Devices on different versions show "Update TubeRemote on both devices" instead of failing silently. Add new message fields as optionals.
 - The viewer is the single source of truth for queue/history. Remotes only send commands.
-- Playback runs in the YouTube IFrame player on the viewer. Volume is the system volume (iOS web views cannot set their own).
+- Playback runs on the real YouTube watch page in the viewer's web view, styled to fill the screen and driven by a small script (`bridge` in `Sources/ViewerController.swift`). It shares the YouTube sign-in with the viewer's Browse YouTube screen, so sign in there once and Premium applies. Volume is the system volume (iOS web views cannot set their own).
 - Internet/account control later: keep the same messages and put a relay server between viewer and remote.
 
 ## Known limits
 
 - Any device on the network can ask a viewer to pair; a person must confirm the code on both screens.
-- YouTube sign-in on the viewer does not reach the embedded player (iOS blocks its cookies), so Premium does not remove ads there.
-- Videos with embedding disabled cannot play on a viewer; they are skipped with a notice.
+- Sign-in is per device: sign in to YouTube on the viewer itself (menu, Browse YouTube). The remote's sign-in is not copied over.
+- The viewer script depends on YouTube's page markup (`#movie_player`, `.ytp-unmute`, `.ad-showing`); a YouTube redesign can break it.
+- A video that never starts within 20 seconds (private, removed, region-blocked) is skipped with a notice.
 - Volume changes only work on a real device, not the simulator.
 - Viewer stops advertising when the app is backgrounded or the screen locks.

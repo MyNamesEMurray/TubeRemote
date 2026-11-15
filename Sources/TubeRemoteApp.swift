@@ -2,7 +2,7 @@ import SwiftUI
 
 final class AppModel: ObservableObject {
     let settings: AppSettings
-    let browser = Browser()
+    let browser: Browser
     let viewer: ViewerController
     let remote: RemoteController
     let pairing: Pairing
@@ -13,7 +13,9 @@ final class AppModel: ObservableObject {
         settings = s
         let p = Pairing(settings: s)
         pairing = p
-        viewer = ViewerController(settings: s, pairing: p)
+        let b = Browser()
+        browser = b
+        viewer = ViewerController(settings: s, pairing: p, browser: b)
         remote = RemoteController(settings: s, pairing: p)
         mode = s.defaultMode
     }
