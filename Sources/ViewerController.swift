@@ -97,7 +97,17 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       document.addEventListener('ended', function(e){
         if (e.target.tagName === 'VIDEO' && !ad()) post({t:'state', s:0});
       }, true);
-      document.addEventListener('click', function(){ post({t:'tap'}) }, true);
+      // YouTube's player pauses or resumes on any tap. Keep taps away from it and show our own controls
+      // instead. During an advert taps go through untouched, so Skip Ad still works.
+      var lastTap = 0;
+      ['touchstart','touchend','pointerdown','pointerup','mousedown','mouseup','click','dblclick'].forEach(function(n){
+        document.addEventListener(n, function(e){
+          if (ad()) return;
+          e.stopImmediatePropagation();
+          if (n === 'touchend' && e.cancelable) e.preventDefault();
+          if ((n === 'touchend' || n === 'click') && Date.now() - lastTap > 400) { lastTap = Date.now(); post({t:'tap'}) }
+        }, {capture: true, passive: false});
+      });
       setInterval(function(){
         var v = vid(); ticks++;
         if (v) {
