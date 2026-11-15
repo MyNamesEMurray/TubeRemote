@@ -125,7 +125,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         r.hevchdr = ok('video/mp4; codecs="hvc1.2.4.L153.B0"');
         try { r.levels = p.getAvailableQualityLevels().join(',') } catch(e) { r.levels = '-' }
         r.playing = v ? v.videoWidth + 'x' + v.videoHeight : '-';
-        r.ua = navigator.userAgent.replace(/^Mozilla\/5.0 /, '');
+        r.ua = navigator.userAgent.replace('Mozilla/5.0 ', '');
         // The player's own account of what it is playing. format 337 is 2160p60 HDR, 315 and 313 are SDR 4K.
         try {
           var d = JSON.parse(p.getDebugText());
