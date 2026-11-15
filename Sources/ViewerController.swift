@@ -71,7 +71,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, wc = null, wq = null, tc = 0, tq = 0;
+      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, probed = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -110,6 +110,32 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       document.documentElement.appendChild(css);
       function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
       function ad(){ return !!document.querySelector('.ad-showing,.ad-interrupting') }
+      // One-off report to the debug log: can this device show HDR, and can this web view decode it?
+      function probe(){
+        var r = {}, v = vid(), p = mp();
+        var mm = function(s){ try { return matchMedia(s).matches } catch(e) { return 'err' } };
+        r.displayHDR = mm('(dynamic-range: high)');
+        r.videoHDR = mm('(video-dynamic-range: high)');
+        var ms = window.ManagedMediaSource || window.MediaSource;
+        r.mse = window.ManagedMediaSource ? 'managed' : (window.MediaSource ? 'mse' : 'none');
+        var ok = function(c){ try { return ms ? ms.isTypeSupported(c) : false } catch(e) { return 'err' } };
+        r.vp9 = ok('video/webm; codecs="vp09.00.10.08"');
+        r.vp9hdr = ok('video/webm; codecs="vp09.02.10.10"');
+        r.av1hdr = ok('video/mp4; codecs="av01.0.08M.10"');
+        r.hevchdr = ok('video/mp4; codecs="hvc1.2.4.L153.B0"');
+        try { r.levels = p.getAvailableQualityLevels().join(',') } catch(e) { r.levels = '-' }
+        r.playing = v ? v.videoWidth + 'x' + v.videoHeight : '-';
+        var done = function(){ post({t:'hdr', info: JSON.stringify(r)}) };
+        var mc = navigator.mediaCapabilities;
+        if (!mc || !mc.decodingInfo) { r.mediaCapabilities = 'none'; return done() }
+        var cfg = function(ct){ return {type:'media-source', video:{contentType:ct, width:3840, height:2160, bitrate:25000000,
+          framerate:30, hdrMetadataType:'smpteSt2086', colorGamut:'rec2020', transferFunction:'pq'}} };
+        Promise.all([['mcVp9','video/webm; codecs="vp09.02.10.10"'], ['mcAv1','video/mp4; codecs="av01.0.08M.10"'],
+          ['mcHevc','video/mp4; codecs="hvc1.2.4.L153.B0"']].map(function(x){
+          return mc.decodingInfo(cfg(x[1])).then(function(i){
+            r[x[0]] = i.supported ? (i.smooth ? 'smooth' : 'choppy') + (i.powerEfficient ? '+efficient' : '') : 'no'
+          }).catch(function(){ r[x[0]] = 'err' }) })).then(done, done);
+      }
       // YouTube has renamed its Skip button more than once; try each known name.
       function skipButton(){
         var b = document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button,.ytp-ad-skip-button-container button');
@@ -176,6 +202,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       });
       setInterval(function(){
         var v = vid(); ticks++;
+        if (!probed && ticks === 8) { probed = true; probe() }
         post({t:'ad', skip: ad() && !!skipButton()});
         if (v) {
           if (!started && want && v.paused) v.play();
@@ -496,6 +523,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             pushSettings()
         case "tap":
             tapped.send()
+        case "hdr":
+            Log.add("HDR check: \(b["info"] as? String ?? "?")")
         case "nocc":
             captions = false
             captionsNone = true
