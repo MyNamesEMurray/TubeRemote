@@ -62,7 +62,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         if (on) { var l = p.getOption('captions','tracklist') || []; if (l.length) p.setOption('captions','track',l[0]) }
         else p.setOption('captions','track',{}) } catch(e) {} }
       var css = document.createElement('style');
-      css.textContent = '#movie_player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important}' +
+      // Hide YouTube's top bar, then pin the player's wrappers over the whole screen. The wrappers are pinned
+      // rather than the player itself because WebKit placed a pinned player below the top bar.
+      css.textContent = 'ytm-mobile-topbar-renderer,ytm-pivot-bar-renderer,#header-bar{display:none!important}' +
+        '#player-container-id,#player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;transform:none!important;z-index:2147483647!important;background:#000!important}' +
+        '#movie_player{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;background:#000!important}' +
+        // YouTube sizes captions for a small phone player; scale them to the screen instead.
+        '#movie_player .ytp-caption-segment{font-size:clamp(15px,2.4vw,30px)!important;line-height:1.35!important}' +
         // YouTube's own wrapper around the video has no height, so size both it and the video explicitly.
         '#movie_player .html5-video-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}' +
         '#movie_player video{position:absolute!important;width:100vw!important;height:100vh!important;left:0!important;top:0!important;object-fit:contain!important}' +
