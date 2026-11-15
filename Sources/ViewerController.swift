@@ -86,6 +86,19 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
         seek: function(t){ var v = vid(); if (v) v.currentTime = t },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
+        // Asks for Picture in Picture the way any web page may. YouTube decides whether to allow it
+        // (it does for Premium accounts); nothing here overrides a refusal.
+        pip: function(){
+          var v = vid(); if (!v) return;
+          var on = function(){ return v.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === v };
+          var was = on();
+          try {
+            if (typeof v.webkitSetPresentationMode === 'function') v.webkitSetPresentationMode(was ? 'inline' : 'picture-in-picture');
+            else if (was) document.exitPictureInPicture();
+            else v.requestPictureInPicture();
+          } catch(e) {}
+          if (!was) setTimeout(function(){ if (!on()) post({t:'nopip'}) }, 1500);
+        },
         set: function(o){
           // Back to automatic: lift the limit and forget the choice YouTube saved for later videos.
           if (!o.q && wq) {
@@ -237,6 +250,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     func beginPair(_ p: PendingPeer) {
         pairing.begin(peer: p.id) { [weak self] in self?.server.send(.pair($0), to: p.id) }
     }
+
+    /// Moves the video into, or back out of, a floating Picture in Picture window.
+    func togglePictureInPicture() { js("__tr.pip()") }
 
     /// Re-advertise under a new device name.
     func rename() {
@@ -427,6 +443,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             pushSettings()
         case "tap":
             tapped.send()
+        case "nopip":
+            flash("Picture in Picture is not available. YouTube allows it with Premium.")
         case _ where loading:
             break
         case "ad":

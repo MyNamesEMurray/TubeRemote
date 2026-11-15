@@ -175,6 +175,14 @@ struct ViewerControls: View {
                        viewer.isPlaying ? .pause : .resume, size: 40)
                 button("goforward.10", "Forward 10 seconds", .skip(10))
                 button("forward.end.fill", "Next", .next)
+                Button {
+                    Haptics.tap()
+                    touched()
+                    viewer.togglePictureInPicture()
+                } label: {
+                    Image(systemName: "pip.enter").font(.system(size: 24)).frame(width: 56, height: 56).contentShape(Rectangle())
+                }
+                .accessibilityLabel("Picture in Picture")
             }
         }
         .foregroundStyle(.white)
