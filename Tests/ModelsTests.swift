@@ -22,6 +22,13 @@ final class ModelsTests: XCTestCase {
         XCTAssertFalse(item("abcdefgh');alert(1)//").isValid)
     }
 
+    func testGoodbyeAndSpeedLabels() throws {
+        let data = try JSONEncoder().encode(ServerMessage.goodbye)
+        guard case .goodbye = try JSONDecoder().decode(ServerMessage.self, from: data) else { return XCTFail("wrong case") }
+        XCTAssertEqual(rateLabel(1), "1×")
+        XCTAssertEqual(rateLabel(1.25), "1.25×")
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")

@@ -16,6 +16,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published var history: [VideoItem] = []
     @Published var toast: String?
     @Published var pending: [PendingPeer] = []
+    @Published var connected: [PendingPeer] = []
     @Published var volume: Float = AVAudioSession.sharedInstance().outputVolume
     /// iOS refused Local Network access, so no remote can find this viewer.
     @Published var denied = false
@@ -50,7 +51,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
     private var wantQuality: String?
     // What the player reports back.
-    private var speed = 1.0
+    @Published private(set) var speed = 1.0
     // Published so the viewer's own overlay shows them; remotes get the same values in the snapshot.
     @Published private(set) var captions = false
     @Published private(set) var quality: String?
@@ -280,7 +281,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.snapshot = { [weak self] in self?.snapshot() }
         server.paired = { [weak self] in self?.settings.paired($0) }
         server.onPair = { [weak self] m, id, reply in self?.pairing.receive(m, from: id, send: reply) }
-        server.onPeers = { [weak self] in self?.pending = self?.server.pending ?? [] }
+        server.onPeers = { [weak self] in
+            self?.pending = self?.server.pending ?? []
+            self?.connected = self?.server.connected ?? []
+        }
         server.onGone = { [weak self] id in self?.pairing.cancel(peer: id) }
         server.onDenied = { [weak self] in self?.denied = $0 }
         pairing.onPaired = { [weak self] d in self?.server.challenge(key: d.key) }
@@ -333,6 +337,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         isPlaying = false
         wantPlaying = false
     }
+
+    func disconnect(_ p: PendingPeer) { server.disconnect(p.id) }
 
     func beginPair(_ p: PendingPeer) {
         pairing.begin(peer: p.id) { [weak self] in self?.server.send(.pair($0), to: p.id) }
@@ -577,7 +583,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 duration = d
                 if current?.duration != d { current?.duration = d }
             }
-            if let r = b["rate"] as? Double { speed = r }
+            if let r = b["rate"] as? Double, r != speed { speed = r }
             // Published values are only set when they change, so a steady player causes no redraw.
             if let c = b["cc"] as? Bool, c != captions { captions = c }
             // YouTube starts the first video of a session muted, and it can stall while starting.

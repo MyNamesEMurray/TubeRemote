@@ -12,6 +12,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var needsPairing = false
     /// The two devices run app versions that cannot talk to each other.
     @Published var outdated = false
+    /// The viewer disconnected this remote on purpose, so it stays away until its owner reconnects.
+    @Published var released = false
     var endpoints: [NWEndpoint]
     private var attempt = 0
     var id: String { key }
@@ -48,7 +50,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     func connect() {
-        guard !stopped, conn == nil else { return }
+        guard !stopped, !released, conn == nil else { return }
         retryPending = false
         lastActivity = Date()
         peerVersion = nil
@@ -89,6 +91,12 @@ final class RemoteClient: ObservableObject, Identifiable {
 
     var isPaired: Bool { settings.paired(key) != nil }
 
+    func reconnect() {
+        guard released else { return }
+        released = false
+        connect()
+    }
+
     func beginPair() {
         pairing.begin(peer: key) { [weak self] in self?.sendRaw(.pair($0)) }
     }
@@ -119,6 +127,10 @@ final class RemoteClient: ObservableObject, Identifiable {
             detail = ""
         case .state:
             Log.add("ignored unencrypted state")
+        case .goodbye:
+            Log.add("disconnected by \(title)")
+            released = true
+            drop()
         case .unpaired:
             guard sameVersion() else { return }
             channel = nil
@@ -172,7 +184,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         connected = false
         channel = nil
         pairing.cancel(peer: key)
-        guard !stopped, !retryPending else { return }
+        guard !stopped, !released, !retryPending else { return }
         retryPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.connect() }
     }

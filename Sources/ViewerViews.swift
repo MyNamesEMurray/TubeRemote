@@ -112,7 +112,7 @@ struct ViewerView: View {
     private var menu: some View {
         Menu {
             Button { showBrowse = true } label: { Label("Browse YouTube", systemImage: "safari") }
-            Button { showPair = true } label: { Label("Pair a device", systemImage: "link") }
+            Button { showPair = true } label: { Label("Devices", systemImage: "link") }
             Button { showQueue.toggle() } label: { Label(showQueue ? "Hide queue" : "Show queue", systemImage: "list.bullet") }
             Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
         } label: {
@@ -169,6 +169,14 @@ struct ViewerControls: View {
     /// Captions and quality, the same options the remote has.
     private var options: some View {
         HStack(spacing: 12) {
+            Menu {
+                ForEach(playbackSpeeds, id: \.self) { r in
+                    check(rateLabel(r), r == viewer.speed) { viewer.handle(.setSpeed(r), from: nil) }
+                }
+            } label: {
+                option(rateLabel(viewer.speed), "speedometer")
+            }
+            .accessibilityLabel("Playback speed, \(rateLabel(viewer.speed))")
             Button {
                 Haptics.tap()
                 touched()
@@ -388,7 +396,7 @@ struct LocalBrowse: View {
     }
 }
 
-/// Remotes that connected but are not paired yet; picking one starts the code comparison.
+/// Remotes connected right now (each with a Disconnect button) and remotes that connected but are not paired yet.
 struct PairSheet: View {
     @EnvironmentObject var viewer: ViewerController
     @Environment(\.dismiss) private var dismiss
@@ -396,18 +404,42 @@ struct PairSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                if viewer.pending.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "iphone").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
-                        Text("No unpaired devices found. Open the app on the other device in Remote mode.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                } else {
+                if !viewer.connected.isEmpty {
                     Section {
+                        ForEach(viewer.connected) { p in
+                            HStack(spacing: 12) {
+                                Image(systemName: "iphone").foregroundStyle(.tint).frame(width: 28)
+                                Text(p.name)
+                                Spacer()
+                                Button("Disconnect", role: .destructive) {
+                                    Haptics.warning()
+                                    viewer.disconnect(p)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                            .frame(minHeight: 44)
+                        }
+                    } header: {
+                        Text("Connected")
+                    } footer: {
+                        Text("A disconnected device stays paired. It reconnects when its owner chooses this viewer again.")
+                    }
+                }
+                if viewer.pending.isEmpty {
+                    if viewer.connected.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "iphone").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                            Text("No devices found. Open the app on the other device in Remote mode.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    }
+                } else {
+                    Section("Waiting to pair") {
                         ForEach(viewer.pending) { p in
                             Button {
                                 Haptics.tap()
@@ -430,7 +462,7 @@ struct PairSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Pair a device")
+            .navigationTitle("Devices")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }

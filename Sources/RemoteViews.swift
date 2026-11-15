@@ -138,6 +138,8 @@ struct ChipInner: View {
                 // A spinner, not just a colour, so the state reads without colour vision.
                 if client.connected {
                     Circle().fill(Color.green).frame(width: 8, height: 8)
+                } else if client.released {
+                    Circle().fill(Color.secondary).frame(width: 8, height: 8)
                 } else {
                     ProgressView().controlSize(.mini)
                 }
@@ -328,6 +330,7 @@ struct DevicePicker: View {
                     ForEach(remote.devices) { c in
                         DeviceRow(client: c, selected: c.key == remote.selectedKey, onTap: {
                             Haptics.tap()
+                            c.reconnect()
                             remote.select(c)
                             dismiss()
                         }, onPair: {
@@ -359,6 +362,7 @@ struct DeviceRow: View {
     let onPair: () -> Void
 
     private var status: String {
+        if client.released { return "Disconnected by this viewer. Tap to reconnect." }
         if client.outdated { return "Update TubeRemote on both devices" }
         if client.needsPairing { return "Not paired" }
         guard client.connected, let s = client.state else {
@@ -430,8 +434,17 @@ struct NowPlayingContent: View {
             VStack(spacing: 0) {
                 if !client.connected {
                     HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Reconnecting to \(client.title)…").font(.footnote)
+                        if client.released {
+                            Text("Disconnected by \(client.title)").font(.footnote)
+                            Button("Reconnect") {
+                                Haptics.tap()
+                                client.reconnect()
+                            }
+                            .font(.footnote.weight(.semibold))
+                        } else {
+                            ProgressView()
+                            Text("Reconnecting to \(client.title)…").font(.footnote)
+                        }
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -610,11 +623,9 @@ struct ControlsPane: View {
         }
     }
 
-    private static let speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+    private static let speeds = playbackSpeeds
 
-    private func rate(_ r: Double) -> String {
-        (r == r.rounded() ? "\(Int(r))" : "\(r)") + "×"
-    }
+    private func rate(_ r: Double) -> String { rateLabel(r) }
 
     private func option(_ text: String, _ symbol: String) -> some View {
         Label(text, systemImage: symbol)

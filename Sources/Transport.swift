@@ -206,6 +206,22 @@ final class ViewerServer {
         if let c = conns[id]?.conn { Transport.send(m, on: c) }
     }
 
+    /// Remotes signed in right now, so the person at the viewer can see and disconnect them.
+    var connected: [PendingPeer] {
+        conns.compactMap { $0.value.authed ? PendingPeer(id: $0.key, name: $0.value.name) : nil }
+            .sorted { $0.name < $1.name }
+    }
+
+    /// Tells the remote, then closes the connection once the message has had time to leave.
+    func disconnect(_ id: ObjectIdentifier) {
+        guard let c = conns[id]?.conn else { return }
+        send(.goodbye, to: id)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            c.cancel()
+            self?.remove(id)
+        }
+    }
+
     private func sendSealed(_ m: ServerMessage, to id: ObjectIdentifier) {
         guard let box = conns[id]?.channel?.seal(m) else { return }
         send(.sealed(box), to: id)

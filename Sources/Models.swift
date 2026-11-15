@@ -133,7 +133,13 @@ enum ServerMessage: Codable {
     case challenge(Data)
     case pair(PairMessage)
     case sealed(Data)
+    /// The person at the viewer disconnected this remote; it should not reconnect by itself.
+    case goodbye
 }
+
+let playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+
+func rateLabel(_ r: Double) -> String { (r == r.rounded() ? "\(Int(r))" : "\(r)") + "×" }
 
 func parseVideoID(_ url: URL?) -> String? {
     guard let url, let host = url.host?.lowercased() else { return nil }
