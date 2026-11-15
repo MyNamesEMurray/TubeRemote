@@ -43,6 +43,11 @@ enum QueueAction: String, CaseIterable, Identifiable {
     }
 }
 
+extension Command {
+    /// The command's name without its contents, for the log: "play", not the video it carries.
+    var logName: String { String(String(describing: self).prefix { $0 != "(" }) }
+}
+
 struct VideoItem: Codable, Identifiable, Hashable {
     var id = UUID()
     var videoID: String

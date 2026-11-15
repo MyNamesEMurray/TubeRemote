@@ -567,14 +567,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case "perr":
             guard let id = current?.videoID else { break }
             if b["forced"] as? Bool == true {
-                Log.add("player error with quality forced, back to Auto for \(id)")
+                Log.add("player error with quality forced, back to Auto")
                 wantQuality = nil
                 autoQuality = true
                 flash("That quality will not play on this device. Back to Auto.")
                 loading = true
                 webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(Int(position))s")!))
             } else {
-                Log.add("player error screen for \(id)")
+                Log.add("player error screen")
                 flash("Can't play \(current?.title ?? "video") here, skipping")
                 advance()
             }
@@ -652,7 +652,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }
             broadcast()
         case "error":
-            Log.add("player never started for \(current?.videoID ?? "-")")
+            Log.add("player never started")
             // Private, removed or region-blocked, or YouTube is asking for something on this screen.
             guard current != nil else { break }
             flash("Can't play \(current?.title ?? "video") here, skipping")

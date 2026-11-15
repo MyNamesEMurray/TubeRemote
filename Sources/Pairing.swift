@@ -71,7 +71,7 @@ final class Pairing: ObservableObject {
             s.secret = derived.withUnsafeBytes { Data($0) }
             let n = SHA256.hash(data: salt).prefix(4).reduce(UInt32(0)) { $0 << 8 | UInt32($1) } % 1_000_000
             prompt = Prompt(name: s.peerName, code: String(format: "%06d", n))
-            Log.add("pairing code ready for \(s.peerName)")
+            Log.add("pairing code ready")
         case .decision(let yes):
             guard let s = session, s.secret != nil else { return }
             guard yes else { return cancel() }
@@ -118,7 +118,7 @@ final class Pairing: ObservableObject {
         session = nil
         let d = PairedDevice(key: s.peerKey, name: s.peerName, secret: secret)
         settings.addPaired(d)
-        Log.add("paired with \(d.name)")
+        Log.add("paired with \(Log.who(d.key))")
         onPaired?(d)
     }
 }

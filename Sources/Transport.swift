@@ -146,7 +146,9 @@ final class ViewerServer {
         running = true
         guard let l = try? NWListener(using: Transport.parameters()) else { return }
         l.service = Transport.service(name: name, key: key)
-        l.serviceRegistrationUpdateHandler = { Log.add("service \($0)") }
+        l.serviceRegistrationUpdateHandler = { change in
+            Log.add("service \(String(describing: change).prefix { $0 != "(" })")
+        }
         l.newConnectionHandler = { [weak self] c in self?.accept(c) }
         l.stateUpdateHandler = { [weak self] state in
             Log.add("listener \(state) port \(self?.listener?.port.map { "\($0)" } ?? "-")")
@@ -167,12 +169,12 @@ final class ViewerServer {
             }
         }
         l.start(queue: .main)
-        Log.add("listener starting as \(name)#\(key)")
+        Log.add("listener starting")
         listener = l
         sweeper = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             for (id, e) in self.conns where Date().timeIntervalSince(e.last) > (e.hello ? 15 : 5) {
-                Log.add("dropping silent remote \(e.name) hello=\(e.hello)")
+                Log.add("dropping silent remote \(Log.who(e.key)) hello=\(e.hello)")
                 e.conn.cancel()
                 self.remove(id)
             }
@@ -250,7 +252,7 @@ final class ViewerServer {
     /// The paired list changed: disconnect signed-in remotes that are no longer on it.
     func keep(_ keys: Set<String>) {
         for (id, p) in conns where p.authed && !keys.contains(p.key ?? "") {
-            Log.add("unpaired \(p.name), disconnecting")
+            Log.add("unpaired \(Log.who(p.key)), disconnecting")
             p.conn.cancel()
             remove(id)
         }
@@ -266,7 +268,7 @@ final class ViewerServer {
     private func accept(_ c: NWConnection) {
         let id = ObjectIdentifier(c)
         conns[id] = Peer(conn: c)
-        Log.add("accepted \(c.endpoint)")
+        Log.add("accepted connection")
         c.stateUpdateHandler = { [weak self] s in
             Log.add("inbound \(s)")
             switch s {
@@ -289,9 +291,9 @@ final class ViewerServer {
         case .hello(let name, let key, let version):
             send(.hello(version: Transport.version), to: id)
             guard version == Transport.version else {
-                return Log.add("\(name) runs protocol \(version.map { "\($0)" } ?? "1"), this device \(Transport.version)")
+                return Log.add("\(Log.who(key)) runs protocol \(version.map { "\($0)" } ?? "1"), this device \(Transport.version)")
             }
-            if conns[id]?.hello == false { Log.add("hello from \(name)") }
+            if conns[id]?.hello == false { Log.add("hello from \(Log.who(key))") }
             conns[id]?.name = String(name.prefix(40))
             conns[id]?.hello = true
             conns[id]?.key = key
@@ -307,7 +309,7 @@ final class ViewerServer {
             guard let p = conns[id], let nonce = p.nonce, let key = p.key, let d = paired?(key), theirs.count == 16,
                   HMAC<SHA256>.isValidAuthenticationCode(mac, authenticating: nonce, using: SymmetricKey(data: d.secret))
             else {
-                Log.add("auth failed for \(conns[id]?.name ?? "?")")
+                Log.add("auth failed for \(Log.who(conns[id]?.key))")
                 conns[id]?.nonce = nil
                 send(.unpaired, to: id)
                 onPeers?()
@@ -315,7 +317,7 @@ final class ViewerServer {
             }
             conns[id]?.channel = Channel(secret: d.secret, salt: nonce + theirs, viewer: true)
             conns[id]?.nonce = nil
-            Log.add("authenticated \(p.name)")
+            Log.add("authenticated \(Log.who(p.key))")
             if let s = snapshot?() { sendSealed(.state(s), to: id) }
             onPeers?()
         case .ping:
@@ -325,14 +327,14 @@ final class ViewerServer {
             onPair?(pm, id) { Transport.send(ServerMessage.pair($0), on: conn) }
         case .sealed(let box):
             guard let body = conns[id]?.channel?.open(box) else {
-                Log.add("bad encrypted message from \(conns[id]?.name ?? "?"), disconnecting")
+                Log.add("bad encrypted message from \(Log.who(conns[id]?.key)), disconnecting")
                 conn.cancel()
                 return remove(id)
             }
             guard case .command(let cmd)? = try? JSONDecoder().decode(ClientMessage.self, from: body) else {
                 return Log.add("rx sealed decode failed")
             }
-            Log.add("command \(cmd) from \(conns[id]?.name ?? "?")")
+            Log.add("command \(cmd.logName) from \(Log.who(conns[id]?.key))")
             onCommand?(cmd, conns[id]?.name ?? "a remote")
         case .command:
             Log.add("ignored unencrypted command")

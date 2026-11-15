@@ -18,6 +18,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     private var attempt = 0
     var id: String { key }
     var title: String { state?.deviceName ?? name }
+    private var tag: String { Log.who(key) }
 
     private let settings: AppSettings
     private let pairing: Pairing
@@ -58,11 +59,11 @@ final class RemoteClient: ObservableObject, Identifiable {
         let endpoint = endpoints[attempt % endpoints.count]
         attempt += 1
         let c = NWConnection(to: endpoint, using: Transport.parameters())
-        Log.add("connecting to \(title) at \(endpoint)")
+        Log.add("connecting to \(tag)")
         conn = c
         c.stateUpdateHandler = { [weak self, weak c] s in
             guard let self, let c, c === self.conn else { return }
-            Log.add("outbound \(self.title): \(s)")
+            Log.add("outbound \(self.tag): \(s)")
             switch s {
             case .ready:
                 self.ready = true
@@ -114,13 +115,13 @@ final class RemoteClient: ObservableObject, Identifiable {
             outdated = v != Transport.version
         case .sealed(let box):
             guard let body = channel?.open(box) else {
-                Log.add("bad encrypted message from \(title)")
+                Log.add("bad encrypted message from \(tag)")
                 return drop()
             }
             guard case .state(let st)? = try? JSONDecoder().decode(ServerMessage.self, from: body) else {
                 return Log.add("rx sealed decode failed")
             }
-            if !connected { Log.add("first state from \(title)") }
+            if !connected { Log.add("first state from \(tag)") }
             state = st
             connected = true
             needsPairing = false
@@ -128,7 +129,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         case .state:
             Log.add("ignored unencrypted state")
         case .goodbye:
-            Log.add("disconnected by \(title)")
+            Log.add("disconnected by \(tag)")
             released = true
             drop()
         case .unpaired:
@@ -159,9 +160,9 @@ final class RemoteClient: ObservableObject, Identifiable {
 
     func send(_ cmd: Command) {
         guard connected, let box = channel?.seal(ClientMessage.command(cmd)) else {
-            return Log.add("send \(cmd) dropped: not connected")
+            return Log.add("send \(cmd.logName) dropped: not connected")
         }
-        Log.add("send \(cmd)")
+        Log.add("send \(cmd.logName)")
         sendRaw(.sealed(box))
     }
 
@@ -178,7 +179,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     private func drop() {
-        Log.add("drop \(title)")
+        Log.add("drop \(tag)")
         let old = conn
         conn = nil
         old?.cancel()
@@ -241,7 +242,7 @@ final class RemoteController: ObservableObject {
             }
         }
         b.browseResultsChangedHandler = { [weak self] results, _ in
-            Log.add("browse results: \(results.map { "\($0.endpoint)" })")
+            Log.add("browse results: \(results.count)")
             self?.update(results)
         }
         b.start(queue: .main)

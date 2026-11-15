@@ -22,6 +22,10 @@ final class Log: ObservableObject {
         save()
     }
 
+    /// Names, titles and addresses stay out of the log. A device appears as the last four characters of its
+    /// random key, which tells two devices apart and nothing more.
+    static func who(_ key: String?) -> String { key.map { "device \($0.suffix(4))" } ?? "a device" }
+
     func setCleanExit(_ clean: Bool) {
         UserDefaults.standard.set(clean, forKey: Self.cleanKey)
         save()
