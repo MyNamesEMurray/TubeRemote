@@ -71,7 +71,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, probed = false;
+      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, probed = false, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -203,6 +203,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       setInterval(function(){
         var v = vid(); ticks++;
         if (!probed && ticks === 8) { probed = true; probe() }
+        // YouTube's own error screen ("An error occurred", "Video unavailable"). A forced quality the device
+        // cannot decode ends here, so forget it and let the app reload on Auto.
+        var er = document.querySelector('.ytp-error');
+        if (er && er.offsetParent && !errored) {
+          errored = true;
+          if (wq) { try { localStorage.removeItem('yt-player-quality') } catch(e) {} }
+          post({t:'perr', forced: !!wq});
+        }
         post({t:'ad', skip: ad() && !!skipButton()});
         if (v) {
           if (!started && want && v.paused) v.play();
@@ -525,6 +533,21 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             tapped.send()
         case "hdr":
             Log.add("HDR check: \(b["info"] as? String ?? "?")")
+        case "perr":
+            guard let id = current?.videoID else { break }
+            if b["forced"] as? Bool == true {
+                Log.add("player error with quality forced, back to Auto for \(id)")
+                wantQuality = nil
+                autoQuality = true
+                flash("That quality will not play on this device. Back to Auto.")
+                loading = true
+                webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(Int(position))s")!))
+            } else {
+                Log.add("player error screen for \(id)")
+                flash("Can't play \(current?.title ?? "video") here, skipping")
+                advance()
+            }
+            broadcast()
         case "nocc":
             captions = false
             captionsNone = true
@@ -557,7 +580,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 js("__tr.kick()")
             }
             quality = b["q"] as? String
-            qualities = (b["qs"] as? [String] ?? []).filter { $0 != "auto" }
+            // "highres" is 8K, which no iPad decodes; forcing it ends in a playback error. 4K plays.
+            qualities = (b["qs"] as? [String] ?? []).filter { $0 != "auto" && $0 != "highres" }
         case "state":
             Log.add("player state \(b["s"] ?? "?")")
             switch b["s"] as? Int ?? -1 {
