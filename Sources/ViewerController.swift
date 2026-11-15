@@ -46,6 +46,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var quality: String?
     private var qualities: [String] = []
     private var adSkippable = false
+    /// What was last asked for, as opposed to `isPlaying`, which is what the page reports.
+    private var wantPlaying = false
+    /// When the current video first reported playing; nil until it has.
+    private var firstPlay: Date?
+    private var lastKick = Date.distantPast
     private var pairedObs: AnyCancellable?
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
@@ -86,6 +91,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
         seek: function(t){ var v = vid(); if (v) v.currentTime = t },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
+        // Unmute and play. Called from the app, not from a timer: WebKit only lets sound start
+        // from a call it treats as a person's action, and pauses a video unmuted any other way.
+        kick: function(){
+          var v = vid(); if (!v) return;
+          var u = document.querySelector('.ytp-unmute'); if (u && u.offsetParent) u.click();
+          v.muted = false;
+          if (want && v.paused) v.play();
+        },
         // Asks for Picture in Picture the way any web page may. YouTube decides whether to allow it
         // (it does for Premium accounts); nothing here overrides a refusal.
         pip: function(){
@@ -137,8 +150,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         var v = vid(); ticks++;
         post({t:'ad', skip: ad() && !!skipButton()});
         if (v) {
-          var u = document.querySelector('.ytp-unmute'); if (u && u.offsetParent) u.click();
-          if (v.muted) v.muted = false;
           if (!started && want && v.paused) v.play();
           if (!ad()) {
             var p = mp(), q = null, qs = [];
@@ -148,7 +159,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
               try { if (wq && p.getPlaybackQuality() !== wq && tq++ < 20) p.setPlaybackQualityRange(wq, wq) } catch(e) {}
             }
             try { q = p.getPlaybackQuality(); qs = p.getAvailableQualityLevels() } catch(e) {}
-            post({t:'time', pos:v.currentTime, dur:v.duration, rate:v.playbackRate, cc:cc(), q:q, qs:qs});
+            post({t:'time', pos:v.currentTime, dur:v.duration, rate:v.playbackRate, cc:cc(), q:q, qs:qs,
+                  paused:v.paused, muted:v.muted});
           }
         }
         if (!alive && !failed && ticks > 40) { failed = true; post({t:'error'}) }
@@ -247,6 +259,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         UIApplication.shared.isIdleTimerDisabled = false
         js("__tr.pause()")
         isPlaying = false
+        wantPlaying = false
     }
 
     func beginPair(_ p: PendingPeer) {
@@ -287,10 +300,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return "Added to queue: \(i.title)"
         case .pause:
             isPlaying = false
+            wantPlaying = false
             js("__tr.pause()")
             return "Paused"
         case .resume:
             isPlaying = true
+            wantPlaying = true
             js("__tr.play()")
             return "Resumed"
         case .seek(let t):
@@ -367,6 +382,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         position = 0
         duration = item.duration ?? 0
         isPlaying = true
+        wantPlaying = true
+        firstPlay = nil
         loading = true
         adSkippable = false
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
@@ -463,13 +480,27 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }
             if let r = b["rate"] as? Double { speed = r }
             if let c = b["cc"] as? Bool { captions = c }
+            // YouTube starts the first video of a session muted, and it can stall while starting.
+            // Until it has played for a few seconds, push it along; a muted video is always unmuted.
+            let starting = firstPlay.map { Date().timeIntervalSince($0) < 8 } ?? true
+            let stalled = b["paused"] as? Bool == true && starting
+            if wantPlaying, stalled || b["muted"] as? Bool == true, Date().timeIntervalSince(lastKick) > 1 {
+                lastKick = Date()
+                js("__tr.kick()")
+            }
             quality = b["q"] as? String
             qualities = (b["qs"] as? [String] ?? []).filter { $0 != "auto" }
         case "state":
             Log.add("player state \(b["s"] ?? "?")")
             switch b["s"] as? Int ?? -1 {
-            case 1: isPlaying = true
-            case 2: isPlaying = false
+            case 1:
+                isPlaying = true
+                if firstPlay == nil { firstPlay = Date() }
+            case 2:
+                // A pause in the first seconds is the start-up stall handled above, not a real pause.
+                if wantPlaying, firstPlay.map({ Date().timeIntervalSince($0) < 8 }) ?? true { break }
+                isPlaying = false
+                wantPlaying = false
             case 0:
                 // An advert finishing also reports "ended"; only the video's own end moves the queue on.
                 guard duration <= 0 || position >= duration - 3 else { break }
