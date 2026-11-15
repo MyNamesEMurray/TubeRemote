@@ -325,6 +325,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Log.add("audio interruption \(type == .began ? "began" : "ended")")
             if type == .began {
+                // Unmuting a video makes iOS report an interruption to this app's own audio session, though
+                // nothing else is playing. Pausing for it is what stopped every first video, so it is ignored
+                // while a video is starting or has just been unmuted. A real one (a call, Siri) comes later.
+                if Date().timeIntervalSince(self.startedAt) < 8 || Date().timeIntervalSince(self.lastKick) < 3 {
+                    return Log.add("ignored: it came with the video starting or unmuting")
+                }
                 self.wasPlaying = self.isPlaying
                 self.handle(.pause, from: nil)
             } else if wasPlaying, let o = n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
