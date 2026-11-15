@@ -22,10 +22,11 @@ on:
 jobs:
   testflight:
     runs-on: macos-latest
-    # Two uploads at once collide in App Store Connect; queue them instead.
+    # Two uploads at once collide in App Store Connect, and a newer run makes an older one
+    # pointless, so starting a run cancels the one in progress.
     concurrency:
       group: testflight
-      cancel-in-progress: false
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
