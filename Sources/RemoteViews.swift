@@ -544,7 +544,8 @@ struct ControlsPane: View {
                         .accessibilityLabel(s.muted ? "Unmute" : "Mute")
                         Slider(
                             value: Binding(get: { vol ?? s.volume }, set: { setVolume($0) }),
-                            in: 0...1
+                            // Sixteen steps, the same as the hardware volume buttons.
+                            in: 0...1, step: 0.0625
                         ) { editing in
                             if !editing, let v = vol {
                                 client.send(.setVolume(v))
@@ -552,6 +553,7 @@ struct ControlsPane: View {
                             }
                         }
                         .accessibilityLabel("Volume")
+                        .accessibilityValue("\(Int(((vol ?? s.volume) * 100).rounded())) percent")
                         Image(systemName: "speaker.wave.3.fill")
                             .frame(width: 44, height: 44)
                             .accessibilityHidden(true)
