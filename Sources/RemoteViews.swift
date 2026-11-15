@@ -672,6 +672,7 @@ struct ControlsPane: View {
             } label: {
                 option(rate(speed), "speedometer")
             }
+            .menuOrder(.fixed)
             .accessibilityLabel("Playback speed, \(rate(speed))")
             Button {
                 Haptics.tap()
@@ -698,6 +699,7 @@ struct ControlsPane: View {
                     // In automatic mode say so, with the quality YouTube picked.
                     option(s.autoQuality != false ? "Auto \(qualityLabel(s.quality))" : qualityLabel(s.quality), "tv")
                 }
+                .menuOrder(.fixed)
                 .accessibilityLabel("Quality, \(qualityLabel(s.quality))")
             }
         }
