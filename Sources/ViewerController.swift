@@ -163,8 +163,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
         seek: function(t){ var v = vid(); if (v) v.currentTime = t },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
-        // Unmute and play. Called from the app, not from a timer: WebKit only lets sound start
-        // from a call it treats as a person's action, and pauses a video unmuted any other way.
         // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the
         // debug log. Called from the app, so it runs as the same kind of call as a tap on Play.
         kick: function(n){
