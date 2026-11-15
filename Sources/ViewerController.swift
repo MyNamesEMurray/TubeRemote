@@ -323,6 +323,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            Log.add("audio interruption \(type == .began ? "began" : "ended")")
             if type == .began {
                 self.wasPlaying = self.isPlaying
                 self.handle(.pause, from: nil)
@@ -411,6 +412,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             startIfIdle()
             return "Added to queue: \(i.title)"
         case .pause:
+            Log.add("pause applied")
             isPlaying = false
             wantPlaying = false
             js("__tr.pause()")
@@ -510,6 +512,19 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         adSkippable = false
         captionsNone = false
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
+        // The first video of a session is often loaded paused. Do what the remote's Play button does: ask the page to
+        // play from the app, a few times, until the position moves. This does not depend on the page reporting
+        // anything, and each check logs what it saw.
+        let id = item.id
+        for delay in [1.5, 3.0, 5.0, 8.0, 12.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.current?.id == id else { return }
+                let moving = Date().timeIntervalSince(self.lastMove) < 1.5
+                Log.add("start check +\(delay)s want=\(self.wantPlaying) loading=\(self.loading) moving=\(moving) pos=\(self.lastPos)")
+                guard self.wantPlaying, !moving else { return }
+                self.js("__tr.play()")
+            }
+        }
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
             self.webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(item.videoID)")!))
