@@ -9,6 +9,8 @@ struct ViewerView: View {
     @State private var showQueue = false
     @State private var showBrowse = false
     @State private var showPair = false
+    @State private var showControls = false
+    @State private var hideWork: DispatchWorkItem?
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
@@ -38,7 +40,7 @@ struct ViewerView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if let n = nowPlaying {
+            if let n = nowPlaying, !showControls {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(n.title).font(.headline).lineLimit(2)
                     Text(n.channel).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -64,10 +66,21 @@ struct ViewerView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .overlay(alignment: .topTrailing) {
-            // Always on screen so taps reach the player itself (Skip Ad, YouTube's own controls).
-            menu.opacity(showQueue || viewer.current == nil ? 1 : 0.5)
+        .overlay(alignment: .bottom) {
+            if showControls, viewer.current != nil {
+                ViewerControls(touched: keepControls)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .overlay(alignment: .topTrailing) {
+            // Always on screen so taps reach the player itself (Skip Ad).
+            menu.opacity(showControls || showQueue || viewer.current == nil ? 1 : 0.5)
+        }
+        // The page reports taps on the video; nothing native sits on top of it to catch them.
+        .onReceive(viewer.tapped) { _ in
+            if showControls { hideWork?.cancel(); showControls = false } else { keepControls() }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showControls)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.toast)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showQueue)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
@@ -76,6 +89,15 @@ struct ViewerView: View {
         .sheet(isPresented: $showPair) { PairSheet() }
         .pairingPrompt()
         .preferredColorScheme(.dark)
+    }
+
+    /// Shows the controls and hides them again after four quiet seconds.
+    private func keepControls() {
+        hideWork?.cancel()
+        showControls = true
+        let w = DispatchWorkItem { showControls = false }
+        hideWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: w)
     }
 
     private func announce() {
@@ -103,6 +125,64 @@ struct ViewerView: View {
         }
         .padding(12)
         .accessibilityLabel("Menu")
+    }
+}
+
+/// Playback controls on the viewer itself, shown by tapping the video.
+struct ViewerControls: View {
+    @EnvironmentObject var viewer: ViewerController
+    /// Called on every interaction so the controls stay up while in use.
+    let touched: () -> Void
+    @State private var scrub: Double?
+
+    private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
+        Button {
+            Haptics.tap()
+            touched()
+            viewer.handle(cmd, from: nil)
+        } label: {
+            Image(systemName: symbol).font(.system(size: size)).frame(width: 56, height: 56).contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+    }
+
+    var body: some View {
+        let pos = scrub ?? viewer.position
+        VStack(spacing: 6) {
+            if let c = viewer.current {
+                Text(c.title).font(.headline).lineLimit(1)
+            }
+            HStack(spacing: 12) {
+                Text(clock(pos))
+                Slider(
+                    value: Binding(get: { pos }, set: { scrub = $0; touched() }),
+                    in: 0...max(viewer.duration, 1)
+                ) { editing in
+                    if !editing, let v = scrub {
+                        viewer.handle(.seek(v), from: nil)
+                        scrub = nil
+                    }
+                }
+                .accessibilityLabel("Playback position")
+                .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
+                Text(clock(viewer.duration))
+            }
+            .font(.caption.monospacedDigit())
+            HStack(spacing: 16) {
+                button("backward.end.fill", "Previous", .previous)
+                button("gobackward.10", "Back 10 seconds", .skip(-10))
+                button(viewer.isPlaying ? "pause.fill" : "play.fill", viewer.isPlaying ? "Pause" : "Play",
+                       viewer.isPlaying ? .pause : .resume, size: 40)
+                button("goforward.10", "Forward 10 seconds", .skip(10))
+                button("forward.end.fill", "Next", .next)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 560)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(16)
     }
 }
 

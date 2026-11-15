@@ -17,6 +17,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published var volume: Float = AVAudioSession.sharedInstance().outputVolume
     /// iOS refused Local Network access, so no remote can find this viewer.
     @Published var denied = false
+    /// Fires when the person taps the video, to show or hide the on-screen controls.
+    let tapped = PassthroughSubject<Void, Never>()
 
     let webView: WKWebView
     let volumeView = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
@@ -89,6 +91,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       document.addEventListener('ended', function(e){
         if (e.target.tagName === 'VIDEO' && !ad()) post({t:'state', s:0});
       }, true);
+      document.addEventListener('click', function(){ post({t:'tap'}) }, true);
       setInterval(function(){
         var v = vid(); ticks++;
         if (v) {
@@ -391,6 +394,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             // A pause that arrived while the page was still loading must hold once it starts.
             if !isPlaying { js("__tr.pause()") }
             pushSettings()
+        case "tap":
+            tapped.send()
         case _ where loading:
             break
         case "time":
