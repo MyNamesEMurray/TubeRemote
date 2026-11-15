@@ -66,10 +66,28 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       var want = true, started = false, alive = false, failed = false, ticks = 0;
       var wr = 1, wc = null, wq = null, tc = 0, tq = 0;
       function mp(){ return document.getElementById('movie_player') }
-      function cc(){ try { var t = mp().getOption('captions','track'); return !!(t && t.languageCode) } catch(e) { return false } }
-      function setCC(on){ try { var p = mp(); p.loadModule('captions');
-        if (on) { var l = p.getOption('captions','tracklist') || []; if (l.length) p.setOption('captions','track',l[0]) }
-        else p.setOption('captions','track',{}) } catch(e) {} }
+      function cc(){
+        try { return !!mp().isSubtitlesOn() } catch(e) {}
+        try { var t = mp().getOption('captions','track'); return !!(t && t.languageCode) } catch(e) { return false } }
+      // The caption list loads some time after the module is asked for, and asking again restarts the load,
+      // so the module is requested once and later calls only look for the list.
+      function pick(l){
+        var lang = (navigator.language || 'en').slice(0,2), best = null;
+        for (var i = 0; i < l.length; i++) {
+          if ((l[i].languageCode || '').slice(0,2) !== lang) continue;
+          if (l[i].kind !== 'asr') return l[i];
+          best = best || l[i];
+        }
+        return best || l[0] }
+      function setCC(on, first){ try { var p = mp();
+        if (first) p.loadModule('captions');
+        if (on) {
+          var l = p.getOption('captions','tracklist') || [];
+          if (l.length) p.setOption('captions','track',pick(l)); else if (!first) p.toggleSubtitlesOn()
+        } else {
+          p.setOption('captions','track',{});
+          if (cc()) p.toggleSubtitles()
+        } } catch(e) {} }
       var css = document.createElement('style');
       // Hide YouTube's top bar, then pin the player's wrappers over the whole screen. The wrappers are pinned
       // rather than the player itself because WebKit placed a pinned player below the top bar.
@@ -158,7 +176,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             var p = mp(), q = null, qs = [];
             if (started) {
               if (v.playbackRate !== wr) v.playbackRate = wr;
-              if (wc !== null && cc() !== wc && tc++ < 20) setCC(wc);
+              // Twenty seconds of trying; after that the video has no captions to show.
+              if (wc !== null && cc() !== wc && tc < 40) { setCC(wc, tc === 0); tc++; if (tc === 40 && wc) post({t:'nocc'}) }
               try { if (wq && p.getPlaybackQuality() !== wq && tq++ < 20) p.setPlaybackQualityRange(wq, wq) } catch(e) {}
             }
             try { q = p.getPlaybackQuality(); qs = p.getAvailableQualityLevels() } catch(e) {}
@@ -466,6 +485,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             pushSettings()
         case "tap":
             tapped.send()
+        case "nocc":
+            captions = false
+            flash("No captions found for this video")
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
         case _ where loading:
