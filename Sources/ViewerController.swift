@@ -448,6 +448,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     private func broadcast() {
+        // The volume-change notification is not reliable while a web view owns the audio, so also read
+        // the system slider each time; it follows the hardware buttons.
+        if let v = volumeView.subviews.compactMap({ $0 as? UISlider }).first?.value, abs(v - volume) > 0.005 {
+            volume = v
+        }
         server.broadcast(snapshot())
         guard running else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = current.map { c -> [String: Any] in
