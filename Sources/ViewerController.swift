@@ -125,7 +125,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       var lastTap = 0;
       ['touchstart','touchend','pointerdown','pointerup','mousedown','mouseup','click','dblclick'].forEach(function(n){
         document.addEventListener(n, function(e){
-          if (ad()) return;
+          // Only real finger taps. This script's own clicks (unmute, Skip Ad) must reach YouTube
+          // and must not count as taps.
+          if (!e.isTrusted || ad()) return;
           e.stopImmediatePropagation();
           if (n === 'touchend' && e.cancelable) e.preventDefault();
           if ((n === 'touchend' || n === 'click') && Date.now() - lastTap > 400) { lastTap = Date.now(); post({t:'tap'}) }
