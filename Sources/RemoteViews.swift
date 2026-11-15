@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: Browsing + mini player
+// MARK: Browsing + bottom bar
 
 struct RemoteView: View {
     @EnvironmentObject var remote: RemoteController
@@ -8,57 +8,97 @@ struct RemoteView: View {
     @Binding var showSettings: Bool
     @State private var showPicker = false
     @State private var showNow = false
+    @State private var sending = false
+    @AppStorage("seenSendTip") private var seenTip = false
 
     var body: some View {
         NavigationStack {
-            HostedWebView(webView: browser.webView)
+            Hosted(view: browser.webView)
+                .overlay(alignment: .top) {
+                    if !seenTip { tip }
+                }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        if browser.canGoBack {
-                            Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                                .accessibilityLabel("Back")
-                        }
-                    }
+                    ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
                     ToolbarItem(placement: .principal) {
                         ConnectionChip { showPicker = true }
                     }
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        ModeMenu()
+                    ToolbarItem(placement: .navigationBarTrailing) {
                         Button { showSettings = true } label: { Image(systemName: "gearshape") }
                             .accessibilityLabel("Settings")
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    VStack(spacing: 0) {
-                        if browser.videoID != nil {
-                            if let c = remote.active {
-                                ActiveActionBar(client: c)
-                            } else {
-                                Button { showPicker = true } label: {
-                                    Label("Choose a Viewer", systemImage: "tv").frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .buttonBorderShape(.capsule)
-                                .controlSize(.large)
-                                .padding(.horizontal)
-                                .padding(.vertical, 8)
-                                .frame(maxWidth: .infinity)
-                                .background(.bar)
-                            }
+                    if let c = remote.active {
+                        RemoteBar(client: c, canSend: browser.videoID != nil, sending: sending,
+                                  open: { showNow = true }, send: { send($0, to: c) }, here: { browser.play() })
+                    } else if browser.videoID != nil {
+                        Button { showPicker = true } label: {
+                            Label("Choose a Viewer", systemImage: "tv").frame(maxWidth: .infinity)
                         }
-                        if let c = remote.active {
-                            MiniPlayer(client: c) { showNow = true }
-                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(.bar)
                     }
                 }
         }
+        .onAppear { browser.ensureLoaded() }
+        .onChange(of: browser.videoID) { if $0 != nil { seenTip = true } }
+        .onReceive(browser.playTapped) { _ in playTapped() }
         .sheet(isPresented: $showPicker) { DevicePicker() }
         .sheet(isPresented: $showNow) {
             NowPlayingView()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+    }
+
+    private var tip: some View {
+        HStack(spacing: 4) {
+            Text("Find a video, then tap Send to play it on your viewer.")
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            Button { seenTip = true } label: {
+                Image(systemName: "xmark").font(.footnote.weight(.semibold)).frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Dismiss tip")
+        }
+        .padding(.leading, 16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(8)
+    }
+
+    private func send(_ action: QueueAction, to c: RemoteClient) {
+        guard c.connected else {
+            Haptics.warning()
+            showPicker = true
+            return
+        }
+        guard !sending else { return }
+        sending = true
+        Task { @MainActor in
+            defer { sending = false }
+            guard let item = await browser.makeItem() else { return }
+            c.send(action.command(item))
+            browser.pause()
+            Haptics.success()
+        }
+    }
+
+    /// The person tapped play on the page's own player: play that video on the viewer straight away.
+    private func playTapped() {
+        guard let c = remote.active else { showPicker = true; return }
+        if c.connected, let id = browser.videoID, c.state?.current?.videoID == id {
+            // Already loaded on the viewer: resume instead of starting over.
+            c.send(.resume)
+            Haptics.tap()
+        } else {
+            send(.playNow, to: c)
         }
     }
 }
@@ -92,7 +132,12 @@ struct ChipInner: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
-                Circle().fill(client.connected ? Color.green : Color.orange).frame(width: 8, height: 8)
+                // A spinner, not just a colour, so the state reads without colour vision.
+                if client.connected {
+                    Circle().fill(Color.green).frame(width: 8, height: 8)
+                } else {
+                    ProgressView().controlSize(.mini)
+                }
                 Text(client.title).font(.subheadline.weight(.medium)).lineLimit(1)
             }
             .padding(.horizontal, 12)
@@ -106,13 +151,12 @@ struct ChipInner: View {
     }
 }
 
+/// Send bar for browsing on the viewer itself.
 struct ActionBar: View {
     @EnvironmentObject var settings: AppSettings
     let target: String
     let enabled: Bool
-    var showHere = true
     let onAction: (QueueAction) -> Void
-    var onHere: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 8) {
@@ -128,15 +172,10 @@ struct ActionBar: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
-            .disabled(!enabled)
 
             Menu {
                 ForEach(QueueAction.allCases.filter { $0 != settings.queueAction }) { a in
                     Button { Haptics.tap(); onAction(a) } label: { Label(a.title(on: target), systemImage: a.icon) }
-                        .disabled(!enabled)
-                }
-                if showHere {
-                    Button { Haptics.tap(); onHere() } label: { Label("Play here", systemImage: "iphone") }
                 }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -145,31 +184,22 @@ struct ActionBar: View {
             }
             .accessibilityLabel("More ways to send")
         }
+        .disabled(!enabled)
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
     }
 }
 
-struct ActiveActionBar: View {
+/// One bottom bar: what the viewer is playing, play/pause, and the Send button when a video page is open.
+struct RemoteBar: View {
     @ObservedObject var client: RemoteClient
-    @EnvironmentObject var browser: Browser
-
-    var body: some View {
-        ActionBar(target: client.title, enabled: client.connected, onAction: { a in
-            Task { @MainActor in
-                guard let item = await browser.makeItem() else { return }
-                client.send(a.command(item))
-                browser.pause()
-                Haptics.success()
-            }
-        }, onHere: { browser.play() })
-    }
-}
-
-struct MiniPlayer: View {
-    @ObservedObject var client: RemoteClient
+    @EnvironmentObject var settings: AppSettings
+    let canSend: Bool
+    let sending: Bool
     let open: () -> Void
+    let send: (QueueAction) -> Void
+    let here: () -> Void
 
     private var fraction: Double {
         guard let s = client.state, s.duration > 0 else { return 0 }
@@ -177,38 +207,36 @@ struct MiniPlayer: View {
     }
 
     var body: some View {
-        if let cur = client.state?.current {
-            let playing = client.state?.isPlaying == true
-            HStack(spacing: 4) {
+        let cur = client.state?.current
+        let playing = client.state?.isPlaying == true
+        if cur != nil || canSend {
+            HStack(spacing: 8) {
                 Button(action: open) {
                     HStack(spacing: 12) {
-                        Thumb(url: cur.thumbnailURL, radius: 8).frame(width: 44, height: 44)
+                        if let cur { Thumb(url: cur.thumbnailURL, radius: 8).frame(width: 44, height: 44) }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(cur.title).font(.headline).lineLimit(1)
+                            Text(cur?.title ?? "Nothing playing").font(.headline).lineLimit(1)
                             Text(client.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
                     }
+                    .frame(minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Now playing: \(cur.title) on \(client.title)")
+                .accessibilityLabel(cur.map { "Now playing: \($0.title) on \(client.title)" } ?? "Nothing playing on \(client.title)")
                 .accessibilityHint("Opens Now Playing")
 
-                Button {
-                    Haptics.tap()
-                    client.send(playing ? .pause : .resume)
-                } label: {
-                    Image(systemName: playing ? "pause.fill" : "play.fill").font(.title2).frame(width: 44, height: 44)
+                if cur != nil {
+                    Button {
+                        Haptics.tap()
+                        client.send(playing ? .pause : .resume)
+                    } label: {
+                        Image(systemName: playing ? "pause.fill" : "play.fill").font(.title2).frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel(playing ? "Pause" : "Play")
                 }
-                .accessibilityLabel(playing ? "Pause" : "Play")
-                Button {
-                    Haptics.tap()
-                    client.send(.next)
-                } label: {
-                    Image(systemName: "forward.fill").font(.title2).frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Next")
+                if canSend { sendButton }
             }
             .foregroundStyle(.primary)
             .padding(.horizontal)
@@ -224,6 +252,30 @@ struct MiniPlayer: View {
             }
         }
     }
+
+    /// Tap sends with the default action from Settings; touch and hold lists every option.
+    private var sendButton: some View {
+        Menu {
+            ForEach(QueueAction.allCases) { a in
+                Button { Haptics.tap(); send(a) } label: { Label(a.title(on: client.title), systemImage: a.icon) }
+            }
+            Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
+        } label: {
+            Label("Send", systemImage: settings.queueAction.icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 36)
+                .background(Color.accentColor, in: Capsule())
+                .opacity(client.connected && !sending ? 1 : 0.5)
+                .frame(minHeight: 44)
+        } primaryAction: {
+            Haptics.tap()
+            send(settings.queueAction)
+        }
+        .accessibilityLabel(settings.queueAction.title(on: client.title))
+        .accessibilityHint("Touch and hold for more ways to send")
+    }
 }
 
 // MARK: Device picker
@@ -236,7 +288,18 @@ struct DevicePicker: View {
         NavigationStack {
             List {
                 Section {
-                    if remote.devices.isEmpty {
+                    if remote.denied {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Local Network access is off").font(.headline)
+                            Text("TubeRemote needs it to find your other devices.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            Button("Open Settings") {
+                                UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+                            }
+                            .padding(.top, 2)
+                        }
+                        .padding(.vertical, 4)
+                    } else if remote.devices.isEmpty {
                         HStack(spacing: 12) {
                             ProgressView()
                             VStack(alignment: .leading, spacing: 2) {
@@ -282,9 +345,11 @@ struct DeviceRow: View {
     let onPair: () -> Void
 
     private var status: String {
+        if client.outdated { return "Update TubeRemote on both devices" }
         if client.needsPairing { return "Not paired" }
         guard client.connected, let s = client.state else {
-            return client.detail.isEmpty ? "Connecting…" : "Connecting… \(client.detail)"
+            // The raw error is in the debug log.
+            return client.detail.isEmpty ? "Connecting…" : "Can't reach this viewer. Retrying…"
         }
         return s.current.map { "Playing: \($0.title)" } ?? "Idle"
     }
@@ -338,28 +403,12 @@ struct NowPlayingView: View {
 }
 
 struct NowPlayingContent: View {
-    private enum Panel { case queue, history }
+    private enum Panel: Hashable { case controls, queue, history }
 
     @ObservedObject var client: RemoteClient
     let dismiss: () -> Void
-    @State private var panel: Panel?
+    @State private var panel = Panel.controls
     @State private var showPicker = false
-
-    private func toggle(_ p: Panel, symbol: String, label: String) -> some View {
-        let on = panel == p
-        return Button {
-            Haptics.tap()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { panel = on ? nil : p }
-        } label: {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(on ? Color.white : Color.secondary)
-                .frame(width: 44, height: 44)
-                .background(Circle().fill(on ? Color.accentColor : Color.clear))
-        }
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-    }
 
     var body: some View {
         NavigationStack {
@@ -379,19 +428,21 @@ struct NowPlayingContent: View {
                     switch panel {
                     case .queue: RemoteQueue(client: client)
                     case .history: RemoteHistory(client: client)
-                    case nil: ControlsPane(client: client)
+                    case .controls: ControlsPane(client: client)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: client.connected)
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 48) {
-                    toggle(.queue, symbol: "list.bullet", label: "Queue")
-                    toggle(.history, symbol: "clock", label: "History")
+                Picker("Show", selection: $panel) {
+                    Text("Controls").tag(Panel.controls)
+                    Text("Up Next").tag(Panel.queue)
+                    Text("History").tag(Panel.history)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
                 .background(.bar)
             }
             .navigationTitle("Now Playing")
@@ -399,7 +450,7 @@ struct NowPlayingContent: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done", action: dismiss) }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showPicker = true } label: { Label(client.title, systemImage: "tv") }
+                    Button { showPicker = true } label: { Label(client.title, systemImage: "tv").labelStyle(.titleAndIcon) }
                         .accessibilityLabel("Viewer: \(client.title)")
                         .accessibilityHint("Opens the viewer list")
                 }
@@ -414,13 +465,14 @@ struct ControlsPane: View {
     @ObservedObject var client: RemoteClient
     @State private var scrub: Double?
     @State private var vol: Float?
+    @State private var volSent = Date.distantPast
 
     var body: some View {
         if let s = client.state, let cur = s.current {
             let pos = scrub ?? s.position
             ScrollView {
                 VStack(spacing: 20) {
-                    Thumb(url: cur.thumbnailURL, radius: 14)
+                    Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                         .padding(.top, 8)
@@ -431,6 +483,15 @@ struct ControlsPane: View {
                         }
                     }
                     .accessibilityElement(children: .combine)
+                    if s.duration <= 0, s.position > 5 {
+                        // A live stream has no length to scrub through.
+                        Text("LIVE")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.red, in: Capsule())
+                    } else {
                     VStack(spacing: 2) {
                         Slider(
                             value: Binding(get: { pos }, set: { scrub = $0 }),
@@ -443,6 +504,8 @@ struct ControlsPane: View {
                                 Haptics.tap()
                             }
                         }
+                        // State arrives once a second; glide between updates instead of jumping.
+                        .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
                         .accessibilityLabel("Playback position")
                         .accessibilityValue("\(clock(pos)) of \(clock(s.duration))")
                         HStack {
@@ -452,6 +515,7 @@ struct ControlsPane: View {
                         }
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         .accessibilityHidden(true)
+                    }
                     }
                     HStack(spacing: 0) {
                         transport("backward.end.fill", "Previous track", size: 28) { client.send(.previous) }
@@ -472,9 +536,14 @@ struct ControlsPane: View {
                         }
                         .accessibilityLabel(s.muted ? "Unmute" : "Mute")
                         Slider(
-                            value: Binding(get: { vol ?? s.volume }, set: { vol = $0; client.send(.setVolume($0)) }),
+                            value: Binding(get: { vol ?? s.volume }, set: { setVolume($0) }),
                             in: 0...1
-                        ) { editing in if !editing { vol = nil } }
+                        ) { editing in
+                            if !editing, let v = vol {
+                                client.send(.setVolume(v))
+                                vol = nil
+                            }
+                        }
                         .accessibilityLabel("Volume")
                         Image(systemName: "speaker.wave.3.fill")
                             .frame(width: 44, height: 44)
@@ -491,6 +560,14 @@ struct ControlsPane: View {
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
+    }
+
+    /// A drag fires many times a second; send at most ten, then the final value on release.
+    private func setVolume(_ v: Float) {
+        vol = v
+        guard Date().timeIntervalSince(volSent) > 0.1 else { return }
+        volSent = Date()
+        client.send(.setVolume(v))
     }
 
     private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {

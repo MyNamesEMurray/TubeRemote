@@ -51,6 +51,8 @@ struct VideoItem: Codable, Identifiable, Hashable {
     var duration: Double?
 
     var thumbnailURL: URL { URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg")! }
+    /// Sharper image for the large Now Playing artwork. Older videos lack it, so pair it with thumbnailURL.
+    var artworkURL: URL { URL(string: "https://i.ytimg.com/vi/\(videoID)/hq720.jpg")! }
     /// Same video with a new queue-entry id, so one video can sit in the queue twice.
     var fresh: VideoItem { var c = self; c.id = UUID(); return c }
     /// videoID is interpolated into JS on the viewer, and arrives over the network: whitelist it.
@@ -64,9 +66,10 @@ struct ViewerState: Codable, Equatable {
     var position: Double
     var duration: Double
     var volume: Float
-    var muted: Bool
     var queue: [VideoItem]
     var history: [VideoItem]
+
+    var muted: Bool { volume < 0.01 }
 }
 
 enum Command: Codable {
@@ -86,27 +89,35 @@ struct PairedDevice: Codable, Identifiable {
     let secret: Data
 }
 
-/// Same message in both directions: each side sends its ephemeral public key, then its yes/no.
+/// Same messages in both directions. The side that starts sends a hash of its public key first and
+/// only reveals the key after it has the other side's, so neither can pick a key to force a matching code.
 enum PairMessage: Codable {
+    case commit(Data)
     case key(pub: Data, deviceKey: String, name: String)
     case decision(Bool)
 }
 
-/// Remote -> viewer.
+// Devices on different app versions must still understand each other's hello, so keep `hello` stable,
+// bump Transport.version for breaking changes, and make any field added to a message optional.
+
+/// Remote -> viewer. `command` is only accepted inside `sealed`.
 enum ClientMessage: Codable {
-    case hello(name: String, key: String)
-    case auth(Data)
+    case hello(name: String, key: String, version: Int?)
+    case auth(mac: Data, nonce: Data)
     case ping
     case pair(PairMessage)
     case command(Command)
+    case sealed(Data)
 }
 
-/// Viewer -> remote. `state` is only sent to authenticated remotes.
+/// Viewer -> remote. `state` is only sent inside `sealed`, to authenticated remotes.
 enum ServerMessage: Codable {
+    case hello(version: Int)
     case state(ViewerState)
     case unpaired
     case challenge(Data)
     case pair(PairMessage)
+    case sealed(Data)
 }
 
 func parseVideoID(_ url: URL?) -> String? {
@@ -118,7 +129,7 @@ func parseVideoID(_ url: URL?) -> String? {
             .queryItems?.first { $0.name == "v" }?.value
     }
     let p = url.pathComponents
-    if p.count >= 3, p[1] == "shorts" || p[1] == "embed" { return p[2] }
+    if p.count >= 3, ["shorts", "embed", "live"].contains(p[1]) { return p[2] }
     return nil
 }
 
@@ -132,10 +143,11 @@ func clock(_ seconds: Double) -> String {
 enum VideoMetadata {
     private struct OEmbed: Decodable { let title: String; let author_name: String }
 
-    static func item(videoID: String, duration: Double?) async -> VideoItem {
-        var title = "YouTube video", channel = ""
+    /// `fallbackTitle` is used when the lookup fails or takes longer than five seconds.
+    static func item(videoID: String, duration: Double?, fallbackTitle: String = "") async -> VideoItem {
+        var title = fallbackTitle.isEmpty ? "YouTube video" : fallbackTitle, channel = ""
         if let url = URL(string: "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=\(videoID)"),
-           let (data, _) = try? await URLSession.shared.data(from: url),
+           let (data, _) = try? await URLSession.shared.data(for: URLRequest(url: url, timeoutInterval: 5)),
            let o = try? JSONDecoder().decode(OEmbed.self, from: data) {
             title = o.title
             channel = o.author_name

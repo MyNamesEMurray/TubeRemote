@@ -9,6 +9,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(id("https://youtu.be/dQw4w9WgXcQ"), "dQw4w9WgXcQ")
         XCTAssertEqual(id("https://www.youtube.com/shorts/abcdefghijk"), "abcdefghijk")
         XCTAssertEqual(id("https://www.youtube.com/embed/abcdefghijk"), "abcdefghijk")
+        XCTAssertEqual(id("https://www.youtube.com/live/abcdefghijk"), "abcdefghijk")
         XCTAssertNil(id("https://example.com/watch?v=dQw4w9WgXcQ"))
         XCTAssertNil(parseVideoID(nil))
     }

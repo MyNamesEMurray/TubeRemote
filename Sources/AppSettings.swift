@@ -64,8 +64,14 @@ enum Store {
 
     static func read(_ name: String) -> Data? { try? Data(contentsOf: url(name)) }
 
-    static func write(_ name: String, _ data: Data?) {
+    static func write(_ name: String, _ data: Data?, backup: Bool = true) {
         guard let data else { return }
-        try? data.write(to: url(name), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        var u = url(name)
+        try? data.write(to: u, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        if !backup {
+            var v = URLResourceValues()
+            v.isExcludedFromBackup = true
+            try? u.setResourceValues(v)
+        }
     }
 }

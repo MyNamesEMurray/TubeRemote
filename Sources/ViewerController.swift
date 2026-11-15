@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import WebKit
 import AVFoundation
@@ -14,6 +15,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published var toast: String?
     @Published var pending: [PendingPeer] = []
     @Published var volume: Float = AVAudioSession.sharedInstance().outputVolume
+    /// iOS refused Local Network access, so no remote can find this viewer.
+    @Published var denied = false
 
     let webView: WKWebView
     let volumeView = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
@@ -30,6 +33,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var running = false
     private var interruptObs: NSObjectProtocol?
     private var wasPlaying = false
+    private var pairedObs: AnyCancellable?
 
     // YouTube rejects embeds whose origin is youtube.com itself (error 152); any other https origin works.
     private static let embedOrigin = "https://com.exaltedpixels.tuberemote"
@@ -95,9 +99,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.onCommand = { [weak self] cmd, who in self?.handle(cmd, from: who) }
         server.snapshot = { [weak self] in self?.snapshot() }
         server.paired = { [weak self] in self?.settings.paired($0) }
-        server.onPair = { [weak self] m, reply in self?.pairing.receive(m, send: reply) }
+        server.onPair = { [weak self] m, id, reply in self?.pairing.receive(m, from: id, send: reply) }
         server.onPeers = { [weak self] in self?.pending = self?.server.pending ?? [] }
-        pairing.onPaired = { [weak self] d in self?.server.markAuthed(key: d.key) }
+        server.onGone = { [weak self] id in self?.pairing.cancel(peer: id) }
+        server.onDenied = { [weak self] in self?.denied = $0 }
+        pairing.onPaired = { [weak self] d in self?.server.challenge(key: d.key) }
+        // Removing a device in Settings disconnects it at once.
+        pairedObs = settings.$paired.dropFirst().sink { [weak self] list in self?.server.keep(Set(list.map(\.key))) }
         server.start(name: settings.name, key: settings.deviceKey)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.broadcast() }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
@@ -130,6 +138,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         running = false
         Log.add("viewer stop")
         server.stop()
+        pairedObs = nil
+        pairing.cancel()
         timer?.invalidate()
         volumeObs = nil
         if let o = interruptObs { NotificationCenter.default.removeObserver(o) }
@@ -144,7 +154,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     func beginPair(_ p: PendingPeer) {
-        pairing.begin { [weak self] in self?.server.send(.pair($0), to: p.id) }
+        pairing.begin(peer: p.id) { [weak self] in self?.server.send(.pair($0), to: p.id) }
     }
 
     /// Re-advertise under a new device name.
@@ -165,7 +175,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .play(let i):
             guard i.isValid else { return nil }
             start(i.fresh, pushPrevious: current?.videoID != i.videoID)
-            return "Playing \(i.title)"
+            return "Playing"
         case .playNext(let i):
             guard i.isValid else { return nil }
             queue.insert(i.fresh, at: 0)
@@ -315,6 +325,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             case 0:
                 isPlaying = false
                 advance()
+            case -1, 5:
+                // Loaded but not started: start it, so a sent video always begins without a tap on this device.
+                if current != nil, isPlaying { webView.evaluateJavaScript("player&&player.playVideo&&player.playVideo()") }
             default: break
             }
             broadcast()
@@ -333,8 +346,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     private func snapshot() -> ViewerState {
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
-                    position: position, duration: duration, volume: volume, muted: volume < 0.01,
-                    queue: queue, history: history)
+                    position: position, duration: duration, volume: volume, queue: queue, history: history)
     }
 
     private func broadcast() {

@@ -9,8 +9,6 @@ struct ViewerView: View {
     @State private var showQueue = false
     @State private var showBrowse = false
     @State private var showPair = false
-    @State private var showControls = false
-    @State private var hideWork: DispatchWorkItem?
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
@@ -18,20 +16,16 @@ struct ViewerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             HStack(spacing: 0) {
-                HostedWebView(webView: viewer.webView)
+                Hosted(view: viewer.webView)
                 if showQueue && hSize == .regular {
                     Divider()
                     QueueSidebar().frame(width: 340)
                         .transition(.move(edge: .trailing))
                 }
             }
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { toggleControls() }
-                .accessibilityHidden(true)
-            if viewer.current == nil { IdleView().allowsHitTesting(false) }
+            if viewer.current == nil { IdleView { showPair = true } }
             // Off-screen volume slider; the only way to set system volume from an app.
-            VolumeHost(view: viewer.volumeView).frame(width: 10, height: 10).opacity(0.01).allowsHitTesting(false)
+            Hosted(view: viewer.volumeView).frame(width: 10, height: 10).opacity(0.01).allowsHitTesting(false)
         }
         .overlay(alignment: .trailing) {
             if showQueue && hSize == .compact {
@@ -62,6 +56,8 @@ struct ViewerView: View {
             if let t = viewer.toast {
                 Text(t)
                     .font(.subheadline.bold())
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.top, 8)
@@ -69,27 +65,17 @@ struct ViewerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if showControls || showQueue || viewer.current == nil { menu.transition(.opacity) }
+            // Always on screen so taps reach the player itself (Skip Ad, YouTube's own controls).
+            menu.opacity(showQueue || viewer.current == nil ? 1 : 0.5)
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.toast)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showQueue)
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showControls)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
         .onChange(of: viewer.current?.videoID) { _ in announce() }
         .sheet(isPresented: $showBrowse) { LocalBrowse() }
         .sheet(isPresented: $showPair) { PairSheet() }
         .pairingPrompt()
         .preferredColorScheme(.dark)
-    }
-
-    private func toggleControls() {
-        Haptics.tap()
-        hideWork?.cancel()
-        if showControls { showControls = false; return }
-        showControls = true
-        let w = DispatchWorkItem { showControls = false }
-        hideWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: w)
     }
 
     private func announce() {
@@ -107,7 +93,6 @@ struct ViewerView: View {
             Button { showPair = true } label: { Label("Pair a device", systemImage: "link") }
             Button { showQueue.toggle() } label: { Label(showQueue ? "Hide queue" : "Show queue", systemImage: "list.bullet") }
             Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-            ModeMenu()
         } label: {
             Image(systemName: "ellipsis")
                 .font(.title3.weight(.semibold))
@@ -121,41 +106,60 @@ struct ViewerView: View {
     }
 }
 
-struct VolumeHost: UIViewRepresentable {
-    let view: MPVolumeView
-    func makeUIView(context: Context) -> MPVolumeView { view }
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
-}
-
 struct IdleView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var viewer: ViewerController
+    let onPair: () -> Void
 
     private var pairedLine: String {
         settings.paired.isEmpty
-            ? "Not paired yet. Use the menu, then Pair a device."
+            ? "Not paired yet."
             : "Paired with " + settings.paired.map(\.name).joined(separator: ", ")
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            // This screen can stay up for hours with the display kept awake, so nudge it each minute against burn-in.
+            TimelineView(.periodic(from: .now, by: 60)) { t in
+                let m = Int(t.date.timeIntervalSinceReferenceDate / 60)
+                content.offset(x: CGFloat(m % 5 - 2) * 10, y: CGFloat(m % 3 - 1) * 10)
+            }
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 12) {
             VStack(spacing: 12) {
                 Image(systemName: "tv").font(.system(size: 64, weight: .light)).accessibilityHidden(true)
-                Text(settings.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                Text("Ready to receive videos").font(.title3).foregroundStyle(.secondary)
-                VStack(spacing: 4) {
+                Text(settings.name).font(.largeTitle.bold())
+                if viewer.denied {
+                    Text("Local Network access is off").font(.title3).foregroundStyle(.orange)
+                    Text("Other devices cannot find this viewer until you allow it in Settings.")
+                        .font(.title3).foregroundStyle(.secondary)
+                } else {
+                    Text("Ready to receive videos").font(.title2).foregroundStyle(.secondary)
                     Text("Open TubeRemote on another device and choose this viewer.")
-                    Text(pairedLine)
+                        .font(.title3).foregroundStyle(.secondary)
+                    Text(pairedLine).font(.title3).foregroundStyle(.secondary)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.top, 8)
             }
-            .foregroundStyle(.white)
-            .padding(32)
+            .multilineTextAlignment(.center)
             .accessibilityElement(children: .combine)
+            if viewer.denied {
+                Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.top, 8)
+            } else {
+                Button(action: onPair) { Label("Pair a Device", systemImage: "link") }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .padding(.top, 8)
+            }
         }
+        .foregroundStyle(.white)
+        .padding(32)
     }
 }
 
@@ -199,32 +203,40 @@ struct LocalBrowse: View {
     @EnvironmentObject var browser: Browser
     @EnvironmentObject var viewer: ViewerController
     @Environment(\.dismiss) private var dismiss
+    @State private var sending = false
+
+    private func send(_ action: QueueAction) {
+        guard !sending else { return }
+        sending = true
+        Task { @MainActor in
+            defer { sending = false }
+            guard let item = await browser.makeItem() else { return }
+            viewer.handle(action.command(item), from: nil)
+            browser.pause()
+        }
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HostedWebView(webView: browser.webView)
+                Hosted(view: browser.webView)
                 if browser.videoID != nil {
-                    ActionBar(target: "this device", enabled: true, showHere: false, onAction: { a in
-                        Task { @MainActor in
-                            guard let item = await browser.makeItem() else { return }
-                            viewer.handle(a.command(item), from: nil)
-                            browser.pause()
-                        }
-                    })
+                    ActionBar(target: "this device", enabled: !sending, onAction: send)
                 }
             }
             .navigationTitle("YouTube")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if browser.canGoBack {
-                        Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                            .accessibilityLabel("Back")
-                    }
-                }
+                ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .pairingPrompt()
+        }
+        .onAppear { browser.ensureLoaded() }
+        // Tapping play on the page plays the video on this viewer and closes the browser.
+        .onReceive(browser.playTapped) { _ in
+            send(.playNow)
+            dismiss()
         }
     }
 }

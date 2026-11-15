@@ -7,6 +7,8 @@ import Network
 enum Transport {
     static let serviceType = "_ytremote._tcp"
     static let maxMessage = 1 << 20
+    /// Bump when a message changes in a way older builds cannot read.
+    static let version = 2
 
     static func parameters() -> NWParameters {
         let p = NWParameters.tcp
@@ -14,6 +16,21 @@ enum Transport {
             tcp.noDelay = true
         }
         return p
+    }
+
+    /// Service name is "<device name>#<device key>". Bonjour caps names at 63 bytes, so trim by bytes.
+    static func service(name: String, key: String) -> NWListener.Service {
+        var n = name
+        while n.utf8.count > 50 { n.removeLast() }
+        return NWListener.Service(name: "\(n)#\(key)", type: serviceType)
+    }
+
+    static func nonce() -> Data { Data((0..<16).map { _ in UInt8.random(in: 0...255) }) }
+
+    /// True when iOS refused Local Network access (kDNSServiceErr_PolicyDenied).
+    static func isDenied(_ e: NWError) -> Bool {
+        if case .dns(let code) = e { return code == -65570 }
+        return false
     }
 
     static func send<T: Encodable>(_ msg: T, on c: NWConnection) {
@@ -49,6 +66,42 @@ enum Transport {
     }
 }
 
+/// Encrypts everything sent after sign-in, with keys derived from the pairing secret and both sides' nonces.
+/// Each direction has its own key and a message counter, so a message cannot be read, changed, replayed or reordered.
+struct Channel {
+    private let tx: SymmetricKey, rx: SymmetricKey
+    private var sent: UInt64 = 0, received: UInt64 = 0
+
+    init(secret: Data, salt: Data, viewer: Bool) {
+        func key(_ info: String) -> SymmetricKey {
+            HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: secret), salt: salt,
+                                   info: Data(info.utf8), outputByteCount: 32)
+        }
+        tx = key(viewer ? "viewer" : "remote")
+        rx = key(viewer ? "remote" : "viewer")
+    }
+
+    private static func nonce(_ n: UInt64) -> Data {
+        Data(count: 4) + withUnsafeBytes(of: n.bigEndian) { Data($0) }
+    }
+
+    mutating func seal<T: Encodable>(_ m: T) -> Data? {
+        guard let body = try? JSONEncoder().encode(m),
+              let nonce = try? ChaChaPoly.Nonce(data: Self.nonce(sent + 1)),
+              let box = try? ChaChaPoly.seal(body, using: tx, nonce: nonce) else { return nil }
+        sent += 1
+        return box.ciphertext + box.tag
+    }
+
+    /// Returns the decrypted message body, or nil if it was not the next message from the other side.
+    mutating func open(_ data: Data) -> Data? {
+        guard let box = try? ChaChaPoly.SealedBox(combined: Self.nonce(received + 1) + data),
+              let body = try? ChaChaPoly.open(box, using: rx) else { return nil }
+        received += 1
+        return body
+    }
+}
+
 struct PendingPeer: Identifiable {
     let id: ObjectIdentifier
     let name: String
@@ -63,7 +116,8 @@ final class ViewerServer {
         var hello = false
         var key: String?
         var nonce: Data?
-        var authed = false
+        var channel: Channel?
+        var authed: Bool { channel != nil }
     }
 
     private var listener: NWListener?
@@ -74,8 +128,10 @@ final class ViewerServer {
     var onCommand: ((Command, String) -> Void)?
     var snapshot: (() -> ViewerState?)?
     var paired: ((String) -> PairedDevice?)?
-    var onPair: ((PairMessage, @escaping (PairMessage) -> Void) -> Void)?
+    var onPair: ((PairMessage, ObjectIdentifier, @escaping (PairMessage) -> Void) -> Void)?
     var onPeers: (() -> Void)?
+    var onGone: ((ObjectIdentifier) -> Void)?
+    var onDenied: ((Bool) -> Void)?
 
     /// Remotes that said hello but are not authenticated, so they can be offered for pairing.
     var pending: [PendingPeer] {
@@ -87,16 +143,25 @@ final class ViewerServer {
         stop()
         running = true
         guard let l = try? NWListener(using: Transport.parameters()) else { return }
-        l.service = NWListener.Service(name: "\(name.prefix(40))#\(key)", type: Transport.serviceType)
+        l.service = Transport.service(name: name, key: key)
         l.serviceRegistrationUpdateHandler = { Log.add("service \($0)") }
         l.newConnectionHandler = { [weak self] c in self?.accept(c) }
         l.stateUpdateHandler = { [weak self] state in
             Log.add("listener \(state) port \(self?.listener?.port.map { "\($0)" } ?? "-")")
-            guard case .failed = state else { return }
-            self?.listener = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                guard let self, self.running, self.listener == nil else { return }
-                self.start(name: name, key: key)
+            switch state {
+            case .ready:
+                self?.onDenied?(false)
+            case .waiting(let e):
+                self?.onDenied?(Transport.isDenied(e))
+            case .failed(let e):
+                self?.onDenied?(Transport.isDenied(e))
+                self?.listener = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    guard let self, self.running, self.listener == nil else { return }
+                    self.start(name: name, key: key)
+                }
+            default:
+                break
             }
         }
         l.start(queue: .main)
@@ -113,7 +178,7 @@ final class ViewerServer {
     }
 
     func rename(name: String, key: String) {
-        listener?.service = NWListener.Service(name: "\(name.prefix(40))#\(key)", type: Transport.serviceType)
+        listener?.service = Transport.service(name: name, key: key)
     }
 
     func stop() {
@@ -128,11 +193,11 @@ final class ViewerServer {
     }
 
     func broadcast(_ state: ViewerState) {
-        for p in conns.values {
+        for (id, p) in conns {
             if p.authed {
-                Transport.send(ServerMessage.state(state), on: p.conn)
+                sendSealed(.state(state), to: id)
             } else if p.hello, p.nonce == nil {
-                Transport.send(ServerMessage.unpaired, on: p.conn)
+                send(.unpaired, to: id)
             }
         }
     }
@@ -141,18 +206,37 @@ final class ViewerServer {
         if let c = conns[id]?.conn { Transport.send(m, on: c) }
     }
 
-    /// A pairing just finished: let the remote with this key in without a challenge.
-    func markAuthed(key: String) {
-        for id in conns.keys where conns[id]?.key == key {
-            conns[id]?.authed = true
-            conns[id]?.nonce = nil
-            if let s = snapshot?() { send(.state(s), to: id) }
-        }
+    private func sendSealed(_ m: ServerMessage, to id: ObjectIdentifier) {
+        guard let box = conns[id]?.channel?.seal(m) else { return }
+        send(.sealed(box), to: id)
+    }
+
+    /// A pairing just finished: ask the remote with this key to sign in with its new secret.
+    func challenge(key: String) {
+        for (id, p) in conns where p.key == key && p.hello { challenge(id) }
         onPeers?()
     }
 
+    private func challenge(_ id: ObjectIdentifier) {
+        let nonce = Transport.nonce()
+        conns[id]?.channel = nil
+        conns[id]?.nonce = nonce
+        send(.challenge(nonce), to: id)
+    }
+
+    /// The paired list changed: disconnect signed-in remotes that are no longer on it.
+    func keep(_ keys: Set<String>) {
+        for (id, p) in conns where p.authed && !keys.contains(p.key ?? "") {
+            Log.add("unpaired \(p.name), disconnecting")
+            p.conn.cancel()
+            remove(id)
+        }
+    }
+
     private func remove(_ id: ObjectIdentifier) {
+        guard conns[id] != nil else { return }
         conns[id] = nil
+        onGone?(id)
         onPeers?()
     }
 
@@ -179,44 +263,56 @@ final class ViewerServer {
 
     private func handle(_ m: ClientMessage, id: ObjectIdentifier, conn: NWConnection) {
         switch m {
-        case .hello(let name, let key):
+        case .hello(let name, let key, let version):
+            send(.hello(version: Transport.version), to: id)
+            guard version == Transport.version else {
+                return Log.add("\(name) runs protocol \(version.map { "\($0)" } ?? "1"), this device \(Transport.version)")
+            }
             if conns[id]?.hello == false { Log.add("hello from \(name)") }
-            conns[id]?.name = name
+            conns[id]?.name = String(name.prefix(40))
             conns[id]?.hello = true
             conns[id]?.key = key
-            conns[id]?.authed = false
+            conns[id]?.channel = nil
             if paired?(key) != nil {
-                let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
-                conns[id]?.nonce = nonce
-                send(.challenge(nonce), to: id)
+                challenge(id)
             } else {
                 conns[id]?.nonce = nil
                 send(.unpaired, to: id)
             }
             onPeers?()
-        case .auth(let mac):
-            guard let p = conns[id], let nonce = p.nonce, let key = p.key, let d = paired?(key),
+        case .auth(let mac, let theirs):
+            guard let p = conns[id], let nonce = p.nonce, let key = p.key, let d = paired?(key), theirs.count == 16,
                   HMAC<SHA256>.isValidAuthenticationCode(mac, authenticating: nonce, using: SymmetricKey(data: d.secret))
             else {
                 Log.add("auth failed for \(conns[id]?.name ?? "?")")
                 conns[id]?.nonce = nil
                 send(.unpaired, to: id)
+                onPeers?()
                 return
             }
-            conns[id]?.authed = true
+            conns[id]?.channel = Channel(secret: d.secret, salt: nonce + theirs, viewer: true)
             conns[id]?.nonce = nil
             Log.add("authenticated \(p.name)")
-            if let s = snapshot?() { send(.state(s), to: id) }
+            if let s = snapshot?() { sendSealed(.state(s), to: id) }
             onPeers?()
         case .ping:
             break
         case .pair(let pm):
             guard conns[id]?.hello == true else { return }
-            onPair?(pm) { Transport.send(ServerMessage.pair($0), on: conn) }
-        case .command(let cmd):
-            guard conns[id]?.authed == true else { return Log.add("ignored command from unauthenticated remote") }
+            onPair?(pm, id) { Transport.send(ServerMessage.pair($0), on: conn) }
+        case .sealed(let box):
+            guard let body = conns[id]?.channel?.open(box) else {
+                Log.add("bad encrypted message from \(conns[id]?.name ?? "?"), disconnecting")
+                conn.cancel()
+                return remove(id)
+            }
+            guard case .command(let cmd)? = try? JSONDecoder().decode(ClientMessage.self, from: body) else {
+                return Log.add("rx sealed decode failed")
+            }
             Log.add("command \(cmd) from \(conns[id]?.name ?? "?")")
             onCommand?(cmd, conns[id]?.name ?? "a remote")
+        case .command:
+            Log.add("ignored unencrypted command")
         }
     }
 }

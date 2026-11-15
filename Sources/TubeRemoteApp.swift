@@ -71,27 +71,12 @@ struct RootView: View {
         }
         .pairingPrompt()
         .onAppear { model.apply() }
-        .onChange(of: phase) { if $0 == .active { model.apply() } }
+        .onChange(of: phase) { if $0 == .active { model.apply() } else { Log.shared.save() } }
     }
 }
 
 private extension Mode {
     var symbol: String { self == .viewer ? "tv" : "iphone.radiowaves.left.and.right" }
-}
-
-struct ModeMenu: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Menu {
-            Picker("Mode", selection: $model.mode) {
-                ForEach(Mode.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
-            }
-        } label: {
-            Image(systemName: model.mode.symbol)
-        }
-        .accessibilityLabel("Mode")
-    }
 }
 
 struct OnboardingView: View {
@@ -114,8 +99,10 @@ struct OnboardingView: View {
     private var welcome: some View {
         VStack(spacing: 28) {
             Spacer(minLength: 0)
-            Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 64))
+            HStack(spacing: 6) {
+                Image(systemName: "play.fill").font(.system(size: 48))
+                Image(systemName: "wave.3.right").font(.system(size: 34)).opacity(0.6)
+            }
                 .foregroundStyle(.white)
                 .frame(width: 112, height: 112)
                 .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -163,9 +150,10 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
             card(.viewer, "Viewer", "Plays videos on this screen. Great for an iPad or TV-connected device.")
             card(.remote, "Remote", "Browse YouTube and send videos to a viewer.")
-            Text("You can change this later in Settings.")
+            Text("You can change this later in Settings.\nNext, iOS asks to find devices on your local network. Choose Allow, or your devices cannot see each other.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             Spacer(minLength: 0)
         }
     }
@@ -229,11 +217,16 @@ struct SettingsView: View {
                 } footer: {
                     Text("Shown to other devices on your network.")
                 }
-                Section("On Launch") {
-                    Picker("Mode", selection: $settings.defaultMode) {
+                Section {
+                    Picker("Use this device as", selection: Binding(
+                        get: { model.mode },
+                        set: { model.mode = $0; settings.defaultMode = $0 }
+                    )) {
                         ForEach(Mode.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
                     }
                     .pickerStyle(.menu)
+                } footer: {
+                    Text("A viewer plays videos on this screen. A remote browses YouTube and sends them.")
                 }
                 Section {
                     Picker("Queue action", selection: $settings.queueAction) {
@@ -254,7 +247,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Paired Devices")
                 } footer: {
-                    Text("Removing a device takes effect the next time it connects.")
+                    Text("Removing a device disconnects it right away.")
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)
@@ -267,6 +260,9 @@ struct SettingsView: View {
             .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    if !settings.paired.isEmpty { EditButton() }
+                }
             }
         }
         .onDisappear { model.viewer.rename() }

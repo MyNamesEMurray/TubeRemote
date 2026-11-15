@@ -2,13 +2,19 @@ import SwiftUI
 
 struct Thumb: View {
     let url: URL
+    /// Shown when `url` fails to load.
+    var fallback: URL?
     var radius: CGFloat = 6
 
     var body: some View {
-        AsyncImage(url: url) { img in
-            img.resizable().scaledToFill()
-        } placeholder: {
-            Color(.tertiarySystemFill)
+        AsyncImage(url: url) { phase in
+            if let img = phase.image {
+                img.resizable().scaledToFill()
+            } else if phase.error != nil, let fallback {
+                Thumb(url: fallback, radius: 0)
+            } else {
+                Color(.tertiarySystemFill)
+            }
         }
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -62,6 +68,7 @@ struct QueueList: View {
     let onMove: (IndexSet, Int) -> Void
     let onClear: () -> Void
     @State private var editMode: EditMode = .inactive
+    @State private var confirmClear = false
 
     var body: some View {
         if items.isEmpty {
@@ -77,14 +84,17 @@ struct QueueList: View {
                         }
                     }
                     .frame(minHeight: 44)
-                    Button("Clear", role: .destructive) {
+                    Button("Clear", role: .destructive) { confirmClear = true }
+                        .frame(minHeight: 44)
+                        .padding(.leading, 8)
+                }
+                .padding(.horizontal)
+                .confirmationDialog("Clear the queue?", isPresented: $confirmClear, titleVisibility: .visible) {
+                    Button("Clear Queue", role: .destructive) {
                         Haptics.warning()
                         onClear()
                     }
-                    .frame(minHeight: 44)
-                    .padding(.leading, 8)
                 }
-                .padding(.horizontal)
                 List {
                     ForEach(items) { item in
                         Button {
@@ -109,6 +119,7 @@ struct HistoryList: View {
     let onReplay: (VideoItem) -> Void
     let onRequeue: (VideoItem) -> Void
     let onClear: () -> Void
+    @State private var confirmClear = false
 
     var body: some View {
         if items.isEmpty {
@@ -118,13 +129,16 @@ struct HistoryList: View {
                 HStack {
                     Text("Recently Played").font(.headline)
                     Spacer()
-                    Button("Clear", role: .destructive) {
+                    Button("Clear", role: .destructive) { confirmClear = true }
+                        .frame(minHeight: 44)
+                }
+                .padding(.horizontal)
+                .confirmationDialog("Clear history?", isPresented: $confirmClear, titleVisibility: .visible) {
+                    Button("Clear History", role: .destructive) {
                         Haptics.warning()
                         onClear()
                     }
-                    .frame(minHeight: 44)
                 }
-                .padding(.horizontal)
                 List(items) { item in
                     Menu {
                         Button { Haptics.tap(); onReplay(item) } label: { Label("Replay now", systemImage: "play.fill") }
@@ -132,11 +146,12 @@ struct HistoryList: View {
                     } label: {
                         VideoRow(item: item)
                     } primaryAction: {
-                        Haptics.tap()
-                        onReplay(item)
+                        // A tap must not cut off what is playing; Replay now stays in the menu.
+                        Haptics.success()
+                        onRequeue(item)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Plays again. Actions available for more options")
+                    .accessibilityHint("Adds to the queue. Actions available for more options")
                 }
                 .listStyle(.plain)
             }

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Numeric-comparison pairing: both devices derive the same 6-digit code from an ECDH exchange,
 /// a person confirms it on both, and the shared secret is saved for later authentication.
-/// Works from either side because the messages are symmetric.
+/// Either side may start. The starter commits to its key before seeing the other's, so the code cannot be forced.
 final class Pairing: ObservableObject {
     struct Prompt: Equatable {
         let name: String
@@ -16,11 +16,21 @@ final class Pairing: ObservableObject {
 
     private final class Session {
         let priv = Curve25519.KeyAgreement.PrivateKey()
+        /// The connection this session belongs to; messages from anyone else are ignored.
+        let peer: AnyHashable
+        let initiator: Bool
         let send: (PairMessage) -> Void
+        var peerCommit: Data?
         var peerKey = "", peerName = ""
         var secret: Data?
         var iAccepted = false, peerAccepted = false
-        init(send: @escaping (PairMessage) -> Void) { self.send = send }
+        var pub: Data { priv.publicKey.rawRepresentation }
+
+        init(peer: AnyHashable, initiator: Bool, send: @escaping (PairMessage) -> Void) {
+            self.peer = peer
+            self.initiator = initiator
+            self.send = send
+        }
     }
 
     private var session: Session?
@@ -28,30 +38,42 @@ final class Pairing: ObservableObject {
 
     init(settings: AppSettings) { self.settings = settings }
 
-    func begin(send: @escaping (PairMessage) -> Void) {
+    func begin(peer: AnyHashable, send: @escaping (PairMessage) -> Void) {
         cancel()
-        open(send: send)
+        let s = open(peer: peer, initiator: true, send: send)
+        s.send(.commit(Data(SHA256.hash(data: s.pub))))
     }
 
-    func receive(_ m: PairMessage, send: @escaping (PairMessage) -> Void) {
+    func receive(_ m: PairMessage, from peer: AnyHashable, send: @escaping (PairMessage) -> Void) {
+        if let s = session, s.peer != peer { return }
         switch m {
+        case .commit(let c):
+            // shortcut: if both sides start at the same instant both attempts cancel; the person taps Pair again
+            cancel()
+            let s = open(peer: peer, initiator: false, send: send)
+            s.peerCommit = c
+            s.send(key(s))
         case .key(let pub, let deviceKey, let name):
-            let s = session ?? open(send: send)
-            guard s.secret == nil,
-                  let peer = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: pub),
-                  let shared = try? s.priv.sharedSecretFromKeyAgreement(with: peer) else { return }
+            guard let s = session, s.secret == nil else { return }
+            if s.initiator {
+                s.send(key(s))
+            } else if Data(SHA256.hash(data: pub)) != s.peerCommit {
+                return cancel()
+            }
+            guard let peerPub = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: pub),
+                  let shared = try? s.priv.sharedSecretFromKeyAgreement(with: peerPub) else { return cancel() }
             s.peerKey = deviceKey
-            s.peerName = name
-            let pubs = [s.priv.publicKey.rawRepresentation, pub].sorted { $0.lexicographicallyPrecedes($1) }
+            s.peerName = String(name.prefix(40))
+            let pubs = [s.pub, pub].sorted { $0.lexicographicallyPrecedes($1) }
             let salt = pubs[0] + pubs[1]
-            let key = shared.hkdfDerivedSymmetricKey(
+            let derived = shared.hkdfDerivedSymmetricKey(
                 using: SHA256.self, salt: salt, sharedInfo: Data("tuberemote".utf8), outputByteCount: 32)
-            s.secret = key.withUnsafeBytes { Data($0) }
+            s.secret = derived.withUnsafeBytes { Data($0) }
             let n = SHA256.hash(data: salt).prefix(4).reduce(UInt32(0)) { $0 << 8 | UInt32($1) } % 1_000_000
-            prompt = Prompt(name: name, code: String(format: "%06d", n))
-            Log.add("pairing code ready for \(name)")
+            prompt = Prompt(name: s.peerName, code: String(format: "%06d", n))
+            Log.add("pairing code ready for \(s.peerName)")
         case .decision(let yes):
-            guard let s = session else { return }
+            guard let s = session, s.secret != nil else { return }
             guard yes else { return cancel() }
             s.peerAccepted = true
             finish()
@@ -72,11 +94,22 @@ final class Pairing: ObservableObject {
         prompt = nil
     }
 
-    @discardableResult
-    private func open(send: @escaping (PairMessage) -> Void) -> Session {
-        let s = Session(send: send)
+    /// The connection to this peer went away, so its half-finished pairing cannot complete.
+    func cancel(peer: AnyHashable) {
+        if session?.peer == peer { cancel() }
+    }
+
+    private func key(_ s: Session) -> PairMessage {
+        .key(pub: s.pub, deviceKey: settings.deviceKey, name: settings.name)
+    }
+
+    private func open(peer: AnyHashable, initiator: Bool, send: @escaping (PairMessage) -> Void) -> Session {
+        let s = Session(peer: peer, initiator: initiator, send: send)
         session = s
-        s.send(.key(pub: s.priv.publicKey.rawRepresentation, deviceKey: settings.deviceKey, name: settings.name))
+        // An unanswered attempt must not block the next one forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self, weak s] in
+            if let s, self?.session === s { self?.cancel() }
+        }
         return s
     }
 

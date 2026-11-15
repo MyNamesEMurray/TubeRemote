@@ -20,10 +20,10 @@ final class Log: ObservableObject {
 
     private func append(_ s: String) {
         lines = Array((lines + [s]).suffix(300))
-        save()
     }
 
-    private func save() { UserDefaults.standard.set(lines, forKey: "log") }
+    /// Called when the app leaves the foreground; writing on every line stalls the main thread.
+    func save() { UserDefaults.standard.set(lines, forKey: "log") }
 }
 
 struct DebugLogView: View {

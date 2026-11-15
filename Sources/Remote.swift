@@ -10,6 +10,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var connected = false
     @Published var detail = ""
     @Published var needsPairing = false
+    /// The two devices run app versions that cannot talk to each other.
+    @Published var outdated = false
     var endpoints: [NWEndpoint]
     private var attempt = 0
     var id: String { key }
@@ -19,6 +21,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     private let pairing: Pairing
     private var conn: NWConnection?
     private var ready = false
+    private var channel: Channel?
+    private var peerVersion: Int?
     private var lastActivity = Date()
     private var watchdog: Timer?
     private var keepalive: Timer?
@@ -45,6 +49,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         guard !stopped, conn == nil else { return }
         retryPending = false
         lastActivity = Date()
+        peerVersion = nil
         // shortcut: a renamed or stale Bonjour twin may share the key, so rotate endpoints on each retry
         let endpoint = endpoints[attempt % endpoints.count]
         attempt += 1
@@ -57,7 +62,8 @@ final class RemoteClient: ObservableObject, Identifiable {
             switch s {
             case .ready:
                 self.ready = true
-                Transport.send(ClientMessage.hello(name: self.settings.name, key: self.settings.deviceKey), on: c)
+                Transport.send(ClientMessage.hello(name: self.settings.name, key: self.settings.deviceKey,
+                                                   version: Transport.version), on: c)
                 Transport.receiveLoop(c, as: ServerMessage.self, onMessage: { [weak self] m in
                     guard let self, c === self.conn else { return }
                     self.lastActivity = Date()
@@ -82,27 +88,51 @@ final class RemoteClient: ObservableObject, Identifiable {
     var isPaired: Bool { settings.paired(key) != nil }
 
     func beginPair() {
-        pairing.begin { [weak self] in self?.sendRaw(.pair($0)) }
+        pairing.begin(peer: key) { [weak self] in self?.sendRaw(.pair($0)) }
+    }
+
+    /// False when the viewer runs an app version this one cannot talk to. Older viewers never say hello back.
+    private func sameVersion() -> Bool {
+        if peerVersion == nil { outdated = true }
+        return !outdated
     }
 
     private func handle(_ m: ServerMessage) {
         switch m {
-        case .state(let st):
+        case .hello(let v):
+            peerVersion = v
+            outdated = v != Transport.version
+        case .sealed(let box):
+            guard let body = channel?.open(box) else {
+                Log.add("bad encrypted message from \(title)")
+                return drop()
+            }
+            guard case .state(let st)? = try? JSONDecoder().decode(ServerMessage.self, from: body) else {
+                return Log.add("rx sealed decode failed")
+            }
             if !connected { Log.add("first state from \(title)") }
             state = st
             connected = true
             needsPairing = false
             detail = ""
+        case .state:
+            Log.add("ignored unencrypted state")
         case .unpaired:
+            guard sameVersion() else { return }
+            channel = nil
             connected = false
             needsPairing = true
             detail = ""
         case .challenge(let nonce):
-            guard let d = settings.paired(key) else { return }
+            guard sameVersion() else { return }
+            // No secret on this side: answer with an empty proof so the viewer reports "unpaired" and offers pairing.
+            guard let d = settings.paired(key) else { return sendRaw(.auth(mac: Data(), nonce: Data())) }
+            let mine = Transport.nonce()
             let mac = HMAC<SHA256>.authenticationCode(for: nonce, using: SymmetricKey(data: d.secret))
-            sendRaw(.auth(Data(mac)))
+            channel = Channel(secret: d.secret, salt: nonce + mine, viewer: false)
+            sendRaw(.auth(mac: Data(mac), nonce: mine))
         case .pair(let pm):
-            pairing.receive(pm) { [weak self] in self?.sendRaw(.pair($0)) }
+            pairing.receive(pm, from: key) { [weak self] in self?.sendRaw(.pair($0)) }
         }
     }
 
@@ -112,9 +142,11 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     func send(_ cmd: Command) {
-        guard connected else { return Log.add("send \(cmd) dropped: not connected") }
+        guard connected, let box = channel?.seal(ClientMessage.command(cmd)) else {
+            return Log.add("send \(cmd) dropped: not connected")
+        }
         Log.add("send \(cmd)")
-        sendRaw(.command(cmd))
+        sendRaw(.sealed(box))
     }
 
     func stop() {
@@ -125,6 +157,8 @@ final class RemoteClient: ObservableObject, Identifiable {
         conn = nil
         ready = false
         connected = false
+        channel = nil
+        pairing.cancel(peer: key)
     }
 
     private func drop() {
@@ -134,6 +168,8 @@ final class RemoteClient: ObservableObject, Identifiable {
         old?.cancel()
         ready = false
         connected = false
+        channel = nil
+        pairing.cancel(peer: key)
         guard !stopped, !retryPending else { return }
         retryPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.connect() }
@@ -146,11 +182,14 @@ final class RemoteController: ObservableObject {
     @Published var selectedKey: String? {
         didSet { settings.lastViewerKey = selectedKey }
     }
+    /// iOS refused Local Network access, so no viewer can ever be found.
+    @Published var denied = false
     var active: RemoteClient? { devices.first { $0.key == selectedKey } }
 
     private var clients: [String: RemoteClient] = [:]
     private var missing: [String: Date] = [:]
     private var browser: NWBrowser?
+    private var running = false
     private let settings: AppSettings
     private let pairing: Pairing
 
@@ -161,11 +200,26 @@ final class RemoteController: ObservableObject {
     }
 
     func start() {
+        running = true
         guard browser == nil else { return }
         let b = NWBrowser(for: .bonjour(type: Transport.serviceType, domain: nil), using: .tcp)
         b.stateUpdateHandler = { [weak self] s in
             Log.add("browser \(s)")
-            if case .failed = s { self?.stop() }
+            switch s {
+            case .ready:
+                self?.denied = false
+            case .waiting(let e):
+                self?.denied = Transport.isDenied(e)
+            case .failed(let e):
+                self?.denied = Transport.isDenied(e)
+                self?.teardown()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    guard let self, self.running else { return }
+                    self.start()
+                }
+            default:
+                break
+            }
         }
         b.browseResultsChangedHandler = { [weak self] results, _ in
             Log.add("browse results: \(results.map { "\($0.endpoint)" })")
@@ -176,6 +230,11 @@ final class RemoteController: ObservableObject {
     }
 
     func stop() {
+        running = false
+        teardown()
+    }
+
+    private func teardown() {
         browser?.cancel()
         browser = nil
         clients.values.forEach { $0.stop() }
