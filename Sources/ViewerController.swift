@@ -74,7 +74,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, errored = false;
+      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, errored = false, lastKickAt = 0;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -156,11 +156,19 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
         // Unmute and play. Called from the app, not from a timer: WebKit only lets sound start
         // from a call it treats as a person's action, and pauses a video unmuted any other way.
+        // Start or unmute, in that order. Play first, exactly as a tap on Play does. Unmute only once it is
+        // playing, then play again if that paused it. YouTube's own unmute button is never clicked: a click
+        // there can pause the video.
         kick: function(){
           var v = vid(); if (!v) return;
-          var u = document.querySelector('.ytp-unmute'); if (u && u.offsetParent) u.click();
-          v.muted = false;
-          if (want && v.paused) v.play();
+          lastKickAt = Date.now();
+          var play = function(){
+            if (!want || !v.paused) return;
+            var r = v.play();
+            if (r && r.catch) r.catch(function(e){ post({t:'log', m:'play() rejected: ' + e.name}) });
+          };
+          if (v.paused) play();
+          else if (v.muted) { v.muted = false; setTimeout(play, 300) }
         },
         // Asks for Picture in Picture the way any web page may. YouTube decides whether to allow it
         // (it does for Premium accounts); nothing here overrides a refusal.
@@ -188,10 +196,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         alive = true;
         if (ad()) return;
         if (!started) { started = true; if (!want) { e.target.pause(); return } }
-        post({t:'state', s:1});
+        post({t:'state', s:1, muted:e.target.muted, ct:e.target.currentTime});
       }, true);
       document.addEventListener('pause', function(e){
-        if (e.target.tagName === 'VIDEO' && started && !e.target.ended && !ad()) post({t:'state', s:2});
+        if (e.target.tagName === 'VIDEO' && started && !e.target.ended && !ad())
+          post({t:'state', s:2, muted:e.target.muted, ct:e.target.currentTime, kickAgo: lastKickAt ? Date.now() - lastKickAt : -1});
       }, true);
       document.addEventListener('ended', function(e){
         if (e.target.tagName === 'VIDEO' && !ad()) post({t:'state', s:0});
@@ -562,6 +571,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 advance()
             }
             broadcast()
+        case "log":
+            Log.add("page: \(b["m"] as? String ?? "?")")
         case "nocc":
             captions = false
             captionsNone = true
@@ -592,6 +603,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             let stalled = b["paused"] as? Bool == true && starting
             if wantPlaying, stalled || b["muted"] as? Bool == true, Date().timeIntervalSince(lastKick) > 1 {
                 lastKick = Date()
+                Log.add("kick paused=\(b["paused"] ?? "?") muted=\(b["muted"] ?? "?")")
                 js("__tr.kick()")
             }
             let q = b["q"] as? String
@@ -600,7 +612,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             let qs = (b["qs"] as? [String] ?? []).filter { $0 != "auto" && $0 != "highres" }
             if qs != qualities { qualities = qs }
         case "state":
-            Log.add("player state \(b["s"] ?? "?")")
+            Log.add("player state \(b["s"] ?? "?") muted=\(b["muted"] ?? "-") t=\(b["ct"] ?? "-") kickAgo=\(b["kickAgo"] ?? "-")")
             switch b["s"] as? Int ?? -1 {
             case 1:
                 isPlaying = true
