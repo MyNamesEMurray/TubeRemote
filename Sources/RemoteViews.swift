@@ -456,6 +456,14 @@ struct NowPlayingContent: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done", action: dismiss) }
+                // The toolbar button shows only its icon, so name the viewer under the title.
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text("Now Playing").font(.headline)
+                        Text("on \(client.title)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { showPicker = true } label: { Label(client.title, systemImage: "tv").labelStyle(.titleAndIcon) }
                         .accessibilityLabel("Viewer: \(client.title)")
