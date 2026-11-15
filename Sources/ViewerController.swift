@@ -82,7 +82,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, errored = false, lastKickAt = 0;
+      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -123,42 +123,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       document.documentElement.appendChild(css);
       function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
       function ad(){ return !!document.querySelector('.ad-showing,.ad-interrupting') }
-      // One-off report to the debug log: can this device show HDR, and can this web view decode it?
-      function probe(){
-        var r = {}, v = vid(), p = mp();
-        var mm = function(s){ try { return matchMedia(s).matches } catch(e) { return 'err' } };
-        r.displayHDR = mm('(dynamic-range: high)');
-        r.videoHDR = mm('(video-dynamic-range: high)');
-        var ms = window.ManagedMediaSource || window.MediaSource;
-        r.mse = window.ManagedMediaSource ? 'managed' : (window.MediaSource ? 'mse' : 'none');
-        var ok = function(c){ try { return ms ? ms.isTypeSupported(c) : false } catch(e) { return 'err' } };
-        r.vp9 = ok('video/webm; codecs="vp09.00.10.08"');
-        r.vp9hdr = ok('video/webm; codecs="vp09.02.10.10"');
-        r.av1hdr = ok('video/mp4; codecs="av01.0.08M.10"');
-        r.hevchdr = ok('video/mp4; codecs="hvc1.2.4.L153.B0"');
-        try { r.levels = p.getAvailableQualityLevels().join(',') } catch(e) { r.levels = '-' }
-        r.playing = v ? v.videoWidth + 'x' + v.videoHeight : '-';
-        r.ua = navigator.userAgent.replace('Mozilla/5.0 ', '');
-        // The player's own account of what it is playing. format 337 is 2160p60 HDR, 315 and 313 are SDR 4K.
-        try {
-          var d = JSON.parse(p.getDebugText());
-          r.format = d.fmt; r.optimal = d.optimal_format; r.quality = d.debug_playbackQuality; r.browser = d.cbr + ' ' + d.cbrver;
-          // This build's debug info lacks some fields, so list every key that mentions a format, codec or colour.
-          r.formatKeys = Object.keys(d).filter(function(k){ return /fmt|format|codec|color|hdr|itag|vss/i.test(k) })
-            .map(function(k){ return k + '=' + d[k] }).join(' ');
-        } catch(e) { r.format = 'unavailable' }
-        try { r.stats = JSON.stringify(p.getStatsForNerds()).slice(0, 700) } catch(e) { r.stats = 'unavailable' }
-        var done = function(){ post({t:'hdr', info: JSON.stringify(r)}) };
-        var mc = navigator.mediaCapabilities;
-        if (!mc || !mc.decodingInfo) { r.mediaCapabilities = 'none'; return done() }
-        var cfg = function(ct){ return {type:'media-source', video:{contentType:ct, width:3840, height:2160, bitrate:25000000,
-          framerate:30, hdrMetadataType:'smpteSt2086', colorGamut:'rec2020', transferFunction:'pq'}} };
-        Promise.all([['mcVp9','video/webm; codecs="vp09.02.10.10"'], ['mcAv1','video/mp4; codecs="av01.0.08M.10"'],
-          ['mcHevc','video/mp4; codecs="hvc1.2.4.L153.B0"']].map(function(x){
-          return mc.decodingInfo(cfg(x[1])).then(function(i){
-            r[x[0]] = i.supported ? (i.smooth ? 'smooth' : 'choppy') + (i.powerEfficient ? '+efficient' : '') : 'no'
-          }).catch(function(){ r[x[0]] = 'err' }) })).then(done, done);
-      }
       // YouTube has renamed its Skip button more than once; try each known name.
       function skipButton(){
         var b = document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button,.ytp-ad-skip-button-container button');
@@ -172,7 +136,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         // debug log. Called from the app, so it runs as the same kind of call as a tap on Play.
         kick: function(n){
           var v = vid(), p = mp(); if (!v) return;
-          lastKickAt = Date.now();
           var log = function(m){ post({t:'log', m:'kick ' + n + ': ' + m}) };
           try {
             if (n === 0) {
@@ -184,7 +147,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         },
         // Unmute through the player, which is what its own unmute button does.
         unmute: function(){
-          var p = mp(), v = vid(); lastKickAt = Date.now();
+          var p = mp(), v = vid();
           try { p.unMute() } catch(e) {}
           if (v && v.muted) v.muted = false;
           post({t:'log', m:'unmute requested'});
@@ -215,11 +178,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         alive = true;
         if (ad()) return;
         if (!started) { started = true; if (!want) { e.target.pause(); return } }
-        post({t:'state', s:1, muted:e.target.muted, ct:e.target.currentTime});
+        post({t:'state', s:1});
       }, true);
       document.addEventListener('pause', function(e){
-        if (e.target.tagName === 'VIDEO' && started && !e.target.ended && !ad())
-          post({t:'state', s:2, muted:e.target.muted, ct:e.target.currentTime, kickAgo: lastKickAt ? Date.now() - lastKickAt : -1});
+        if (e.target.tagName === 'VIDEO' && started && !e.target.ended && !ad()) post({t:'state', s:2});
       }, true);
       document.addEventListener('ended', function(e){
         if (e.target.tagName === 'VIDEO' && !ad()) post({t:'state', s:0});
@@ -239,7 +201,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       });
       setInterval(function(){
         var v = vid(); ticks++;
-        if (ticks === 8 || ticks === 40) probe()
         // YouTube's own error screen ("An error occurred", "Video unavailable"). A forced quality the device
         // cannot decode ends here, so forget it and let the app reload on Auto.
         var er = document.querySelector('.ytp-error');
@@ -528,19 +489,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         adSkippable = false
         captionsNone = false
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
-        // The first video of a session is often loaded paused. Do what the remote's Play button does: ask the page to
-        // play from the app, a few times, until the position moves. This does not depend on the page reporting
-        // anything, and each check logs what it saw.
-        let id = item.id
-        for delay in [1.5, 3.0, 5.0, 8.0, 12.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.current?.id == id else { return }
-                let moving = Date().timeIntervalSince(self.lastMove) < 1.5
-                Log.add("start check +\(delay)s want=\(self.wantPlaying) loading=\(self.loading) moving=\(moving) pos=\(self.lastPos)")
-                guard self.wantPlaying, !moving else { return }
-                self.js("__tr.play()")
-            }
-        }
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
             self.webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(item.videoID)")!))
@@ -616,8 +564,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             pushSettings()
         case "tap":
             tapped.send()
-        case "hdr":
-            Log.add("HDR check: \(b["info"] as? String ?? "?")")
         case "perr":
             guard let id = current?.videoID else { break }
             if b["forced"] as? Bool == true {
@@ -687,7 +633,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             let qs = (b["qs"] as? [String] ?? []).filter { $0 != "auto" && $0 != "highres" }
             if qs != qualities { qualities = qs }
         case "state":
-            Log.add("player state \(b["s"] ?? "?") muted=\(b["muted"] ?? "-") t=\(b["ct"] ?? "-") kickAgo=\(b["kickAgo"] ?? "-")")
+            Log.add("player state \(b["s"] ?? "?")")
             switch b["s"] as? Int ?? -1 {
             case 1:
                 isPlaying = true
