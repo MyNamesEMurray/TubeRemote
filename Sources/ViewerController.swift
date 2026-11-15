@@ -133,7 +133,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         try {
           var d = JSON.parse(p.getDebugText());
           r.format = d.fmt; r.optimal = d.optimal_format; r.quality = d.debug_playbackQuality; r.browser = d.cbr + ' ' + d.cbrver;
+          // This build's debug info lacks some fields, so list every key that mentions a format, codec or colour.
+          r.formatKeys = Object.keys(d).filter(function(k){ return /fmt|format|codec|color|hdr|itag|vss/i.test(k) })
+            .map(function(k){ return k + '=' + d[k] }).join(' ');
         } catch(e) { r.format = 'unavailable' }
+        try { r.stats = JSON.stringify(p.getStatsForNerds()).slice(0, 700) } catch(e) { r.stats = 'unavailable' }
         var done = function(){ post({t:'hdr', info: JSON.stringify(r)}) };
         var mc = navigator.mediaCapabilities;
         if (!mc || !mc.decodingInfo) { r.mediaCapabilities = 'none'; return done() }
