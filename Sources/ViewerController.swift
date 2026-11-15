@@ -87,7 +87,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         seek: function(t){ var v = vid(); if (v) v.currentTime = t },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
         set: function(o){
-          if (!o.q && wq) { try { mp().setPlaybackQualityRange('tiny','highres') } catch(e) {} }
+          // Back to automatic: lift the limit and forget the choice YouTube saved for later videos.
+          if (!o.q && wq) {
+            try { localStorage.removeItem('yt-player-quality') } catch(e) {}
+            try { mp().setPlaybackQualityRange('auto','auto') } catch(e) {}
+          }
           wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
       };
       document.addEventListener('playing', function(e){
@@ -472,7 +476,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
-                    adSkippable: adSkippable)
+                    adSkippable: adSkippable, autoQuality: wantQuality == nil)
     }
 
     private func broadcast() {

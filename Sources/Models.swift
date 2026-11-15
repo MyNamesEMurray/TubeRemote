@@ -76,6 +76,8 @@ struct ViewerState: Codable, Equatable {
     var qualities: [String]?
     /// An advert is playing and YouTube is offering its Skip button.
     var adSkippable: Bool?
+    /// No quality is forced; `quality` is then whatever YouTube picked.
+    var autoQuality: Bool?
 
     var muted: Bool { volume < 0.01 }
 }

@@ -653,10 +653,14 @@ struct ControlsPane: View {
             .accessibilityLabel(s.captions == true ? "Turn captions off" : "Turn captions on")
             if let qs = s.qualities, qs.count > 1 {
                 Menu {
-                    check("Auto", false) { client.send(.setQuality("auto")) }
-                    ForEach(qs, id: \.self) { q in check(qualityLabel(q), q == s.quality) { client.send(.setQuality(q)) } }
+                    let auto = s.autoQuality != false
+                    check("Auto", auto) { client.send(.setQuality("auto")) }
+                    ForEach(qs, id: \.self) { q in
+                        check(qualityLabel(q), !auto && q == s.quality) { client.send(.setQuality(q)) }
+                    }
                 } label: {
-                    option(qualityLabel(s.quality), "tv")
+                    // In automatic mode say so, with the quality YouTube picked.
+                    option(s.autoQuality != false ? "Auto \(qualityLabel(s.quality))" : qualityLabel(s.quality), "tv")
                 }
                 .accessibilityLabel("Quality, \(qualityLabel(s.quality))")
             }
