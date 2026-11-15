@@ -445,41 +445,65 @@ struct LocalBrowse: View {
     }
 }
 
-/// Remotes connected right now (each with a Disconnect button) and remotes that connected but are not paired yet.
+/// Every paired device, with the ones connected right now first, and devices that connected but are not paired yet.
 struct PairSheet: View {
     @EnvironmentObject var viewer: ViewerController
+    @EnvironmentObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @State private var forgetting: PairedDevice?
+
+    private func live(_ d: PairedDevice) -> PendingPeer? { viewer.connected.first { $0.key == d.key } }
+
+    private var devices: [PairedDevice] {
+        settings.paired.sorted { a, b in
+            let la = live(a) != nil, lb = live(b) != nil
+            return la != lb ? la : a.name < b.name
+        }
+    }
+
+    private func row(_ d: PairedDevice) -> some View {
+        let peer = live(d)
+        return HStack(spacing: 12) {
+            Image(systemName: "iphone")
+                .foregroundStyle(peer == nil ? Color.secondary : Color.accentColor)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(peer?.name ?? d.name)
+                Text(peer == nil ? "Not connected" : "Connected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let peer {
+                Button("Disconnect", role: .destructive) {
+                    Haptics.warning()
+                    viewer.disconnect(peer)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .frame(minHeight: 44)
+        .swipeActions { Button("Forget", role: .destructive) { forgetting = d } }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if !viewer.connected.isEmpty {
+                if !settings.paired.isEmpty {
                     Section {
-                        ForEach(viewer.connected) { p in
-                            HStack(spacing: 12) {
-                                Image(systemName: "iphone").foregroundStyle(.tint).frame(width: 28)
-                                Text(p.name)
-                                Spacer()
-                                Button("Disconnect", role: .destructive) {
-                                    Haptics.warning()
-                                    viewer.disconnect(p)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                            .frame(minHeight: 44)
-                        }
+                        ForEach(devices) { row($0) }
                     } header: {
-                        Text("Connected")
+                        Text("Paired devices")
                     } footer: {
-                        Text("A disconnected device stays paired. It reconnects when its owner chooses this viewer again.")
+                        Text("Disconnect closes the connection but keeps the pairing; the device reconnects when its owner chooses this viewer again. Swipe a device to forget it.")
                     }
                 }
                 if viewer.pending.isEmpty {
-                    if viewer.connected.isEmpty {
+                    if settings.paired.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "iphone").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
-                            Text("No devices found. Open the app on the other device in Remote mode.")
+                            Text("No devices yet. Open the app on the other device in Remote mode.")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
@@ -516,8 +540,20 @@ struct PairSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .confirmationDialog(
+                "Forget \(forgetting?.name ?? "this device")?",
+                isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                titleVisibility: .visible,
+                presenting: forgetting
+            ) { d in
+                Button("Forget", role: .destructive) {
+                    settings.paired.removeAll { $0.key == d.key }
+                }
+            } message: { _ in
+                Text("It is disconnected now and must pair again to reconnect.")
+            }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .pairingPrompt()
     }
 }

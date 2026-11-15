@@ -105,6 +105,8 @@ struct Channel {
 struct PendingPeer: Identifiable {
     let id: ObjectIdentifier
     let name: String
+    /// The remote's device key, known once it has said hello.
+    var key: String? = nil
 }
 
 /// Viewer side: accepts any number of remotes. Only authenticated remotes get state and may send commands.
@@ -208,7 +210,7 @@ final class ViewerServer {
 
     /// Remotes signed in right now, so the person at the viewer can see and disconnect them.
     var connected: [PendingPeer] {
-        conns.compactMap { $0.value.authed ? PendingPeer(id: $0.key, name: $0.value.name) : nil }
+        conns.compactMap { $0.value.authed ? PendingPeer(id: $0.key, name: $0.value.name, key: $0.value.key) : nil }
             .sorted { $0.name < $1.name }
     }
 
