@@ -73,7 +73,17 @@ struct RootView: View {
         }
         .pairingPrompt()
         .onAppear { model.apply() }
-        .onChange(of: phase) { if $0 == .active { model.apply() } else { Log.shared.save() } }
+        .onChange(of: phase) {
+            switch $0 {
+            case .active:
+                model.apply()
+                Log.shared.setCleanExit(false)
+            case .background:
+                Log.shared.setCleanExit(true)
+            default:
+                Log.shared.save()
+            }
+        }
     }
 }
 

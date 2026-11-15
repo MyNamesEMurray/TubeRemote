@@ -10,7 +10,22 @@ final class Log: ObservableObject {
         return f
     }()
 
-    private init() { lines = UserDefaults.standard.stringArray(forKey: "log") ?? [] }
+    private static let cleanKey = "logCleanExit"
+
+    /// The log is cleared on the first launch after a normal exit and kept after a crash. The app counts as
+    /// exited cleanly once it reaches the background, which is where a swipe-away from the app switcher happens,
+    /// and as running again as soon as it is active.
+    private init() {
+        let d = UserDefaults.standard
+        lines = d.bool(forKey: Self.cleanKey) ? [] : (d.stringArray(forKey: "log") ?? [])
+        d.set(false, forKey: Self.cleanKey)
+        save()
+    }
+
+    func setCleanExit(_ clean: Bool) {
+        UserDefaults.standard.set(clean, forKey: Self.cleanKey)
+        save()
+    }
 
     static func add(_ s: String) {
         DispatchQueue.main.async { shared.append("\(fmt.string(from: Date())) \(tag) \(s)") }
