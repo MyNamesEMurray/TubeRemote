@@ -42,9 +42,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var wantQuality: String?
     // What the player reports back.
     private var speed = 1.0
-    private var captions = false
-    private var quality: String?
-    private var qualities: [String] = []
+    // Published so the viewer's own overlay shows them; remotes get the same values in the snapshot.
+    @Published private(set) var captions = false
+    @Published private(set) var quality: String?
+    @Published private(set) var qualities: [String] = []
+    /// No quality is forced; `quality` is then whatever YouTube picked.
+    @Published private(set) var autoQuality = true
     private var adSkippable = false
     /// What was last asked for, as opposed to `isPlaying`, which is what the page reports.
     private var wantPlaying = false
@@ -369,6 +372,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             // The name is put into script on the page and arrives over the network: whitelist it.
             guard q.range(of: "^[a-z0-9]{1,12}$", options: .regularExpression) != nil else { return nil }
             wantQuality = q == "auto" ? nil : q
+            autoQuality = wantQuality == nil
             pushSettings()
             return nil
         }
@@ -527,7 +531,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
-                    adSkippable: adSkippable, autoQuality: wantQuality == nil)
+                    adSkippable: adSkippable, autoQuality: autoQuality)
     }
 
     private func broadcast() {

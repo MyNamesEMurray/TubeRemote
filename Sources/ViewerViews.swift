@@ -146,6 +146,54 @@ struct ViewerControls: View {
         .accessibilityLabel(label)
     }
 
+    private func option(_ text: String, _ symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.subheadline.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(.white.opacity(0.18), in: Capsule())
+            .frame(minHeight: 44)
+    }
+
+    private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            touched()
+            action()
+        } label: {
+            if on { Label(text, systemImage: "checkmark") } else { Text(text) }
+        }
+    }
+
+    /// Captions and quality, the same options the remote has.
+    private var options: some View {
+        HStack(spacing: 12) {
+            Button {
+                Haptics.tap()
+                touched()
+                viewer.handle(.setCaptions(!viewer.captions), from: nil)
+            } label: {
+                option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+            }
+            .accessibilityLabel(viewer.captions ? "Turn captions off" : "Turn captions on")
+            if viewer.qualities.count > 1 {
+                Menu {
+                    check("Auto", viewer.autoQuality) { viewer.handle(.setQuality("auto"), from: nil) }
+                    ForEach(viewer.qualities, id: \.self) { q in
+                        check(qualityLabel(q), !viewer.autoQuality && q == viewer.quality) {
+                            viewer.handle(.setQuality(q), from: nil)
+                        }
+                    }
+                } label: {
+                    // In automatic mode say so, with the quality YouTube picked.
+                    option(viewer.autoQuality ? "Auto \(qualityLabel(viewer.quality))" : qualityLabel(viewer.quality), "tv")
+                }
+                .accessibilityLabel("Quality, \(qualityLabel(viewer.quality))")
+            }
+        }
+    }
+
     var body: some View {
         let pos = scrub ?? viewer.position
         VStack(spacing: 6) {
@@ -184,6 +232,7 @@ struct ViewerControls: View {
                 }
                 .accessibilityLabel("Picture in Picture")
             }
+            options
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 20)
