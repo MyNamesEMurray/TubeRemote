@@ -29,7 +29,9 @@ final class RemoteClient: ObservableObject, Identifiable {
     private var stopped = false
     private var retryPending = false
 
-    init(key: String, name: String, endpoints: [NWEndpoint], settings: AppSettings, pairing: Pairing) {
+    init(key: String, name: String, endpoints: [NWEndpoint], settings: AppSettings, pairing: Pairing,
+         state: ViewerState? = nil) {
+        self.state = state
         self.key = key
         self.name = name
         self.endpoints = endpoints
@@ -188,6 +190,9 @@ final class RemoteController: ObservableObject {
 
     private var clients: [String: RemoteClient] = [:]
     private var missing: [String: Date] = [:]
+    /// What each viewer last reported, so a client rebuilt after a return from the background shows
+    /// the last known controls (dimmed, "Reconnecting") instead of flashing "Nothing Playing".
+    private var lastState: [String: ViewerState] = [:]
     private var browser: NWBrowser?
     private var running = false
     private let settings: AppSettings
@@ -235,6 +240,7 @@ final class RemoteController: ObservableObject {
     }
 
     private func teardown() {
+        for (k, c) in clients { if let s = c.state { lastState[k] = s } }
         browser?.cancel()
         browser = nil
         clients.values.forEach { $0.stop() }
@@ -269,7 +275,8 @@ final class RemoteController: ObservableObject {
                 c.name = v.name
                 c.endpoints = v.endpoints
             } else {
-                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints, settings: settings, pairing: pairing)
+                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints, settings: settings, pairing: pairing,
+                                    state: lastState[k])
                 clients[k] = c
                 c.connect()
             }
@@ -282,6 +289,7 @@ final class RemoteController: ObservableObject {
                 self.missing[k] = nil
                 self.clients[k]?.stop()
                 self.clients[k] = nil
+                self.lastState[k] = nil
                 self.devices.removeAll { $0.key == k }
             }
         }
