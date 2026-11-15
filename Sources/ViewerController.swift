@@ -46,7 +46,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       var want = true, started = false, alive = false, failed = false, ticks = 0;
       var css = document.createElement('style');
       css.textContent = '#movie_player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important}' +
-        '#movie_player video{width:100%!important;height:100%!important;left:0!important;top:0!important;object-fit:contain!important}' +
+        // YouTube's own wrapper around the video has no height, so size both it and the video explicitly.
+        '#movie_player .html5-video-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}' +
+        '#movie_player video{position:absolute!important;width:100vw!important;height:100vh!important;left:0!important;top:0!important;object-fit:contain!important}' +
         'html,body{overflow:hidden!important;background:#000!important}';
       document.documentElement.appendChild(css);
       function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
