@@ -71,7 +71,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, probed = false, errored = false;
+      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -125,6 +125,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         r.hevchdr = ok('video/mp4; codecs="hvc1.2.4.L153.B0"');
         try { r.levels = p.getAvailableQualityLevels().join(',') } catch(e) { r.levels = '-' }
         r.playing = v ? v.videoWidth + 'x' + v.videoHeight : '-';
+        r.ua = navigator.userAgent.replace(/^Mozilla\/5.0 /, '');
+        // The player's own account of what it is playing. format 337 is 2160p60 HDR, 315 and 313 are SDR 4K.
+        try {
+          var d = JSON.parse(p.getDebugText());
+          r.format = d.fmt; r.optimal = d.optimal_format; r.quality = d.debug_playbackQuality; r.browser = d.cbr + ' ' + d.cbrver;
+        } catch(e) { r.format = 'unavailable' }
         var done = function(){ post({t:'hdr', info: JSON.stringify(r)}) };
         var mc = navigator.mediaCapabilities;
         if (!mc || !mc.decodingInfo) { r.mediaCapabilities = 'none'; return done() }
@@ -202,7 +208,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       });
       setInterval(function(){
         var v = vid(); ticks++;
-        if (!probed && ticks === 8) { probed = true; probe() }
+        if (ticks === 8 || ticks === 40) probe()
         // YouTube's own error screen ("An error occurred", "Video unavailable"). A forced quality the device
         // cannot decode ends here, so forget it and let the app reload on Auto.
         var er = document.querySelector('.ytp-error');
@@ -241,7 +247,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         // Same Safari-like UA as the browser, so the shared YouTube sign-in is accepted here too.
-        cfg.applicationNameForUserAgent = "Version/17.0 Safari/605.1.15"
+        cfg.applicationNameForUserAgent = WebIdentity.applicationName
         // iPad asks for desktop sites by default; the bridge is written for the mobile watch page.
         cfg.defaultWebpagePreferences.preferredContentMode = .mobile
         cfg.userContentController.addUserScript(WKUserScript(

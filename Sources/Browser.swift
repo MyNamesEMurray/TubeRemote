@@ -45,7 +45,7 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
         // Without a Safari-like UA, Google refuses sign-in inside web views.
-        cfg.applicationNameForUserAgent = "Version/17.0 Safari/605.1.15"
+        cfg.applicationNameForUserAgent = WebIdentity.applicationName
         // iPad asks for desktop sites by default; the play cover is written for the mobile site.
         cfg.defaultWebpagePreferences.preferredContentMode = .mobile
         cfg.userContentController.addUserScript(WKUserScript(
@@ -163,6 +163,15 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         let dur = (try? await webView.evaluateJavaScript(js)) as? Double
         let page = (webView.title ?? "").replacingOccurrences(of: " - YouTube", with: "")
         return await VideoMetadata.item(videoID: id, duration: dur, fallbackTitle: page)
+    }
+}
+
+enum WebIdentity {
+    /// Safari reports the same version as the OS (iOS 27.2 is Safari 27.2). A fixed old number made YouTube
+    /// treat this as an old Safari, which may be why it did not offer HDR here as it does in Safari itself.
+    static var applicationName: String {
+        let v = UIDevice.current.systemVersion.split(separator: ".").prefix(2).joined(separator: ".")
+        return "Version/\(v) Safari/605.1.15"
     }
 }
 
