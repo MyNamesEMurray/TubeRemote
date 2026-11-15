@@ -34,6 +34,15 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var wasPlaying = false
     /// True from asking for a video until its page reports in; the outgoing page's last events are ignored.
     private var loading = false
+    // What the remote asked for; re-applied on every new video.
+    private var wantSpeed = 1.0
+    private var wantCaptions: Bool?
+    private var wantQuality: String?
+    // What the player reports back.
+    private var speed = 1.0
+    private var captions = false
+    private var quality: String?
+    private var qualities: [String] = []
     private var pairedObs: AnyCancellable?
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
@@ -44,6 +53,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
+      var wr = 1, wc = null, wq = null, tc = 0, tq = 0;
+      function mp(){ return document.getElementById('movie_player') }
+      function cc(){ try { var t = mp().getOption('captions','track'); return !!(t && t.languageCode) } catch(e) { return false } }
+      function setCC(on){ try { var p = mp(); p.loadModule('captions');
+        if (on) { var l = p.getOption('captions','tracklist') || []; if (l.length) p.setOption('captions','track',l[0]) }
+        else p.setOption('captions','track',{}) } catch(e) {} }
       var css = document.createElement('style');
       css.textContent = '#movie_player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;background:#000!important}' +
         // YouTube's own wrapper around the video has no height, so size both it and the video explicitly.
@@ -56,7 +71,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       window.__tr = {
         play: function(){ want = true; var v = vid(); if (v) v.play() },
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
-        seek: function(t){ var v = vid(); if (v) v.currentTime = t }
+        seek: function(t){ var v = vid(); if (v) v.currentTime = t },
+        set: function(o){
+          if (!o.q && wq) { try { mp().setPlaybackQualityRange('tiny','highres') } catch(e) {} }
+          wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
       };
       document.addEventListener('playing', function(e){
         if (e.target.tagName !== 'VIDEO') return;
@@ -77,7 +95,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           var u = document.querySelector('.ytp-unmute'); if (u && u.offsetParent) u.click();
           if (v.muted) v.muted = false;
           if (!started && want && v.paused) v.play();
-          if (!ad()) post({t:'time', pos:v.currentTime, dur:v.duration});
+          if (!ad()) {
+            var p = mp(), q = null, qs = [];
+            if (started) {
+              if (v.playbackRate !== wr) v.playbackRate = wr;
+              if (wc !== null && cc() !== wc && tc++ < 20) setCC(wc);
+              try { if (wq && p.getPlaybackQuality() !== wq && tq++ < 20) p.setPlaybackQualityRange(wq, wq) } catch(e) {}
+            }
+            try { q = p.getPlaybackQuality(); qs = p.getAvailableQualityLevels() } catch(e) {}
+            post({t:'time', pos:v.currentTime, dur:v.duration, rate:v.playbackRate, cc:cc(), q:q, qs:qs});
+          }
         }
         if (!alive && !failed && ticks > 40) { failed = true; post({t:'error'}) }
       }, 500);
@@ -262,6 +289,22 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .clearHistory:
             history = []
             return nil
+        case .setSpeed(let r):
+            wantSpeed = min(max(r, 0.25), 2)
+            speed = wantSpeed
+            pushSettings()
+            return nil
+        case .setCaptions(let on):
+            wantCaptions = on
+            captions = on
+            pushSettings()
+            return on ? "Captions on" : "Captions off"
+        case .setQuality(let q):
+            // The name is put into script on the page and arrives over the network: whitelist it.
+            guard q.range(of: "^[a-z0-9]{1,12}$", options: .regularExpression) != nil else { return nil }
+            wantQuality = q == "auto" ? nil : q
+            pushSettings()
+            return nil
         }
     }
 
@@ -329,6 +372,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Player bridge
 
+    private func pushSettings() {
+        let cc = wantCaptions.map { "\($0)" } ?? "null"
+        let q = wantQuality.map { "'\($0)'" } ?? "null"
+        js("__tr.set({rate:\(wantSpeed),cc:\(cc),q:\(q)})")
+    }
+
     /// `__tr` only exists on a watch page; calls made on any other page do nothing.
     private func js(_ s: String) {
         webView.evaluateJavaScript("window.__tr&&\(s)")
@@ -341,6 +390,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             loading = false
             // A pause that arrived while the page was still loading must hold once it starts.
             if !isPlaying { js("__tr.pause()") }
+            pushSettings()
         case _ where loading:
             break
         case "time":
@@ -349,6 +399,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 duration = d
                 if current?.duration != d { current?.duration = d }
             }
+            if let r = b["rate"] as? Double { speed = r }
+            if let c = b["cc"] as? Bool { captions = c }
+            quality = b["q"] as? String
+            qualities = (b["qs"] as? [String] ?? []).filter { $0 != "auto" }
         case "state":
             Log.add("player state \(b["s"] ?? "?")")
             switch b["s"] as? Int ?? -1 {
@@ -376,9 +430,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: State out
 
-    private func snapshot() -> ViewerState {
+    func snapshot() -> ViewerState {
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
-                    position: position, duration: duration, volume: volume, queue: queue, history: history)
+                    position: position, duration: duration, volume: volume, queue: queue, history: history,
+                    speed: speed, captions: captions, quality: quality, qualities: qualities)
     }
 
     private func broadcast() {

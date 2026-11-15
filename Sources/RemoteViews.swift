@@ -105,6 +105,7 @@ struct RemoteView: View {
 
 struct ConnectionChip: View {
     @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var browser: Browser
     let onTap: () -> Void
 
     var body: some View {
@@ -121,12 +122,14 @@ struct ConnectionChip: View {
             .buttonStyle(.plain)
             .frame(minHeight: 44)
             .accessibilityHint("Opens the viewer list")
+            .onAppear { browser.target = "" }
         }
     }
 }
 
 struct ChipInner: View {
     @ObservedObject var client: RemoteClient
+    @EnvironmentObject var browser: Browser
     let onTap: () -> Void
 
     var body: some View {
@@ -148,6 +151,9 @@ struct ChipInner: View {
         .frame(minHeight: 44)
         .accessibilityLabel("\(client.title), \(client.connected ? "connected" : "connecting")")
         .accessibilityHint("Opens the viewer list")
+        // The play cover on the YouTube page names the viewer.
+        .onAppear { browser.target = client.title }
+        .onChange(of: client.title) { browser.target = $0 }
     }
 }
 
@@ -526,6 +532,7 @@ struct ControlsPane: View {
                         transport("goforward.10", "Forward 10 seconds", size: 28) { client.send(.skip(10)) }
                         transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
                     }
+                    if let speed = s.speed { playbackOptions(s, speed: speed) }
                     HStack(spacing: 12) {
                         Button {
                             Haptics.tap()
@@ -560,6 +567,60 @@ struct ControlsPane: View {
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
+    }
+
+    private static let speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+
+    private func rate(_ r: Double) -> String {
+        (r == r.rounded() ? "\(Int(r))" : "\(r)") + "×"
+    }
+
+    private func option(_ text: String, _ symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.subheadline.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .background(Color(.secondarySystemFill), in: Capsule())
+            .frame(minHeight: 44)
+    }
+
+    private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            if on { Label(text, systemImage: "checkmark") } else { Text(text) }
+        }
+    }
+
+    /// Speed, captions and quality on the viewer.
+    private func playbackOptions(_ s: ViewerState, speed: Double) -> some View {
+        HStack(spacing: 10) {
+            Menu {
+                ForEach(Self.speeds, id: \.self) { r in check(rate(r), r == speed) { client.send(.setSpeed(r)) } }
+            } label: {
+                option(rate(speed), "speedometer")
+            }
+            .accessibilityLabel("Playback speed, \(rate(speed))")
+            Button {
+                Haptics.tap()
+                client.send(.setCaptions(s.captions != true))
+            } label: {
+                option("Captions", s.captions == true ? "captions.bubble.fill" : "captions.bubble")
+            }
+            .accessibilityLabel(s.captions == true ? "Turn captions off" : "Turn captions on")
+            if let qs = s.qualities, qs.count > 1 {
+                Menu {
+                    check("Auto", false) { client.send(.setQuality("auto")) }
+                    ForEach(qs, id: \.self) { q in check(qualityLabel(q), q == s.quality) { client.send(.setQuality(q)) } }
+                } label: {
+                    option(qualityLabel(s.quality), "tv")
+                }
+                .accessibilityLabel("Quality, \(qualityLabel(s.quality))")
+            }
+        }
+        .foregroundStyle(.primary)
     }
 
     /// A drag fires many times a second; send at most ten, then the final value on release.

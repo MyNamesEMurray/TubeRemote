@@ -7,27 +7,38 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
     let webView: WKWebView
     @Published var videoID: String?
     @Published var canGoBack = false
-    /// Fires when the person taps play on the page's own player, which is blocked on this device.
+    /// Fires when the person taps the play cover over the page's own player.
     let playTapped = PassthroughSubject<Void, Never>()
     private var obs: [NSKeyValueObservation] = []
+    /// Name of the selected viewer, shown on the play cover. Empty when none is selected.
+    var target = "" { didSet { if target != oldValue { pushTarget() } } }
     private var loaded = false
     private var restored = false
     /// nil until the cookie restore starts; callers queued while it runs.
     private var waiting: [() -> Void]?
 
-    // The viewer plays the video, so block local playback unless "Play here" allows it.
-    // A blocked play that follows a touch on the player is reported, so that tap can send the video instead.
-    private static let script = """
-    (function(){var t=0;
-    document.addEventListener('touchend',function(e){
-      var v=document.querySelector('video'),p=e.changedTouches&&e.changedTouches[0];if(!v||!p)return;
-      var r=v.getBoundingClientRect();
-      if(p.clientX>=r.left&&p.clientX<=r.right&&p.clientY>=r.top&&p.clientY<=r.bottom)t=Date.now()},true);
-    document.addEventListener('play',function(e){
-      if(window.__allowPlay||e.target.tagName!=='VIDEO')return;
-      e.target.pause();
-      if(Date.now()-t<1500){t=0;webkit.messageHandlers.tr.postMessage('play')}},true)})()
-    """
+    // The viewer plays the video, so local playback is blocked unless "Play here" allows it.
+    // The page's own player is covered with the video's picture and one button, so a tap there
+    // plays the video on the viewer instead of starting a player that would only spin.
+    private static let script = #"""
+    (function(){
+      document.addEventListener('play',function(e){
+        if(!window.__allowPlay&&e.target.tagName==='VIDEO')e.target.pause()},true);
+      var cover=document.createElement('div'),pill=document.createElement('div');
+      cover.style.cssText='position:absolute;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:#000 center/cover no-repeat;-webkit-tap-highlight-color:transparent';
+      pill.style.cssText='font:600 17px -apple-system,system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.72);padding:12px 22px;border-radius:999px;max-width:80%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      cover.appendChild(pill);
+      cover.addEventListener('click',function(e){
+        e.preventDefault();e.stopPropagation();webkit.messageHandlers.tr.postMessage('play')},true);
+      setInterval(function(){
+        var p=document.getElementById('movie_player'),id=new URLSearchParams(location.search).get('v');
+        if(!p||window.__allowPlay||location.pathname!=='/watch'||!/^[\w-]{6,20}$/.test(id||'')){cover.remove();return}
+        pill.textContent='\u25B6\uFE0E  '+(window.__trTarget?'Play on '+window.__trTarget:'Choose a viewer');
+        cover.style.backgroundImage='linear-gradient(rgba(0,0,0,.3),rgba(0,0,0,.3)),url(https://i.ytimg.com/vi/'+id+'/hqdefault.jpg)';
+        if(cover.parentNode!==p)p.appendChild(cover);
+      },300);
+    })()
+    """#
 
     override init() {
         let cfg = WKWebViewConfiguration()
@@ -35,6 +46,8 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         cfg.mediaTypesRequiringUserActionForPlayback = []
         // Without a Safari-like UA, Google refuses sign-in inside web views.
         cfg.applicationNameForUserAgent = "Version/17.0 Safari/605.1.15"
+        // iPad asks for desktop sites by default; the play cover is written for the mobile site.
+        cfg.defaultWebpagePreferences.preferredContentMode = .mobile
         cfg.userContentController.addUserScript(WKUserScript(
             source: Self.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: cfg)
@@ -85,6 +98,14 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
             run.forEach { $0() }
         }
     }
+
+    private func pushTarget() {
+        guard let json = try? JSONEncoder().encode(target), let text = String(data: json, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.__trTarget=\(text)")
+    }
+
+    /// A fresh page forgets the viewer name, so tell it again.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { pushTarget() }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         playTapped.send()

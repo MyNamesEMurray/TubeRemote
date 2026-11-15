@@ -68,6 +68,12 @@ struct ViewerState: Codable, Equatable {
     var volume: Float
     var queue: [VideoItem]
     var history: [VideoItem]
+    // Optional so builds from before these existed still decode; nil hides the controls on the remote.
+    var speed: Double?
+    var captions: Bool?
+    /// YouTube's name for the quality now playing, e.g. "hd1080".
+    var quality: String?
+    var qualities: [String]?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -80,6 +86,8 @@ enum Command: Codable {
     case setVolume(Float), setMuted(Bool)
     case remove(UUID), reorder([UUID]), playQueueItem(UUID)
     case clearQueue, clearHistory
+    /// Quality is YouTube's name ("hd1080"), or "auto".
+    case setSpeed(Double), setCaptions(Bool), setQuality(String)
 }
 
 struct PairedDevice: Codable, Identifiable {
@@ -131,6 +139,13 @@ func parseVideoID(_ url: URL?) -> String? {
     let p = url.pathComponents
     if p.count >= 3, ["shorts", "embed", "live"].contains(p[1]) { return p[2] }
     return nil
+}
+
+/// "hd1080" -> "1080p".
+func qualityLabel(_ q: String?) -> String {
+    let names = ["highres": "Max", "large": "480p", "medium": "360p", "small": "240p", "tiny": "144p"]
+    guard let q, q != "auto", q != "unknown" else { return "Auto" }
+    return names[q] ?? (q.hasPrefix("hd") ? "\(q.dropFirst(2))p" : q)
 }
 
 func clock(_ seconds: Double) -> String {

@@ -51,6 +51,18 @@ final class ViewerTests: XCTestCase {
         XCTAssertEqual(v.history.map(\.videoID), ["aaaaaaaaaaa"])
     }
 
+    func testPlaybackSettingsAreLimited() {
+        XCTAssertEqual(qualityLabel("hd1080"), "1080p")
+        XCTAssertEqual(qualityLabel("large"), "480p")
+        XCTAssertEqual(qualityLabel(nil), "Auto")
+        let v = makeViewer()
+        v.handle(.setSpeed(9), from: nil)
+        v.handle(.setQuality("x');alert(1)//"), from: nil)
+        v.handle(.setCaptions(true), from: nil)
+        XCTAssertEqual(v.snapshot().speed, 2)
+        XCTAssertEqual(v.snapshot().captions, true)
+    }
+
     func testChannelEncryptsBothWaysAndRejectsReplay() throws {
         let secret = Data(repeating: 7, count: 32), salt = Data(repeating: 1, count: 32)
         var remote = Channel(secret: secret, salt: salt, viewer: false)

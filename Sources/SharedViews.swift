@@ -7,16 +7,17 @@ struct Thumb: View {
     var radius: CGFloat = 6
 
     var body: some View {
-        AsyncImage(url: url) { phase in
-            if let img = phase.image {
-                img.resizable().scaledToFill()
-            } else if phase.error != nil, let fallback {
-                Thumb(url: fallback, radius: 0)
-            } else {
-                Color(.tertiarySystemFill)
+        // The picture sits in an overlay so a wide image fills the frame without spilling out of it.
+        Color(.tertiarySystemFill)
+            .overlay {
+                AsyncImage(url: url) { phase in
+                    if let img = phase.image {
+                        img.resizable().scaledToFill()
+                    } else if phase.error != nil, let fallback {
+                        Thumb(url: fallback, radius: 0)
+                    }
+                }
             }
-        }
-        .clipped()
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .accessibilityHidden(true)
     }
