@@ -10,7 +10,7 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
     /// Fires when the person taps the play cover over the page's own player.
     let playTapped = PassthroughSubject<Void, Never>()
     private var obs: [NSKeyValueObservation] = []
-    /// Name of the selected viewer, shown on the play cover. Empty when none is selected.
+    /// Text of the play cover, such as "Play on iPad" or "Pair with iPad". Empty when no viewer is selected.
     var target = "" { didSet { if target != oldValue { pushTarget() } } }
     private var loaded = false
     private var restored = false
@@ -33,7 +33,8 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
       setInterval(function(){
         var p=document.getElementById('movie_player'),id=new URLSearchParams(location.search).get('v');
         if(!p||window.__allowPlay||location.pathname!=='/watch'||!/^[\w-]{6,20}$/.test(id||'')){cover.remove();return}
-        pill.textContent='\u25B6\uFE0E  '+(window.__trTarget?'Play on '+window.__trTarget:'Choose a viewer');
+        var t=window.__trTarget;
+        pill.textContent=t?(t.indexOf('Pair')===0?t:'\u25B6\uFE0E  '+t):'Choose a viewer';
         cover.style.backgroundImage='linear-gradient(rgba(0,0,0,.3),rgba(0,0,0,.3)),url(https://i.ytimg.com/vi/'+id+'/hqdefault.jpg)';
         if(cover.parentNode!==p)p.appendChild(cover);
       },300);

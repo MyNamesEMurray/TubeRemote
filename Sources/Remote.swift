@@ -134,6 +134,8 @@ final class RemoteClient: ObservableObject, Identifiable {
         case .unpaired:
             guard sameVersion() else { return }
             channel = nil
+            // What it was playing was reported by an earlier pairing; showing it now would mislead.
+            state = nil
             connected = false
             needsPairing = true
             detail = ""

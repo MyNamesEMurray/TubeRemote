@@ -74,6 +74,11 @@ struct RemoteView: View {
     }
 
     private func send(_ action: QueueAction, to c: RemoteClient) {
+        if c.needsPairing {
+            Haptics.tap()
+            c.beginPair()
+            return
+        }
         guard c.connected else {
             Haptics.warning()
             showPicker = true
@@ -132,18 +137,23 @@ struct ChipInner: View {
     @EnvironmentObject var browser: Browser
     let onTap: () -> Void
 
+    private var coverLabel: String { client.needsPairing ? "Pair with \(client.title)" : "Play on \(client.title)" }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
                 // A spinner, not just a colour, so the state reads without colour vision.
                 if client.connected {
                     Circle().fill(Color.green).frame(width: 8, height: 8)
+                } else if client.needsPairing {
+                    Image(systemName: "link").font(.caption2.weight(.bold)).foregroundStyle(.orange)
                 } else if client.released {
                     Circle().fill(Color.secondary).frame(width: 8, height: 8)
                 } else {
                     ProgressView().controlSize(.mini)
                 }
-                Text(client.title).font(.subheadline.weight(.medium)).lineLimit(1)
+                Text(client.needsPairing ? "Pair with \(client.title)" : client.title)
+                    .font(.subheadline.weight(.medium)).lineLimit(1)
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
@@ -151,11 +161,11 @@ struct ChipInner: View {
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)
-        .accessibilityLabel("\(client.title), \(client.connected ? "connected" : "connecting")")
+        .accessibilityLabel("\(client.title), \(client.needsPairing ? "not paired" : client.connected ? "connected" : "connecting")")
         .accessibilityHint("Opens the viewer list")
         // The play cover on the YouTube page names the viewer.
-        .onAppear { browser.target = client.title }
-        .onChange(of: client.title) { browser.target = $0 }
+        .onAppear { browser.target = coverLabel }
+        .onChange(of: coverLabel) { browser.target = $0 }
     }
 }
 
@@ -223,7 +233,7 @@ struct RemoteBar: View {
                     HStack(spacing: 12) {
                         if let cur { Thumb(url: cur.thumbnailURL, radius: 8).frame(width: 44, height: 44) }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(cur?.title ?? "Nothing playing").font(.headline).lineLimit(1)
+                            Text(cur?.title ?? (client.needsPairing ? "Not paired" : "Nothing playing")).font(.headline).lineLimit(1)
                             Text(client.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
@@ -277,20 +287,20 @@ struct RemoteBar: View {
             }
             Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
         } label: {
-            Label("Send", systemImage: settings.queueAction.icon)
+            Label(client.needsPairing ? "Pair" : "Send", systemImage: client.needsPairing ? "link" : settings.queueAction.icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 36)
                 .background(Color.accentColor, in: Capsule())
-                .opacity(client.connected && !sending ? 1 : 0.5)
+                .opacity((client.connected || client.needsPairing) && !sending ? 1 : 0.5)
                 .frame(minHeight: 44)
         } primaryAction: {
             Haptics.tap()
             send(settings.queueAction)
         }
-        .accessibilityLabel(settings.queueAction.title(on: client.title))
-        .accessibilityHint("Touch and hold for more ways to send")
+        .accessibilityLabel(client.needsPairing ? "Pair with \(client.title)" : settings.queueAction.title(on: client.title))
+        .accessibilityHint(client.needsPairing ? "Compare a code on both devices" : "Touch and hold for more ways to send")
     }
 }
 
@@ -434,7 +444,14 @@ struct NowPlayingContent: View {
             VStack(spacing: 0) {
                 if !client.connected {
                     HStack(spacing: 8) {
-                        if client.released {
+                        if client.needsPairing {
+                            Text("Not paired with \(client.title)").font(.footnote)
+                            Button("Pair") {
+                                Haptics.tap()
+                                client.beginPair()
+                            }
+                            .font(.footnote.weight(.semibold))
+                        } else if client.released {
                             Text("Disconnected by \(client.title)").font(.footnote)
                             Button("Reconnect") {
                                 Haptics.tap()
