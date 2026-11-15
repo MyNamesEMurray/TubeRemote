@@ -60,7 +60,12 @@ final class ViewerTests: XCTestCase {
         v.handle(.setQuality("x');alert(1)//"), from: nil)
         v.handle(.setCaptions(true), from: nil)
         XCTAssertEqual(v.snapshot().speed, 2)
-        XCTAssertEqual(v.snapshot().captions, true)
+        XCTAssertEqual(v.snapshot().autoQuality, true, "a malformed quality name must be ignored")
+        // Captions are only reported on once the player confirms them; until then the state says searching.
+        XCTAssertEqual(v.snapshot().captions, false)
+        XCTAssertEqual(v.snapshot().captionsStatus, "searching")
+        v.handle(.setCaptions(false), from: nil)
+        XCTAssertNil(v.snapshot().captionsStatus)
     }
 
     func testChannelEncryptsBothWaysAndRejectsReplay() throws {
