@@ -415,6 +415,7 @@ struct NowPlayingContent: View {
     let dismiss: () -> Void
     @State private var panel = Panel.controls
     @State private var showPicker = false
+    @State private var keys = VolumeKeys()
 
     var body: some View {
         NavigationStack {
@@ -464,6 +465,17 @@ struct NowPlayingContent: View {
             .sheet(isPresented: $showPicker) { DevicePicker() }
             .pairingPrompt()
         }
+        .background(Hosted(view: keys.view).frame(width: 10, height: 10).opacity(0.01).allowsHitTesting(false))
+        // While this screen is open the phone's volume buttons set the viewer's volume.
+        .onAppear {
+            keys.start { step in
+                guard client.connected, let now = client.state?.volume else { return }
+                let v = min(max(now + step, 0), 1)
+                client.state?.volume = v
+                client.send(.setVolume(v))
+            }
+        }
+        .onDisappear { keys.stop() }
     }
 }
 
