@@ -150,7 +150,7 @@ struct ViewerView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: w)
     }
 
-    private func menuRow(_ title: String, _ symbol: String, _ action: @escaping () -> Void) -> some View {
+    private func menuRow(_ title: String, _ symbol: String, tint: Color = .white, _ action: @escaping () -> Void) -> some View {
         Button {
             Haptics.tap()
             closeMenu()
@@ -161,6 +161,7 @@ struct ViewerView: View {
                 Spacer(minLength: 8)
                 Image(systemName: symbol)
             }
+            .foregroundStyle(tint)
             .padding(.horizontal, 16)
             .frame(minHeight: 48)
             .contentShape(Rectangle())
@@ -189,7 +190,7 @@ struct ViewerView: View {
                     Divider()
                     menuRow("Settings", "gearshape") { showSettings = true }
                     Divider()
-                    menuRow("End session", "stop.circle") {
+                    menuRow("End session", "stop.circle", tint: .red) {
                         showQueue = false
                         viewer.endSession()
                     }
