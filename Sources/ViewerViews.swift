@@ -11,6 +11,8 @@ struct ViewerView: View {
     @State private var showPair = false
     @State private var showControls = false
     @State private var hideWork: DispatchWorkItem?
+    @State private var showMenu = false
+    @State private var menuWork: DispatchWorkItem?
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
@@ -74,13 +76,15 @@ struct ViewerView: View {
         }
         .overlay(alignment: .topTrailing) {
             // Always on screen so taps reach the player itself (Skip Ad).
-            menu.opacity(showControls || showQueue || viewer.current == nil ? 1 : 0.5)
+            menu.opacity(showMenu || showControls || showQueue || viewer.current == nil ? 1 : 0.5)
         }
         // The page reports taps on the video; nothing native sits on top of it to catch them.
         .onReceive(viewer.tapped) { _ in
+            closeMenu()
             if showControls { hideWork?.cancel(); showControls = false } else { keepControls() }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showControls)
+        .animation(.easeInOut(duration: 0.4), value: showMenu)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.toast)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showQueue)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
@@ -109,22 +113,67 @@ struct ViewerView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: w)
     }
 
-    private var menu: some View {
-        Menu {
-            Button { showBrowse = true } label: { Label("Browse YouTube", systemImage: "safari") }
-            Button { showPair = true } label: { Label("Devices", systemImage: "link") }
-            Button { showQueue.toggle() } label: { Label(showQueue ? "Hide queue" : "Show queue", systemImage: "list.bullet") }
-            Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+    private func closeMenu() {
+        menuWork?.cancel()
+        showMenu = false
+    }
+
+    /// Opens or closes the menu. Unlike a system menu it fades away by itself after six seconds.
+    private func toggleMenu() {
+        Haptics.tap()
+        guard !showMenu else { return closeMenu() }
+        showMenu = true
+        let w = DispatchWorkItem { showMenu = false }
+        menuWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: w)
+    }
+
+    private func menuRow(_ title: String, _ symbol: String, _ action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            closeMenu()
+            action()
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.title3.weight(.semibold))
+            HStack(spacing: 12) {
+                Text(title)
+                Spacer(minLength: 8)
+                Image(systemName: symbol)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var menu: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            Button(action: toggleMenu) {
+                Image(systemName: "ellipsis")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .contentShape(Circle())
+            }
+            .accessibilityLabel("Menu")
+            if showMenu {
+                VStack(alignment: .leading, spacing: 0) {
+                    menuRow("Browse YouTube", "safari") { showBrowse = true }
+                    Divider()
+                    menuRow("Devices", "link") { showPair = true }
+                    Divider()
+                    menuRow(showQueue ? "Hide queue" : "Show queue", "list.bullet") { showQueue.toggle() }
+                    Divider()
+                    menuRow("Settings", "gearshape") { showSettings = true }
+                }
                 .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
-                .contentShape(Circle())
+                .frame(width: 240)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
+            }
         }
         .padding(12)
-        .accessibilityLabel("Menu")
     }
 }
 
