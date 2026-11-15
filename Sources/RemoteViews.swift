@@ -233,7 +233,15 @@ struct RemoteBar: View {
                 .accessibilityLabel(cur.map { "Now playing: \($0.title) on \(client.title)" } ?? "Nothing playing on \(client.title)")
                 .accessibilityHint("Opens Now Playing")
 
-                if cur != nil {
+                if client.state?.adSkippable == true {
+                    Button("Skip Ad") {
+                        Haptics.tap()
+                        client.send(.skipAd)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .frame(minHeight: 44)
+                } else if cur != nil {
                     Button {
                         Haptics.tap()
                         client.send(playing ? .pause : .resume)
@@ -551,6 +559,17 @@ struct ControlsPane: View {
                         }
                         transport("goforward.10", "Forward 10 seconds", size: 28) { client.send(.skip(10)) }
                         transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
+                    }
+                    if s.adSkippable == true {
+                        Button {
+                            Haptics.tap()
+                            client.send(.skipAd)
+                        } label: {
+                            Label("Skip Ad", systemImage: "forward.fill").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
                     }
                     if let speed = s.speed { playbackOptions(s, speed: speed) }
                     HStack(spacing: 12) {

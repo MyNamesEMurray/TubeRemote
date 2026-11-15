@@ -45,6 +45,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var captions = false
     private var quality: String?
     private var qualities: [String] = []
+    private var adSkippable = false
     private var pairedObs: AnyCancellable?
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
@@ -76,10 +77,15 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       document.documentElement.appendChild(css);
       function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
       function ad(){ return !!document.querySelector('.ad-showing,.ad-interrupting') }
+      // YouTube has renamed its Skip button more than once; try each known name.
+      function skipButton(){
+        var b = document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button,.ytp-ad-skip-button-container button');
+        return b && b.offsetParent ? b : null }
       window.__tr = {
         play: function(){ want = true; var v = vid(); if (v) v.play() },
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
         seek: function(t){ var v = vid(); if (v) v.currentTime = t },
+        skipAd: function(){ var b = skipButton(); if (b) b.click() },
         set: function(o){
           if (!o.q && wq) { try { mp().setPlaybackQualityRange('tiny','highres') } catch(e) {} }
           wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
@@ -110,6 +116,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       });
       setInterval(function(){
         var v = vid(); ticks++;
+        post({t:'ad', skip: ad() && !!skipButton()});
         if (v) {
           var u = document.querySelector('.ytp-unmute'); if (u && u.offsetParent) u.click();
           if (v.muted) v.muted = false;
@@ -308,6 +315,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .clearHistory:
             history = []
             return nil
+        case .skipAd:
+            js("__tr.skipAd()")
+            return "Skipped ad"
         case .setSpeed(let r):
             wantSpeed = min(max(r, 0.25), 2)
             speed = wantSpeed
@@ -336,6 +346,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         duration = item.duration ?? 0
         isPlaying = true
         loading = true
+        adSkippable = false
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
@@ -414,6 +425,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             tapped.send()
         case _ where loading:
             break
+        case "ad":
+            let skip = b["skip"] as? Bool ?? false
+            if skip != adSkippable {
+                adSkippable = skip
+                broadcast()
+            }
         case "time":
             if let p = b["pos"] as? Double, p.isFinite { position = p }
             if let d = b["dur"] as? Double, d.isFinite, d > 0 {
@@ -454,7 +471,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     func snapshot() -> ViewerState {
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
-                    speed: speed, captions: captions, quality: quality, qualities: qualities)
+                    speed: speed, captions: captions, quality: quality, qualities: qualities,
+                    adSkippable: adSkippable)
     }
 
     private func broadcast() {

@@ -74,6 +74,8 @@ struct ViewerState: Codable, Equatable {
     /// YouTube's name for the quality now playing, e.g. "hd1080".
     var quality: String?
     var qualities: [String]?
+    /// An advert is playing and YouTube is offering its Skip button.
+    var adSkippable: Bool?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -88,6 +90,7 @@ enum Command: Codable {
     case clearQueue, clearHistory
     /// Quality is YouTube's name ("hd1080"), or "auto".
     case setSpeed(Double), setCaptions(Bool), setQuality(String)
+    case skipAd
 }
 
 struct PairedDevice: Codable, Identifiable {
