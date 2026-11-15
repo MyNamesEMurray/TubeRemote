@@ -64,6 +64,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// When the current video first reported playing; nil until it has.
     private var firstPlay: Date?
     private var lastKick = Date.distantPast
+    // Start-up nudging watches the playback position, which is the one thing that cannot be wrong.
+    private var startedAt = Date()
+    private var lastPos = -1.0
+    private var lastMove = Date()
+    private var kickCount = 0
     private var pairedObs: AnyCancellable?
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
@@ -160,19 +165,26 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
         // Unmute and play. Called from the app, not from a timer: WebKit only lets sound start
         // from a call it treats as a person's action, and pauses a video unmuted any other way.
-        // Start or unmute, in that order. Play first, exactly as a tap on Play does. Unmute only once it is
-        // playing, then play again if that paused it. YouTube's own unmute button is never clicked: a click
-        // there can pause the video.
-        kick: function(){
-          var v = vid(); if (!v) return;
+        // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the
+        // debug log. Called from the app, so it runs as the same kind of call as a tap on Play.
+        kick: function(n){
+          var v = vid(), p = mp(); if (!v) return;
           lastKickAt = Date.now();
-          var play = function(){
-            if (!want || !v.paused) return;
-            var r = v.play();
-            if (r && r.catch) r.catch(function(e){ post({t:'log', m:'play() rejected: ' + e.name}) });
-          };
-          if (v.paused) play();
-          else if (v.muted) { v.muted = false; setTimeout(play, 300) }
+          var log = function(m){ post({t:'log', m:'kick ' + n + ': ' + m}) };
+          try {
+            if (n === 0) {
+              var r = v.play();
+              if (r && r.then) r.then(function(){ log('play() ok') }, function(e){ log('play() rejected ' + e.name) });
+            } else if (n === 1) { p.playVideo(); log('playVideo()') }
+            else { p.unMute(); p.playVideo(); log('unMute() and playVideo()') }
+          } catch(e) { log('error ' + e) }
+        },
+        // Unmute through the player, which is what its own unmute button does.
+        unmute: function(){
+          var p = mp(), v = vid(); lastKickAt = Date.now();
+          try { p.unMute() } catch(e) {}
+          if (v && v.muted) v.muted = false;
+          post({t:'log', m:'unmute requested'});
         },
         // Asks for Picture in Picture the way any web page may. YouTube decides whether to allow it
         // (it does for Premium accounts); nothing here overrides a refusal.
@@ -479,6 +491,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         isPlaying = true
         wantPlaying = true
         firstPlay = nil
+        startedAt = Date()
+        lastPos = -1
+        lastMove = Date()
+        kickCount = 0
         loading = true
         adSkippable = false
         captionsNone = false
@@ -601,14 +617,20 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             if let r = b["rate"] as? Double, r != speed { speed = r }
             // Published values are only set when they change, so a steady player causes no redraw.
             if let c = b["cc"] as? Bool, c != captions { captions = c }
-            // YouTube starts the first video of a session muted, and it can stall while starting.
-            // Until it has played for a few seconds, push it along; a muted video is always unmuted.
-            let starting = firstPlay.map { Date().timeIntervalSince($0) < 8 } ?? true
-            let stalled = b["paused"] as? Bool == true && starting
-            if wantPlaying, stalled || b["muted"] as? Bool == true, Date().timeIntervalSince(lastKick) > 1 {
-                lastKick = Date()
-                Log.add("kick paused=\(b["paused"] ?? "?") muted=\(b["muted"] ?? "?")")
-                js("__tr.kick()")
+            // YouTube starts the first video of a session muted, and it can stall while starting. Judge by the
+            // playback position: if it has not moved for over a second in the first 25 seconds, try the next
+            // way of starting it. Once it is moving, unmute it if it is still muted.
+            let now = Date()
+            if let p = b["pos"] as? Double, abs(p - lastPos) > 0.05 { lastPos = p; lastMove = now }
+            let notMoving = now.timeIntervalSince(lastMove) > 1.2
+            if wantPlaying, notMoving, now.timeIntervalSince(startedAt) < 25, now.timeIntervalSince(lastKick) > 1.2 {
+                lastKick = now
+                Log.add("not moving at \(lastPos) paused=\(b["paused"] ?? "?") muted=\(b["muted"] ?? "?"), attempt \(kickCount % 3)")
+                js("__tr.kick(\(kickCount % 3))")
+                kickCount += 1
+            } else if wantPlaying, !notMoving, b["muted"] as? Bool == true, now.timeIntervalSince(lastKick) > 1 {
+                lastKick = now
+                js("__tr.unmute()")
             }
             let q = b["q"] as? String
             if q != quality { quality = q }
