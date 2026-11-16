@@ -296,8 +296,10 @@ struct SettingsView: View {
                     LabeledContent("Build", value: build)
                     NavigationLink("Debug Log") { DebugLogView() }
                 }
-                Section("Debug") {
-                    Toggle("Debug: unlock Pro", isOn: $pro.debugUnlocked)
+                if ProStore.isTestBuild {
+                    Section("Debug") {
+                        Toggle("Debug: unlock Pro", isOn: $pro.debugUnlocked)
+                    }
                 }
             }
             .navigationTitle("Settings")

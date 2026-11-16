@@ -93,10 +93,8 @@ final class RemoteClient: ObservableObject, Identifiable {
         c.start(queue: .main)
     }
 
-    var isPaired: Bool { settings.paired(key) != nil }
-
     func reconnect() {
-        guard released else { return }
+        guard released || busy else { return }
         released = false
         busy = false
         connect()
@@ -105,6 +103,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     /// Signs in again, so the viewer learns about a change such as buying Pro.
     func refresh() {
         guard !released else { return }
+        busy = false
         drop()
     }
 
@@ -128,24 +127,30 @@ final class RemoteClient: ObservableObject, Identifiable {
                 Log.add("bad encrypted message from \(tag)")
                 return drop()
             }
-            guard case .state(let st)? = try? JSONDecoder().decode(ServerMessage.self, from: body) else {
-                return Log.add("rx sealed decode failed")
+            switch try? JSONDecoder().decode(ServerMessage.self, from: body) {
+            case .state(let st)?:
+                if !connected { Log.add("first state from \(tag)") }
+                state = st
+                connected = true
+                needsPairing = false
+                busy = false
+                detail = ""
+            case .goodbye?:
+                Log.add("disconnected by \(tag)")
+                released = true
+                drop()
+            default:
+                Log.add("rx sealed decode failed")
             }
-            if !connected { Log.add("first state from \(tag)") }
-            state = st
-            connected = true
-            needsPairing = false
-            detail = ""
         case .state:
             Log.add("ignored unencrypted state")
         case .goodbye:
-            Log.add("disconnected by \(tag)")
-            released = true
-            drop()
+            // Only the signed-in channel may tell a remote to stay away; anything on the network can send this.
+            Log.add("ignored unsigned goodbye")
         case .busy:
+            // Cannot be signed (it comes before sign-in), so it only slows the retries instead of stopping them.
             Log.add("viewer is in use by another remote: \(tag)")
             busy = true
-            released = true
             drop()
         case .unpaired:
             guard sameVersion() else { return }
@@ -204,7 +209,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         pairing.cancel(peer: key)
         guard !stopped, !released, !retryPending else { return }
         retryPending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.connect() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (busy ? 30 : 2)) { [weak self] in self?.connect() }
     }
 }
 

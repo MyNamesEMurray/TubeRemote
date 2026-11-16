@@ -25,5 +25,9 @@ struct SharedConfig: Codable {
     func write() {
         guard let url = Self.url, let data = try? JSONEncoder().encode(self) else { return }
         try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        var u = url
+        var v = URLResourceValues()
+        v.isExcludedFromBackup = true
+        try? u.setResourceValues(v)
     }
 }

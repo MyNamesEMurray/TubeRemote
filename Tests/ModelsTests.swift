@@ -67,6 +67,14 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(SessionRules.excess([r("a")], viewerPro: false), [])
     }
 
+    func testTrimWaitsOneIdleMinuteAndNeverWhilePlaying() {
+        let now = Date(timeIntervalSince1970: 1000)
+        XCTAssertFalse(SessionRules.shouldTrim(playing: true, idleSince: now - 600, now: now))
+        XCTAssertFalse(SessionRules.shouldTrim(playing: false, idleSince: nil, now: now))
+        XCTAssertFalse(SessionRules.shouldTrim(playing: false, idleSince: now - 59, now: now))
+        XCTAssertTrue(SessionRules.shouldTrim(playing: false, idleSince: now - 60, now: now))
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")

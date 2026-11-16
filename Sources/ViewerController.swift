@@ -84,6 +84,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
     // sign-in, so Premium applies and videos that forbid embedding still play.
     // It fills the screen with the player, starts it with sound, and reports time and state.
+    static let maxQueue = 500
+
     private static let bridge = """
     (function(){
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
@@ -405,6 +407,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// `who` is the remote's name, or nil for local use (no toast).
     func handle(_ cmd: Command, from who: String?) {
         if let verb = apply(cmd), let who { flash("\(verb) from \(who)") }
+        // The queue is sent to every remote each second, and a message over 1 MiB is dropped, so it has a limit.
+        if queue.count > Self.maxQueue { queue.removeLast(queue.count - Self.maxQueue) }
         broadcast()
     }
 
@@ -494,7 +498,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 return "Sleep timer off"
             }
             if s == 0 {
-                guard current != nil else { return nil }
+                guard current != nil, duration > 0 else { return nil }
                 sleepAtEnd = true
                 sleepEndsAt = Date().addingTimeInterval(max(duration - position, 0))
             } else {

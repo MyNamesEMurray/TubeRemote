@@ -3,6 +3,8 @@ import SwiftUI
 
 final class ProStore: ObservableObject {
     static let shared = ProStore()
+    /// TestFlight and Xcode builds carry a sandbox receipt; App Store builds do not.
+    static let isTestBuild = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
     static let productID = "com.exaltedpixels.TubeRemote.pro"
 
     @Published private(set) var isPro: Bool
@@ -13,7 +15,7 @@ final class ProStore: ObservableObject {
     @Published var debugUnlocked: Bool {
         didSet {
             UserDefaults.standard.set(debugUnlocked, forKey: "proDebugUnlocked")
-            isPro = entitled || debugUnlocked
+            isPro = entitled || (debugUnlocked && Self.isTestBuild)
         }
     }
 
@@ -22,7 +24,7 @@ final class ProStore: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
-        let e = d.bool(forKey: "proEntitled"), g = d.bool(forKey: "proDebugUnlocked")
+        let e = d.bool(forKey: "proEntitled"), g = d.bool(forKey: "proDebugUnlocked") && Self.isTestBuild
         entitled = e
         isPro = e || g
         debugUnlocked = g
@@ -49,7 +51,7 @@ final class ProStore: ObservableObject {
         }
         entitled = found
         UserDefaults.standard.set(found, forKey: "proEntitled")
-        isPro = found || debugUnlocked
+        isPro = found || (debugUnlocked && Self.isTestBuild)
     }
 
     @MainActor func purchase() async {

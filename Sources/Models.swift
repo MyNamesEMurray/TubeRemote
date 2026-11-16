@@ -180,6 +180,11 @@ struct SessionRules {
         return others.isEmpty || viewerPro || newcomer.pro || others.contains { $0.pro }
     }
 
+    /// After the Pro device left: nothing is playing and the extras have had a minute.
+    static func shouldTrim(playing: Bool, idleSince: Date?, now: Date) -> Bool {
+        !playing && idleSince.map { now.timeIntervalSince($0) >= 60 } == true
+    }
+
     /// When a session has lost Pro (the Pro remote left) and several remotes remain: everyone but the one connected longest.
     static func excess(_ current: [Remote], viewerPro: Bool) -> [String] {
         guard !viewerPro, current.count > 1, !current.contains(where: \.pro),

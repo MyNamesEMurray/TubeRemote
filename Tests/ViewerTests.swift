@@ -97,6 +97,13 @@ final class ViewerTests: XCTestCase {
         settings.preferredQuality = "auto"
     }
 
+    func testQueueIsLimited() {
+        let v = makeViewer()
+        let many = (0..<300).map { item(String(format: "vid%08d", $0)) }
+        for _ in 0..<4 { v.handle(.playlist(many, .addToEnd), from: nil) }
+        XCTAssertEqual(v.queue.count, ViewerController.maxQueue)
+    }
+
     func testSleepTimerSetsClearsAndRejectsBadValues() {
         let v = makeViewer()
         v.handle(.setSleepTimer(.nan), from: nil)

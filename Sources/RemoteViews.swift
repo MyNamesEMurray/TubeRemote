@@ -198,7 +198,7 @@ struct ChipInner: View {
                     Circle().fill(Color.green).frame(width: 8, height: 8)
                 } else if client.needsPairing {
                     Image(systemName: "link").font(.caption2.weight(.bold)).foregroundStyle(.orange)
-                } else if client.released {
+                } else if client.released || client.busy {
                     Circle().fill(Color.secondary).frame(width: 8, height: 8)
                 } else {
                     ProgressView().controlSize(.mini)
@@ -326,7 +326,12 @@ struct RemoteBar: View {
                     PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), send: sendPlaylist)
                         .equatable()
                 }
-                if canSend { sendButton }
+                if canSend {
+                    SendMenu(target: client.key, title: client.title, pairing: client.needsPairing,
+                             active: client.connected || client.needsPairing, sending: sending,
+                             action: settings.queueAction, send: send, here: here)
+                        .equatable()
+                }
             }
             .foregroundStyle(.primary)
             .padding(.horizontal)
@@ -342,30 +347,6 @@ struct RemoteBar: View {
                 .frame(height: 2)
             }
         }
-    }
-
-    /// Tap sends with the default action from Settings; touch and hold lists every option.
-    private var sendButton: some View {
-        Menu {
-            ForEach(QueueAction.allCases) { a in
-                Button { Haptics.tap(); send(a) } label: { Label(a.title(on: client.title), systemImage: a.icon) }
-            }
-            Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
-        } label: {
-            Label(client.needsPairing ? "Pair" : "Send", systemImage: client.needsPairing ? "link" : settings.queueAction.icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 36)
-                .background(Color.accentColor, in: Capsule())
-                .opacity((client.connected || client.needsPairing) && !sending ? 1 : 0.5)
-                .frame(minHeight: 44)
-        } primaryAction: {
-            Haptics.tap()
-            send(settings.queueAction)
-        }
-        .accessibilityLabel(client.needsPairing ? "Pair with \(client.title)" : settings.queueAction.title(on: client.title))
-        .accessibilityHint(client.needsPairing ? "Compare a code on both devices" : "Touch and hold for more ways to send")
     }
 }
 
@@ -402,6 +383,47 @@ struct PlaylistMenu: View, Equatable {
         }
         .menuOrder(.fixed)
         .accessibilityLabel("Add the whole playlist")
+    }
+}
+
+/// Tap sends with the default action from Settings; touch and hold lists every option. Compared by what it shows, for
+/// the same reason as `PlaylistMenu`.
+struct SendMenu: View, Equatable {
+    let target: String
+    let title: String
+    let pairing: Bool
+    let active: Bool
+    let sending: Bool
+    let action: QueueAction
+    let send: (QueueAction) -> Void
+    let here: () -> Void
+
+    static func == (a: SendMenu, b: SendMenu) -> Bool {
+        a.target == b.target && a.title == b.title && a.pairing == b.pairing && a.active == b.active
+            && a.sending == b.sending && a.action == b.action
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(QueueAction.allCases) { a in
+                Button { Haptics.tap(); send(a) } label: { Label(a.title(on: title), systemImage: a.icon) }
+            }
+            Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
+        } label: {
+            Label(pairing ? "Pair" : "Send", systemImage: pairing ? "link" : action.icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 36)
+                .background(Color.accentColor, in: Capsule())
+                .opacity(active && !sending ? 1 : 0.5)
+                .frame(minHeight: 44)
+        } primaryAction: {
+            Haptics.tap()
+            send(action)
+        }
+        .accessibilityLabel(pairing ? "Pair with \(title)" : action.title(on: title))
+        .accessibilityHint(pairing ? "Compare a code on both devices" : "Touch and hold for more ways to send")
     }
 }
 
@@ -553,7 +575,7 @@ struct NowPlayingContent: View {
                                 client.beginPair()
                             }
                             .font(.footnote.weight(.semibold))
-                        } else if client.released {
+                        } else if client.released || client.busy {
                             Text(client.busy ? "\(client.title) is in use by another remote" : "Disconnected by \(client.title)")
                                 .font(.footnote)
                             Button("Reconnect") {

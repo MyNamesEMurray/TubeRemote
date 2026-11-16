@@ -18,7 +18,7 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
     }
     @Published var paired: [PairedDevice] {
-        didSet { Store.write("paired.json", try? JSONEncoder().encode(paired)) }
+        didSet { Store.write("paired.json", try? JSONEncoder().encode(paired), backup: false) }
     }
     /// Stable per-install id, used to recognise a viewer even after it is renamed.
     let deviceKey: String

@@ -201,7 +201,7 @@ final class ViewerServer {
             idleSince = nil
             if excessPending {
                 excessPending = false
-                notify?("A Pro device is connected again. Remotes stay connected.")
+                if viewerPro?() == true || anyRemotePro { notify?("A Pro device is connected again. Remotes stay connected.") }
             }
             return
         }
@@ -211,13 +211,8 @@ final class ViewerServer {
             notify?(playing ? "A Pro device left. Extra remotes disconnect when this video ends."
                             : "A Pro device left. Extra remotes disconnect in a minute unless it comes back.")
         }
-        guard !playing else {
-            idleSince = nil
-            return
-        }
-        let since = idleSince ?? Date()
-        idleSince = since
-        if Date().timeIntervalSince(since) >= 60 { trimExtras() }
+        idleSince = playing ? nil : (idleSince ?? Date())
+        if SessionRules.shouldTrim(playing: playing, idleSince: idleSince, now: Date()) { trimExtras() }
     }
 
     /// The viewer calls this when a new video starts.
@@ -297,7 +292,8 @@ final class ViewerServer {
     /// Tells the remote, then closes the connection once the message has had time to leave.
     func disconnect(_ id: ObjectIdentifier, with message: ServerMessage = .goodbye) {
         guard let c = conns[id]?.conn else { return }
-        send(message, to: id)
+        // A signed-in remote only believes a goodbye that arrives inside its encrypted channel.
+        if case .goodbye = message, conns[id]?.authed == true { sendSealed(message, to: id) } else { send(message, to: id) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             c.cancel()
             self?.remove(id)
@@ -339,6 +335,8 @@ final class ViewerServer {
     }
 
     private func accept(_ c: NWConnection) {
+        // A device that never signs in can still keep a connection alive with pings, so there are only so many.
+        guard conns.values.filter({ !$0.authed }).count < 8 else { return c.cancel() }
         let id = ObjectIdentifier(c)
         conns[id] = Peer(conn: c)
         Log.add("accepted connection")
