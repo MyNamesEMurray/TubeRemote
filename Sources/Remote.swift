@@ -25,6 +25,7 @@ final class RemoteClient: ObservableObject, Identifiable {
 
     private let settings: AppSettings
     private let pairing: Pairing
+    private let keeper: QueueKeeper?
     private var conn: NWConnection?
     private var ready = false
     private var channel: Channel?
@@ -36,8 +37,9 @@ final class RemoteClient: ObservableObject, Identifiable {
     private var retryPending = false
 
     init(key: String, name: String, endpoints: [NWEndpoint], settings: AppSettings, pairing: Pairing,
-         state: ViewerState? = nil) {
+         state: ViewerState? = nil, keeper: QueueKeeper? = nil) {
         self.state = state
+        self.keeper = keeper
         self.key = key
         self.name = name
         self.endpoints = endpoints
@@ -129,12 +131,14 @@ final class RemoteClient: ObservableObject, Identifiable {
             }
             switch try? JSONDecoder().decode(ServerMessage.self, from: body) {
             case .state(let st)?:
-                if !connected { Log.add("first state from \(tag)") }
+                let first = !connected
+                if first { Log.add("first state from \(tag)") }
                 state = st
                 connected = true
                 needsPairing = false
                 busy = false
                 detail = ""
+                keeper?.observe(st, from: self, first: first)
             case .goodbye?:
                 Log.add("disconnected by \(tag)")
                 released = true
@@ -233,10 +237,12 @@ final class RemoteController: ObservableObject {
     private let settings: AppSettings
     private let pairing: Pairing
     private var proObs: AnyCancellable?
+    private let keeper: QueueKeeper
 
     init(settings: AppSettings, pairing: Pairing) {
         self.settings = settings
         self.pairing = pairing
+        keeper = QueueKeeper(settings: settings)
         selectedKey = settings.lastViewerKey
         // Buying or restoring Pro changes what this device may do on a viewer, so sign in again.
         proObs = ProStore.shared.$isPro.dropFirst().removeDuplicates().sink { [weak self] _ in
@@ -316,7 +322,7 @@ final class RemoteController: ObservableObject {
                 c.endpoints = v.endpoints
             } else {
                 let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints, settings: settings, pairing: pairing,
-                                    state: lastState[k])
+                                    state: lastState[k], keeper: keeper)
                 clients[k] = c
                 c.connect()
             }

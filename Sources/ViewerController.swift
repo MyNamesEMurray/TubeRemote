@@ -521,6 +521,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 startIfIdle()
             }
             return "Playlist queued: \(list.count) videos"
+        case .restoreQueue(let items):
+            guard queue.isEmpty, current == nil else { return nil }
+            queue = items.filter(\.isValid).prefix(Self.maxQueue).map(\.fresh)
+            return queue.isEmpty ? nil : "Queue restored: \(queue.count) videos"
         case .skipAd:
             js("__tr.skipAd()")
             return "Skipped ad"

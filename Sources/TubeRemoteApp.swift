@@ -246,10 +246,23 @@ struct SettingsView: View {
                     } else {
                         Text("Choose a viewer to set the quality it starts videos at.").foregroundStyle(.secondary)
                     }
+                    if model.mode == .remote {
+                        if pro.has(remote.active?.state) {
+                            Toggle("Keep the queue on this device", isOn: $settings.saveQueue)
+                        } else {
+                            Button { showPaywall = true } label: {
+                                HStack {
+                                    Text("Keep the queue on this device").foregroundStyle(.primary)
+                                    GatedBadge()
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose.")
+                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here, so a viewer with nothing queued gets it back when you connect.")
                 }
                 Section {
                     TextField("Device name", text: $settings.deviceName)

@@ -123,6 +123,15 @@ final class ViewerTests: XCTestCase {
         XCTAssertNil(v.snapshot().sleepEndsAt, "an end-of-video timer ends with its video")
     }
 
+    func testRestoreQueueOnlyFillsAnIdleViewerAndDoesNotPlay() {
+        let v = makeViewer()
+        v.handle(.restoreQueue([item("aaaaaaaaaaa"), item("x');alert(1)//"), item("bbbbbbbbbbb")]), from: nil)
+        XCTAssertEqual(v.queue.map(\.videoID), ["aaaaaaaaaaa", "bbbbbbbbbbb"])
+        XCTAssertNil(v.current, "restoring must not start playback")
+        v.handle(.restoreQueue([item("ccccccccccc")]), from: nil)
+        XCTAssertEqual(v.queue.count, 2, "a viewer that already has a queue keeps it")
+    }
+
     func testPlaylistPlaysFirstQueuesRestAndSkipsBadIds() {
         let v = makeViewer()
         let list = [item("aaaaaaaaaaa"), item("x');alert(1)//"), item("bbbbbbbbbbb"), item("ccccccccccc")]

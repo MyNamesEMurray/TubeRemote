@@ -120,6 +120,8 @@ enum Command: Codable {
     case setSleepTimer(Double?)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.
     case playlist([VideoItem], QueueAction)
+    /// Puts a saved queue back on a viewer that has nothing queued or playing. Does not start anything.
+    case restoreQueue([VideoItem])
 }
 
 struct PairedDevice: Codable, Identifiable {
