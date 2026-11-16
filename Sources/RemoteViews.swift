@@ -451,6 +451,7 @@ struct DeviceRow: View {
     let onPair: () -> Void
 
     private var status: String {
+        if client.busy { return "In use by another remote. Pro lets several remotes share a viewer. Tap to retry." }
         if client.released { return "Disconnected by this viewer. Tap to reconnect." }
         if client.outdated { return "Update TubeRemote on both devices" }
         if client.needsPairing { return "Not paired" }
@@ -531,7 +532,8 @@ struct NowPlayingContent: View {
                             }
                             .font(.footnote.weight(.semibold))
                         } else if client.released {
-                            Text("Disconnected by \(client.title)").font(.footnote)
+                            Text(client.busy ? "\(client.title) is in use by another remote" : "Disconnected by \(client.title)")
+                                .font(.footnote)
                             Button("Reconnect") {
                                 Haptics.tap()
                                 client.reconnect()

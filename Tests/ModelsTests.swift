@@ -49,6 +49,24 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(again.pro)
     }
 
+    func testSessionRules() {
+        func r(_ k: String, pro: Bool = false, _ s: Double = 0) -> SessionRules.Remote {
+            SessionRules.Remote(key: k, pro: pro, since: Date(timeIntervalSince1970: s))
+        }
+        XCTAssertTrue(SessionRules.admits(r("a"), among: [], viewerPro: false), "the first remote is always let in")
+        XCTAssertFalse(SessionRules.admits(r("b"), among: [r("a")], viewerPro: false))
+        XCTAssertTrue(SessionRules.admits(r("b"), among: [r("a")], viewerPro: true), "Pro on the viewer is enough")
+        XCTAssertTrue(SessionRules.admits(r("b", pro: true), among: [r("a")], viewerPro: false), "a Pro newcomer is let in")
+        XCTAssertTrue(SessionRules.admits(r("b"), among: [r("a", pro: true)], viewerPro: false), "a connected Pro remote covers the newcomer")
+        XCTAssertTrue(SessionRules.admits(r("a"), among: [r("a")], viewerPro: false), "a device reconnecting does not count against itself")
+
+        let all = [r("a", 1), r("b", 2), r("c", 3)]
+        XCTAssertEqual(SessionRules.excess(all, viewerPro: false), ["b", "c"], "the Pro remote left: keep the one connected longest")
+        XCTAssertEqual(SessionRules.excess(all, viewerPro: true), [])
+        XCTAssertEqual(SessionRules.excess([r("a", 1), r("b", pro: true, 2)], viewerPro: false), [])
+        XCTAssertEqual(SessionRules.excess([r("a")], viewerPro: false), [])
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")

@@ -293,6 +293,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         }
         server.onGone = { [weak self] id in self?.pairing.cancel(peer: id) }
         server.onDenied = { [weak self] in self?.denied = $0 }
+        server.viewerPro = { ProStore.shared.isPro }
+        server.notify = { [weak self] in self?.flash($0) }
         pairing.onPaired = { [weak self] d in self?.server.challenge(key: d.key) }
         // Removing a device in Settings disconnects it at once.
         pairedObs = settings.$paired.dropFirst().sink { [weak self] list in self?.server.keep(Set(list.map(\.key))) }

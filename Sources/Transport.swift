@@ -117,6 +117,8 @@ final class ViewerServer {
         var last = Date()
         var hello = false
         var key: String?
+        var pro = false
+        var since = Date.distantFuture
         var nonce: Data?
         var channel: Channel?
         var authed: Bool { channel != nil }
@@ -134,6 +136,11 @@ final class ViewerServer {
     var onPeers: (() -> Void)?
     var onGone: ((ObjectIdentifier) -> Void)?
     var onDenied: ((Bool) -> Void)?
+    /// Whether the viewer's own device has Pro.
+    var viewerPro: (() -> Bool)?
+    /// Short messages for the person at the viewer.
+    var notify: ((String) -> Void)?
+    private var graceEndsAt: Date?
 
     /// Remotes that said hello but are not authenticated, so they can be offered for pairing.
     var pending: [PendingPeer] {
@@ -178,7 +185,48 @@ final class ViewerServer {
                 e.conn.cancel()
                 self.remove(id)
             }
+            self.tickSession()
         }
+    }
+
+    /// Several remotes without Pro (its owner left): they get a minute for it to come back, then all but the one
+    /// connected longest are sent away.
+    private func tickSession() {
+        let excess = SessionRules.excess(remotes(), viewerPro: viewerPro?() ?? false)
+        guard !excess.isEmpty else {
+            if graceEndsAt != nil {
+                graceEndsAt = nil
+                notify?("A Pro device is connected again. Remotes stay connected.")
+            }
+            return
+        }
+        guard let end = graceEndsAt else {
+            graceEndsAt = Date().addingTimeInterval(60)
+            notify?("A Pro device left. Extra remotes disconnect in a minute unless it comes back.")
+            return
+        }
+        guard Date() >= end else { return }
+        graceEndsAt = nil
+        for (id, p) in conns where p.authed && excess.contains(p.key ?? "") { disconnect(id, with: .busy) }
+        notify?("Extra remotes disconnected. Sharing a viewer needs Pro on the viewer or on one remote.")
+    }
+
+    private func remotes(excluding id: ObjectIdentifier? = nil) -> [SessionRules.Remote] {
+        conns.compactMap {
+            $0.key != id && $0.value.authed ? SessionRules.Remote(key: $0.value.key ?? "", pro: $0.value.pro, since: $0.value.since) : nil
+        }
+    }
+
+    /// One remote at a time unless the viewer or a connected remote has Pro. A device that signs in again replaces
+    /// its own older connection.
+    private func admit(_ id: ObjectIdentifier) -> Bool {
+        guard let me = conns[id], let key = me.key else { return false }
+        for (other, p) in conns where other != id && p.authed && p.key == key {
+            p.conn.cancel()
+            remove(other)
+        }
+        return SessionRules.admits(SessionRules.Remote(key: key, pro: me.pro, since: Date()), among: remotes(excluding: id),
+                                   viewerPro: viewerPro?() ?? false)
     }
 
     func rename(name: String, key: String) {
@@ -222,9 +270,9 @@ final class ViewerServer {
     }
 
     /// Tells the remote, then closes the connection once the message has had time to leave.
-    func disconnect(_ id: ObjectIdentifier) {
+    func disconnect(_ id: ObjectIdentifier, with message: ServerMessage = .goodbye) {
         guard let c = conns[id]?.conn else { return }
-        send(.goodbye, to: id)
+        send(message, to: id)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             c.cancel()
             self?.remove(id)
@@ -288,7 +336,7 @@ final class ViewerServer {
 
     private func handle(_ m: ClientMessage, id: ObjectIdentifier, conn: NWConnection) {
         switch m {
-        case .hello(let name, let key, let version):
+        case .hello(let name, let key, let version, let pro):
             send(.hello(version: Transport.version), to: id)
             guard version == Transport.version else {
                 return Log.add("\(Log.who(key)) runs protocol \(version.map { "\($0)" } ?? "1"), this device \(Transport.version)")
@@ -297,6 +345,7 @@ final class ViewerServer {
             conns[id]?.name = String(name.prefix(40))
             conns[id]?.hello = true
             conns[id]?.key = key
+            conns[id]?.pro = pro ?? false
             conns[id]?.channel = nil
             if paired?(key) != nil {
                 challenge(id)
@@ -315,7 +364,14 @@ final class ViewerServer {
                 onPeers?()
                 return
             }
+            guard admit(id) else {
+                Log.add("refused \(Log.who(p.key)): the viewer serves another remote and no Pro device is connected")
+                conns[id]?.nonce = nil
+                disconnect(id, with: .busy)
+                return
+            }
             conns[id]?.channel = Channel(secret: d.secret, salt: nonce + theirs, viewer: true)
+            conns[id]?.since = Date()
             conns[id]?.nonce = nil
             Log.add("authenticated \(Log.who(p.key))")
             if let s = snapshot?() { sendSealed(.state(s), to: id) }

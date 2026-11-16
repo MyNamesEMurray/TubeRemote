@@ -530,7 +530,7 @@ struct PairSheet: View {
                     } header: {
                         Text("Paired devices")
                     } footer: {
-                        Text("Disconnect closes the connection but keeps the pairing; the device reconnects when its owner chooses this viewer again. Swipe a device to forget it.")
+                        Text("Disconnect closes the connection but keeps the pairing; the device reconnects when its owner chooses this viewer again. Swipe a device to forget it. Without Pro, a viewer serves one remote at a time; Pro on this device or on any connected remote lifts that.")
                     }
                 }
                 if viewer.pending.isEmpty {

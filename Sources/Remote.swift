@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import Foundation
 import Network
@@ -14,6 +15,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var outdated = false
     /// The viewer disconnected this remote on purpose, so it stays away until its owner reconnects.
     @Published var released = false
+    /// The viewer already serves another remote, and nothing connected has Pro. Pro on this device would let it in.
+    @Published var busy = false
     var endpoints: [NWEndpoint]
     private var attempt = 0
     var id: String { key }
@@ -68,7 +71,7 @@ final class RemoteClient: ObservableObject, Identifiable {
             case .ready:
                 self.ready = true
                 Transport.send(ClientMessage.hello(name: self.settings.name, key: self.settings.deviceKey,
-                                                   version: Transport.version), on: c)
+                                                   version: Transport.version, pro: ProStore.shared.isPro), on: c)
                 Transport.receiveLoop(c, as: ServerMessage.self, onMessage: { [weak self] m in
                     guard let self, c === self.conn else { return }
                     self.lastActivity = Date()
@@ -95,7 +98,14 @@ final class RemoteClient: ObservableObject, Identifiable {
     func reconnect() {
         guard released else { return }
         released = false
+        busy = false
         connect()
+    }
+
+    /// Signs in again, so the viewer learns about a change such as buying Pro.
+    func refresh() {
+        guard !released else { return }
+        drop()
     }
 
     func beginPair() {
@@ -130,6 +140,11 @@ final class RemoteClient: ObservableObject, Identifiable {
             Log.add("ignored unencrypted state")
         case .goodbye:
             Log.add("disconnected by \(tag)")
+            released = true
+            drop()
+        case .busy:
+            Log.add("viewer is in use by another remote: \(tag)")
+            busy = true
             released = true
             drop()
         case .unpaired:
@@ -212,11 +227,16 @@ final class RemoteController: ObservableObject {
     private var running = false
     private let settings: AppSettings
     private let pairing: Pairing
+    private var proObs: AnyCancellable?
 
     init(settings: AppSettings, pairing: Pairing) {
         self.settings = settings
         self.pairing = pairing
         selectedKey = settings.lastViewerKey
+        // Buying or restoring Pro changes what this device may do on a viewer, so sign in again.
+        proObs = ProStore.shared.$isPro.dropFirst().removeDuplicates().sink { [weak self] _ in
+            self?.clients.values.forEach { $0.refresh() }
+        }
     }
 
     func start() {

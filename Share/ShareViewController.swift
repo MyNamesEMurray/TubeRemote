@@ -82,6 +82,7 @@ final class ShareModel: ObservableObject {
         case .dropped: return "Lost the connection to \(name)."
         case .unpaired: return "\(name) no longer recognises this device. Open TubeRemote and pair again."
         case .version: return "Update TubeRemote on both devices."
+        case .busy: return "\(name) is in use by another remote."
         }
     }
 

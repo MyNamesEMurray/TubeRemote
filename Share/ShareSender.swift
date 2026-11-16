@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import Network
 
-enum ShareError: Error { case notFound, dropped, unpaired, version }
+enum ShareError: Error { case notFound, dropped, unpaired, version, busy }
 
 /// Finds one paired viewer on the network, signs in the way the app's remote does, sends one command and hangs up.
 /// Everything runs on the main queue and `done` is called once.
@@ -62,7 +62,7 @@ final class ShareSender {
 
     private func ready() {
         guard let c = conn else { return }
-        Transport.send(ClientMessage.hello(name: config.deviceName, key: config.deviceKey, version: Transport.version), on: c)
+        Transport.send(ClientMessage.hello(name: config.deviceName, key: config.deviceKey, version: Transport.version, pro: config.pro), on: c)
         Transport.receiveLoop(c, as: ServerMessage.self, onMessage: { [weak self] in self?.handle($0) },
                               onEnd: { [weak self] in self?.finish(.failure(.dropped)) })
     }
@@ -88,6 +88,8 @@ final class ShareSender {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.finish(.success(())) }
         case .unpaired:
             finish(.failure(.unpaired))
+        case .busy:
+            finish(.failure(.busy))
         default:
             break
         }

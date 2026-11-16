@@ -140,7 +140,8 @@ enum PairMessage: Codable {
 
 /// Remote -> viewer. `command` is only accepted inside `sealed`.
 enum ClientMessage: Codable {
-    case hello(name: String, key: String, version: Int?)
+    /// `pro` says whether this device has TubeRemote Pro; one Pro device lets several remotes share a viewer.
+    case hello(name: String, key: String, version: Int?, pro: Bool?)
     case auth(mac: Data, nonce: Data)
     case ping
     case pair(PairMessage)
@@ -158,6 +159,31 @@ enum ServerMessage: Codable {
     case sealed(Data)
     /// The person at the viewer disconnected this remote; it should not reconnect by itself.
     case goodbye
+    /// The viewer already serves another remote and nothing connected has Pro. The remote should not retry by itself.
+    case busy
+}
+
+/// Who may be connected to a viewer at once: one remote, or any number when the viewer or a connected remote has Pro.
+struct SessionRules {
+    struct Remote: Equatable {
+        var key: String
+        var pro: Bool
+        var since: Date
+    }
+
+    /// A remote signing in is let in if it is the only one, or the session has Pro through the viewer, the newcomer or
+    /// anyone already connected. A device's own older connection does not count against it.
+    static func admits(_ newcomer: Remote, among current: [Remote], viewerPro: Bool) -> Bool {
+        let others = current.filter { $0.key != newcomer.key }
+        return others.isEmpty || viewerPro || newcomer.pro || others.contains { $0.pro }
+    }
+
+    /// When a session has lost Pro (the Pro remote left) and several remotes remain: everyone but the one connected longest.
+    static func excess(_ current: [Remote], viewerPro: Bool) -> [String] {
+        guard !viewerPro, current.count > 1, !current.contains(where: \.pro),
+              let keep = current.min(by: { $0.since < $1.since })?.key else { return [] }
+        return current.map(\.key).filter { $0 != keep }
+    }
 }
 
 let playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]

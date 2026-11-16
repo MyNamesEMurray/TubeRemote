@@ -97,6 +97,7 @@ struct PaywallView: View {
         ("moon.zzz.fill", "Sleep timer"),
         ("list.bullet.rectangle", "Add a whole playlist to the queue"),
         ("square.and.arrow.up", "Share a video to the viewer from other apps"),
+        ("person.2.fill", "Several remotes on one viewer. Pro on the viewer or on any one remote is enough for everyone connected"),
     ]
 
     var body: some View {
@@ -120,7 +121,7 @@ struct PaywallView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("One-time purchase. Everything you use today stays free.")
+                    Text("One-time purchase. Playing videos from one remote on one viewer stays free.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
