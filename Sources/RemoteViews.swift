@@ -623,10 +623,12 @@ struct ControlsPane: View {
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
     @State private var seekWork: DispatchWorkItem?
+    @State private var held: (value: Double, until: Date)?
 
     var body: some View {
         if let s = client.state, let cur = s.current {
-            let pos = scrub ?? s.position
+            // Right after a seek the viewer may still report the old position for a moment; keep showing where it was sent.
+            let pos = scrub ?? held.flatMap { $0.until > Date() ? $0.value : nil } ?? s.position
             ScrollView {
                 VStack(spacing: 20) {
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
@@ -740,6 +742,7 @@ struct ControlsPane: View {
         seekWork?.cancel()
         guard let v = scrub else { return }
         scrub = nil
+        held = (v, Date().addingTimeInterval(1.5))
         client.state?.position = v
         Log.add("seek to \(Int(v)) s")
         client.send(.seek(v))

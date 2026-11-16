@@ -72,6 +72,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var lastPos = -1.0
     private var lastMove = Date()
     private var kickCount = 0
+    /// Just after a seek the page may still report the old time; it is not passed on until then.
+    private var seekHoldUntil = Date.distantPast
     private var unmuteTries = 0
     /// The video is still muted after the automatic attempts, so the overlay offers a button.
     @Published private(set) var needsUnmute = false
@@ -147,7 +149,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       window.__tr = {
         play: function(){ want = true; var v = vid(); if (v) v.play() },
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
-        seek: function(t){ var v = vid(); if (v) v.currentTime = t },
+        // Through the player, which knows about a seek still in progress; writing currentTime behind its back
+        // can be undone by it, and a second seek soon after the first was often lost.
+        seek: function(t){
+          try { var p = mp(); if (p && p.seekTo) { p.seekTo(t, true); return } } catch(e) {}
+          var v = vid(); if (v) v.currentTime = t
+        },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
         // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the
         // debug log. Called from the app, so it runs as the same kind of call as a tap on Play.
@@ -615,6 +622,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func seek(_ t: Double) {
         let clamped = max(0, duration > 0 ? min(t, duration) : t)
         position = clamped
+        seekHoldUntil = Date().addingTimeInterval(1)
         js("__tr.seek(\(clamped))")
     }
 
@@ -689,7 +697,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 broadcast()
             }
         case "time":
-            if let p = b["pos"] as? Double, p.isFinite { position = p }
+            if let p = b["pos"] as? Double, p.isFinite, Date() >= seekHoldUntil { position = p }
             if let d = b["dur"] as? Double, d.isFinite, d > 0 {
                 duration = d
                 if current?.duration != d { current?.duration = d }
