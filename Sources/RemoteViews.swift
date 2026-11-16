@@ -636,7 +636,7 @@ struct NowPlayingContent: View {
             .sheet(isPresented: $showPicker) { DevicePicker() }
             .pairingPrompt()
         }
-        .background(Hosted(view: keys.view).frame(width: 10, height: 10).opacity(0.01).allowsHitTesting(false))
+        .background(Hosted(view: keys.view).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false))
         // While this screen is open the phone's volume buttons set the viewer's volume.
         .onAppear {
             keys.start { step in
