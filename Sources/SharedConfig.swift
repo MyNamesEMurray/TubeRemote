@@ -13,6 +13,9 @@ struct SharedConfig: Codable {
 
     static let group = "group.com.exaltedpixels.TubeRemote"
 
+    /// False when this build has no access to the App Group, so the app and the extension cannot share anything.
+    static var available: Bool { url != nil }
+
     private static var url: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)?.appendingPathComponent("share.json")
     }
@@ -22,12 +25,14 @@ struct SharedConfig: Codable {
         return try? JSONDecoder().decode(SharedConfig.self, from: data)
     }
 
-    func write() {
-        guard let url = Self.url, let data = try? JSONEncoder().encode(self) else { return }
-        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    @discardableResult
+    func write() -> Bool {
+        guard let url = Self.url, let data = try? JSONEncoder().encode(self) else { return false }
+        do { try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) } catch { return false }
         var u = url
         var v = URLResourceValues()
         v.isExcludedFromBackup = true
         try? u.setResourceValues(v)
+        return true
     }
 }

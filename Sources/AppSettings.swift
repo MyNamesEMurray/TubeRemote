@@ -74,8 +74,9 @@ final class AppSettings: ObservableObject {
 extension AppSettings {
     /// Gives the share extension what it needs to reach a viewer. Written whenever the app comes or goes.
     func mirrorForShare(pro: Bool) {
-        SharedConfig(deviceKey: deviceKey, deviceName: name, paired: paired, lastViewer: lastViewerKey,
-                     queueAction: queueAction, pro: pro).write()
+        let ok = SharedConfig(deviceKey: deviceKey, deviceName: name, paired: paired, lastViewer: lastViewerKey,
+                              queueAction: queueAction, pro: pro).write()
+        if !ok { Log.add(SharedConfig.available ? "share: could not write the shared file" : "share: App Group not available to this build") }
     }
 }
 

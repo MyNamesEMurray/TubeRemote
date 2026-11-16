@@ -36,7 +36,13 @@ final class ShareModel: ObservableObject {
 
     func start() {
         Task {
-            guard let config = SharedConfig.read(), !config.paired.isEmpty else {
+            guard SharedConfig.available else {
+                return state = .failed("This build of TubeRemote cannot share data with its extension: the App Group is missing.")
+            }
+            guard let config = SharedConfig.read() else {
+                return state = .failed("Open TubeRemote once on this device, then try again.")
+            }
+            guard !config.paired.isEmpty else {
                 return state = .failed("Open TubeRemote and pair a viewer first.")
             }
             self.config = config

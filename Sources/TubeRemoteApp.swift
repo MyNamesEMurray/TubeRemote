@@ -74,7 +74,12 @@ struct RootView: View {
             OnboardingView()
         }
         .pairingPrompt()
-        .onAppear { model.apply() }
+        .onAppear {
+            model.apply()
+            settings.mirrorForShare(pro: pro.isPro)
+        }
+        .onChange(of: settings.paired.count) { settings.mirrorForShare(pro: pro.isPro) }
+        .onChange(of: pro.isPro) { settings.mirrorForShare(pro: pro.isPro) }
         .onChange(of: phase) {
             switch $0 {
             case .active:
