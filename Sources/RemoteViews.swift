@@ -673,11 +673,11 @@ struct ControlsPane: View {
                     }
                     HStack(spacing: 0) {
                         transport("backward.end.fill", "Previous track", size: 28) { client.send(.previous) }
-                        transport("gobackward.10", "Back 10 seconds", size: 28) { client.send(.skip(-10)) }
+                        transport("gobackward.10", "Back 10 seconds", size: 28) { jump(-10, from: pos, of: s.duration) }
                         transport(s.isPlaying ? "pause.fill" : "play.fill", s.isPlaying ? "Pause" : "Play", size: 44) {
                             client.send(s.isPlaying ? .pause : .resume)
                         }
-                        transport("goforward.10", "Forward 10 seconds", size: 28) { client.send(.skip(10)) }
+                        transport("goforward.10", "Forward 10 seconds", size: 28) { jump(10, from: pos, of: s.duration) }
                         transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
                     }
                     if s.adSkippable == true {
@@ -734,6 +734,17 @@ struct ControlsPane: View {
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
+    }
+
+    /// Jumps to an exact time worked out here from what the slider shows, so quick taps add up and the viewer is not
+    /// left to add to a position it may report late.
+    private func jump(_ by: Double, from pos: Double, of duration: Double) {
+        let t = max(0, duration > 0 ? min(pos + by, duration) : pos + by)
+        held = (t, Date().addingTimeInterval(1.5))
+        client.state?.position = t
+        Log.add("jump to \(Int(t)) s")
+        client.send(.seek(t))
+        Haptics.tap()
     }
 
     /// Sends the position the slider was left at. Normally the end of the drag triggers it; a timer backs that up, because
