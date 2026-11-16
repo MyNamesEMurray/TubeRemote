@@ -262,7 +262,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here, so a viewer with nothing queued gets it back when you connect.")
+                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here. A viewer with nothing queued then offers to resume it when you connect.")
                 }
                 Section {
                     TextField("Device name", text: $settings.deviceName)

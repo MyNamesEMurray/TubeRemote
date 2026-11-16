@@ -506,8 +506,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }
             return "Sleep timer set"
         case .playlist(let items, let action):
-            // Arrives over the network: only valid ids, and not more than a playlist page holds.
-            let list = items.filter(\.isValid).prefix(200).map(\.fresh)
+            // Arrives over the network: only valid ids, and not more than the queue holds.
+            let list = items.filter(\.isValid).prefix(Self.maxQueue).map(\.fresh)
             guard let first = list.first else { return nil }
             switch action {
             case .playNow:
@@ -521,10 +521,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 startIfIdle()
             }
             return "Playlist queued: \(list.count) videos"
-        case .restoreQueue(let items):
-            guard queue.isEmpty, current == nil else { return nil }
-            queue = items.filter(\.isValid).prefix(Self.maxQueue).map(\.fresh)
-            return queue.isEmpty ? nil : "Queue restored: \(queue.count) videos"
         case .skipAd:
             js("__tr.skipAd()")
             return "Skipped ad"

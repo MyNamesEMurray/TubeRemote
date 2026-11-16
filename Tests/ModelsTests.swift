@@ -75,17 +75,12 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(SessionRules.shouldTrim(playing: false, idleSince: now - 60, now: now))
     }
 
-    func testQueueKeeperPlans() {
+    func testQueueKeeperSavesUnlessTheViewerIsIdleAndEmpty() {
         let a = VideoItem(videoID: "aaaaaaaaaaa", title: "a", channel: "c", duration: 1)
-        func plan(saved: [VideoItem], q: [VideoItem], idle: Bool = true, first: Bool = true, holding: Bool = false) -> QueueKeeper.Plan {
-            QueueKeeper.plan(saved: saved, viewerQueue: q, idle: idle, first: first, holding: holding)
-        }
-        XCTAssertEqual(plan(saved: [a], q: []), .restore, "an empty idle viewer gets the saved queue")
-        XCTAssertEqual(plan(saved: [a], q: [], idle: false), .save, "a viewer that is playing is not given it, and its queue wins")
-        XCTAssertEqual(plan(saved: [a], q: [], first: false), .save, "only the first state of a connection restores")
-        XCTAssertEqual(plan(saved: [a], q: [], first: false, holding: true), .none, "a late empty state after a restore saves nothing")
-        XCTAssertEqual(plan(saved: [], q: [a]), .save)
-        XCTAssertEqual(plan(saved: [a], q: [a]), .none)
+        XCTAssertTrue(QueueKeeper.shouldSave(saved: [], viewerQueue: [a], idle: false))
+        XCTAssertTrue(QueueKeeper.shouldSave(saved: [a], viewerQueue: [], idle: false), "cleared while playing: forget it")
+        XCTAssertFalse(QueueKeeper.shouldSave(saved: [a], viewerQueue: [], idle: true), "an idle empty viewer must not wipe the saved queue")
+        XCTAssertFalse(QueueKeeper.shouldSave(saved: [a], viewerQueue: [a], idle: false))
     }
 
     func testClock() {

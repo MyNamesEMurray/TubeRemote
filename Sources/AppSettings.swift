@@ -21,7 +21,7 @@ final class AppSettings: ObservableObject {
             if !saveQueue { savedQueue = [] }
         }
     }
-    var savedQueue: [VideoItem] {
+    @Published var savedQueue: [VideoItem] {
         didSet { Store.write("queue.json", try? JSONEncoder().encode(savedQueue)) }
     }
     @Published var hasOnboarded: Bool {

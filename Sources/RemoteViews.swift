@@ -42,6 +42,9 @@ struct RemoteView: View {
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if let c = remote.active { ResumeQueueBar(client: c) }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let c = remote.active {
                         RemoteBar(client: c, canSend: browser.videoID != nil, hasPlaylist: browser.playlistID != nil,
                                   sending: sending, open: { showNow = true }, send: { send($0, to: c) },
@@ -346,6 +349,40 @@ struct RemoteBar: View {
                 }
                 .frame(height: 2)
             }
+        }
+    }
+}
+
+/// Offered when the viewer has nothing queued or playing and this remote still holds a saved queue.
+struct ResumeQueueBar: View {
+    @ObservedObject var client: RemoteClient
+    @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var pro: ProStore
+
+    var body: some View {
+        if settings.saveQueue, pro.has(client.state), client.connected, let s = client.state,
+           s.current == nil, s.queue.isEmpty, !settings.savedQueue.isEmpty {
+            HStack(spacing: 8) {
+                Button {
+                    Haptics.tap()
+                    client.send(.playlist(settings.savedQueue, .playNow))
+                } label: {
+                    Label("Resume queue (\(settings.savedQueue.count))", systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                Button {
+                    Haptics.tap()
+                    settings.savedQueue = []
+                } label: {
+                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Discard the saved queue")
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
     }
 }
