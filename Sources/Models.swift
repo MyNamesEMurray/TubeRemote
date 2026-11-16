@@ -83,6 +83,8 @@ struct ViewerState: Codable, Equatable {
     var adSkippable: Bool?
     /// What the viewer starts every video at (see `preferredQualityChoices`).
     var preferredQuality: String?
+    /// When the viewer will pause by itself, if a sleep timer is running.
+    var sleepEndsAt: Date?
     /// No quality is forced; `quality` is then whatever YouTube picked.
     var autoQuality: Bool?
     /// "searching": captions were asked for and none are showing yet. "none": this video has none.
@@ -104,6 +106,8 @@ enum Command: Codable {
     case skipAd
     /// The quality every video starts at: YouTube's quality name, "best" or "auto".
     case setPreferredQuality(String)
+    /// Seconds until the viewer pauses; 0 means at the end of the video, nil switches the timer off.
+    case setSleepTimer(Double?)
 }
 
 struct PairedDevice: Codable, Identifiable {

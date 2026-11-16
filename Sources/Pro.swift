@@ -93,6 +93,10 @@ struct PaywallView: View {
 
     private let features: [(String, String)] = [
         ("tv", "Preferred video quality: start every video at Highest available, or at the quality you choose"),
+        ("forward.fill", "Skip Ad from the remote"),
+        ("moon.zzz.fill", "Sleep timer"),
+        ("list.bullet.rectangle", "Add a whole playlist to the queue"),
+        ("square.and.arrow.up", "Share a video to the viewer from other apps"),
     ]
 
     var body: some View {
@@ -170,6 +174,54 @@ struct GatedBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+    }
+}
+
+/// Sleep timer menu. The viewer holds the timer; `endsAt` is when it will pause, if one is running.
+struct SleepTimerMenu: View {
+    let endsAt: Date?
+    var onDark = false
+    let set: (Double?) -> Void
+    @EnvironmentObject var pro: ProStore
+    @State private var showPaywall = false
+
+    private var label: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "moon.zzz.fill")
+            if let endsAt {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    Text("Sleep in " + clock(max(endsAt.timeIntervalSince(ctx.date), 0))).monospacedDigit()
+                }
+            } else {
+                Text("Sleep timer")
+            }
+            if !pro.isPro { GatedBadge() }
+        }
+        .font(.subheadline.weight(.medium))
+        .lineLimit(1)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 36)
+        .background(onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
+        .frame(minHeight: 44)
+    }
+
+    var body: some View {
+        Group {
+            if pro.isPro {
+                Menu {
+                    Button { Haptics.tap(); set(nil) } label: { Label("Off", systemImage: "xmark") }
+                    ForEach([15, 30, 45, 60], id: \.self) { m in
+                        Button(m == 60 ? "1 hour" : "\(m) minutes") { Haptics.tap(); set(Double(m * 60)) }
+                    }
+                    Button("End of video") { Haptics.tap(); set(0) }
+                } label: { label }
+                .menuOrder(.fixed)
+                .accessibilityLabel(endsAt == nil ? "Sleep timer" : "Sleep timer running")
+            } else {
+                Button { showPaywall = true } label: { label }
+            }
+        }
+        .sheet(isPresented: $showPaywall) { PaywallView() }
     }
 }
 

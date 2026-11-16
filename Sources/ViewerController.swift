@@ -58,6 +58,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published private(set) var qualities: [String] = []
     /// No quality is forced; `quality` is then whatever YouTube picked.
     @Published private(set) var autoQuality = true
+    /// When the sleep timer will pause playback. Only set when it changes, so the screen is not redrawn each second.
+    @Published private(set) var sleepEndsAt: Date?
+    private var sleepAtEnd = false
     private var adSkippable = false
     /// What was last asked for, as opposed to `isPlaying`, which is what the page reports.
     private var wantPlaying = false
@@ -294,7 +297,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         // Removing a device in Settings disconnects it at once.
         pairedObs = settings.$paired.dropFirst().sink { [weak self] list in self?.server.keep(Set(list.map(\.key))) }
         server.start(name: settings.name, key: settings.deviceKey)
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.broadcast() }
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.tickSleep()
+            self?.broadcast()
+        }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
@@ -332,6 +338,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         running = false
         Log.add("viewer stop")
         server.stop()
+        sleepEndsAt = nil
+        sleepAtEnd = false
         pairedObs = nil
         pairing.cancel()
         timer?.invalidate()
@@ -354,6 +362,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// leaves the viewer on its ready screen. Pairings and history stay.
     func endSession() {
         Log.add("session ended")
+        sleepEndsAt = nil
+        sleepAtEnd = false
         queue = []
         advance()
         wantPlaying = false
@@ -465,6 +475,20 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             autoQuality = wantQuality == nil
             pushSettings()
             return nil
+        case .setSleepTimer(let s):
+            sleepAtEnd = false
+            guard let s, s.isFinite, s >= 0 else {
+                sleepEndsAt = nil
+                return "Sleep timer off"
+            }
+            if s == 0 {
+                guard current != nil else { return nil }
+                sleepAtEnd = true
+                sleepEndsAt = Date().addingTimeInterval(max(duration - position, 0))
+            } else {
+                sleepEndsAt = Date().addingTimeInterval(min(s, 12 * 3600))
+            }
+            return "Sleep timer set"
         case .skipAd:
             js("__tr.skipAd()")
             return "Skipped ad"
@@ -493,11 +517,34 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Playback
 
+    private func tickSleep() {
+        if sleepAtEnd {
+            let end = Date().addingTimeInterval(max(duration - position, 0))
+            // The estimate barely moves while playing; only publish a real change.
+            if let e = sleepEndsAt, abs(e.timeIntervalSince(end)) < 3 { return }
+            sleepEndsAt = end
+        } else if let d = sleepEndsAt, d <= Date() {
+            sleepFire()
+        }
+    }
+
+    private func sleepFire() {
+        sleepEndsAt = nil
+        sleepAtEnd = false
+        _ = apply(.pause)
+        flash("Sleep timer ended")
+    }
+
     private func start(_ item: VideoItem, pushPrevious: Bool = true) {
         if pushPrevious, let c = current { pushHistory(c) }
         current = item
         position = 0
         duration = item.duration ?? 0
+        // An "end of video" timer belongs to the video it was set on.
+        if sleepAtEnd {
+            sleepAtEnd = false
+            sleepEndsAt = nil
+        }
         isPlaying = true
         wantPlaying = true
         firstPlay = nil
@@ -672,7 +719,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 // An advert finishing also reports "ended"; only the video's own end moves the queue on.
                 guard duration <= 0 || position >= duration - 3 else { break }
                 isPlaying = false
-                advance()
+                if sleepAtEnd { sleepFire() } else { advance() }
             default: break
             }
             broadcast()
@@ -695,7 +742,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
                     adSkippable: adSkippable, autoQuality: autoQuality, captionsStatus: captionsStatus,
-                    preferredQuality: settings.preferredQuality)
+                    preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt)
     }
 
     private func broadcast() {

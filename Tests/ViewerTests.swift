@@ -97,6 +97,25 @@ final class ViewerTests: XCTestCase {
         settings.preferredQuality = "auto"
     }
 
+    func testSleepTimerSetsClearsAndRejectsBadValues() {
+        let v = makeViewer()
+        v.handle(.setSleepTimer(.nan), from: nil)
+        XCTAssertNil(v.snapshot().sleepEndsAt)
+        v.handle(.setSleepTimer(0), from: nil)
+        XCTAssertNil(v.snapshot().sleepEndsAt, "end of video needs a video")
+        v.handle(.setSleepTimer(600), from: nil)
+        let ends = try? XCTUnwrap(v.snapshot().sleepEndsAt)
+        XCTAssertNotNil(ends)
+        XCTAssertEqual(ends?.timeIntervalSinceNow ?? 0, 600, accuracy: 5)
+        v.handle(.setSleepTimer(nil), from: nil)
+        XCTAssertNil(v.snapshot().sleepEndsAt)
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.setSleepTimer(0), from: nil)
+        XCTAssertNotNil(v.snapshot().sleepEndsAt)
+        v.handle(.play(item("bbbbbbbbbbb")), from: nil)
+        XCTAssertNil(v.snapshot().sleepEndsAt, "an end-of-video timer ends with its video")
+    }
+
     func testChannelEncryptsBothWaysAndRejectsReplay() throws {
         let secret = Data(repeating: 7, count: 32), salt = Data(repeating: 1, count: 32)
         var remote = Channel(secret: secret, salt: salt, viewer: false)

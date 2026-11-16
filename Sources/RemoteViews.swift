@@ -214,6 +214,8 @@ struct ActionBar: View {
 struct RemoteBar: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var pro: ProStore
+    @State private var showPaywall = false
     let canSend: Bool
     let sending: Bool
     let open: () -> Void
@@ -247,9 +249,14 @@ struct RemoteBar: View {
                 .accessibilityHint("Opens Now Playing")
 
                 if client.state?.adSkippable == true {
-                    Button("Skip Ad") {
+                    Button {
                         Haptics.tap()
-                        client.send(.skipAd)
+                        if pro.isPro { client.send(.skipAd) } else { showPaywall = true }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Skip Ad")
+                            if !pro.isPro { Image(systemName: "lock.fill").font(.caption2) }
+                        }
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
@@ -269,6 +276,7 @@ struct RemoteBar: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
             .background(.bar)
+            .sheet(isPresented: $showPaywall) { PaywallView() }
             .overlay(alignment: .top) {
                 GeometryReader { geo in
                     Rectangle().fill(Color.accentColor)
@@ -528,6 +536,8 @@ struct NowPlayingContent: View {
 
 struct ControlsPane: View {
     @ObservedObject var client: RemoteClient
+    @EnvironmentObject var pro: ProStore
+    @State private var showPaywall = false
     @State private var scrub: Double?
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
@@ -594,15 +604,20 @@ struct ControlsPane: View {
                     if s.adSkippable == true {
                         Button {
                             Haptics.tap()
-                            client.send(.skipAd)
+                            if pro.isPro { client.send(.skipAd) } else { showPaywall = true }
                         } label: {
-                            Label("Skip Ad", systemImage: "forward.fill").frame(maxWidth: .infinity)
+                            HStack(spacing: 8) {
+                                Label("Skip Ad", systemImage: "forward.fill")
+                                if !pro.isPro { GatedBadge() }
+                            }
+                            .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                     }
                     if let speed = s.speed { playbackOptions(s, speed: speed) }
+                    SleepTimerMenu(endsAt: s.sleepEndsAt) { client.send(.setSleepTimer($0)) }
                     HStack(spacing: 12) {
                         Button {
                             Haptics.tap()
@@ -636,6 +651,7 @@ struct ControlsPane: View {
                 .frame(maxWidth: .infinity)
                 .disabled(!client.connected)
             }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
