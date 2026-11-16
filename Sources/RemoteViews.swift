@@ -622,6 +622,7 @@ struct ControlsPane: View {
     @State private var scrub: Double?
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
+    @State private var seekWork: DispatchWorkItem?
 
     var body: some View {
         if let s = client.state, let cur = s.current {
@@ -650,15 +651,10 @@ struct ControlsPane: View {
                     } else {
                     VStack(spacing: 2) {
                         Slider(
-                            value: Binding(get: { pos }, set: { scrub = $0 }),
+                            value: Binding(get: { pos }, set: { scrub = $0; scheduleSeek() }),
                             in: 0...max(s.duration, 1)
                         ) { editing in
-                            if !editing, let v = scrub {
-                                client.state?.position = v
-                                client.send(.seek(v))
-                                scrub = nil
-                                Haptics.tap()
-                            }
+                            if !editing { commitSeek() }
                         }
                         // State arrives once a second; glide between updates instead of jumping.
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
@@ -736,6 +732,25 @@ struct ControlsPane: View {
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
+    }
+
+    /// Sends the position the slider was left at. Normally the end of the drag triggers it; a timer backs that up, because
+    /// when the drag is cancelled (the view is rebuilt, the sheet takes the touch) iOS does not always report the end.
+    private func commitSeek() {
+        seekWork?.cancel()
+        guard let v = scrub else { return }
+        scrub = nil
+        client.state?.position = v
+        Log.add("seek to \(Int(v)) s")
+        client.send(.seek(v))
+        Haptics.tap()
+    }
+
+    private func scheduleSeek() {
+        seekWork?.cancel()
+        let w = DispatchWorkItem { commitSeek() }
+        seekWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
     }
 
     private static let speeds = playbackSpeeds
