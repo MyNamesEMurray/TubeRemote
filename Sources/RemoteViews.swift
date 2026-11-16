@@ -116,7 +116,7 @@ struct RemoteView: View {
 
     /// Reads the open playlist from the page and sends all of it to the viewer in one message.
     private func sendPlaylist(_ action: QueueAction, reversed: Bool, to c: RemoteClient) {
-        guard pro.isPro else { showPaywall = true; return }
+        guard pro.has(c.state) else { showPaywall = true; return }
         if c.needsPairing {
             Haptics.tap()
             c.beginPair()
@@ -303,11 +303,11 @@ struct RemoteBar: View {
                 if client.state?.adSkippable == true {
                     Button {
                         Haptics.tap()
-                        if pro.isPro { client.send(.skipAd) } else { showPaywall = true }
+                        if pro.has(client.state) { client.send(.skipAd) } else { showPaywall = true }
                     } label: {
                         HStack(spacing: 4) {
                             Text("Skip Ad")
-                            if !pro.isPro { Image(systemName: "lock.fill").font(.caption2) }
+                            if !pro.has(client.state) { Image(systemName: "lock.fill").font(.caption2) }
                         }
                     }
                     .buttonStyle(.bordered)
@@ -359,7 +359,7 @@ struct RemoteBar: View {
                 .font(.title3)
                 .frame(width: 44, height: 44)
                 .overlay(alignment: .topTrailing) {
-                    if !pro.isPro { Image(systemName: "lock.fill").font(.system(size: 9)).padding(6) }
+                    if !pro.has(client.state) { Image(systemName: "lock.fill").font(.system(size: 9)).padding(6) }
                 }
                 .opacity(client.connected || client.needsPairing ? 1 : 0.5)
         }
@@ -683,11 +683,11 @@ struct ControlsPane: View {
                     if s.adSkippable == true {
                         Button {
                             Haptics.tap()
-                            if pro.isPro { client.send(.skipAd) } else { showPaywall = true }
+                            if pro.has(client.state) { client.send(.skipAd) } else { showPaywall = true }
                         } label: {
                             HStack(spacing: 8) {
                                 Label("Skip Ad", systemImage: "forward.fill")
-                                if !pro.isPro { GatedBadge() }
+                                if !pro.has(client.state) { GatedBadge() }
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -696,7 +696,7 @@ struct ControlsPane: View {
                         .controlSize(.large)
                     }
                     if let speed = s.speed { playbackOptions(s, speed: speed) }
-                    SleepTimerMenu(endsAt: s.sleepEndsAt) { client.send(.setSleepTimer($0)) }
+                    SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
                     HStack(spacing: 12) {
                         Button {
                             Haptics.tap()

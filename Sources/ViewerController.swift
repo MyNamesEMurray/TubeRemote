@@ -772,7 +772,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
-                    autoQuality: autoQuality, captionsStatus: captionsStatus)
+                    autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro)
     }
 
     private func broadcast() {

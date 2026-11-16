@@ -97,6 +97,8 @@ struct ViewerState: Codable, Equatable {
     var autoQuality: Bool?
     /// "searching": captions were asked for and none are showing yet. "none": this video has none.
     var captionsStatus: String?
+    /// Pro is on the viewer or a connected remote, so every remote may use Pro features.
+    var sessionPro: Bool?
 
     var muted: Bool { volume < 0.01 }
 }

@@ -178,6 +178,10 @@ struct GatedBadge: View {
     }
 }
 
+extension ProStore {
+    func has(_ viewer: ViewerState?) -> Bool { isPro || viewer?.sessionPro == true }
+}
+
 /// Sleep timer menu. The viewer holds the timer; `endsAt` is when it will pause, if one is running.
 struct SleepTimerMenu: View {
     let endsAt: Date?
@@ -232,12 +236,13 @@ struct SleepTimerMenu: View {
 struct QualityRow: View {
     let value: String
     let enabled: Bool
+    var unlocked = false
     let set: (String) -> Void
     @Binding var showPaywall: Bool
     @EnvironmentObject var pro: ProStore
 
     var body: some View {
-        if pro.isPro {
+        if pro.isPro || unlocked {
             Picker("Preferred quality", selection: Binding(get: { value }, set: set)) {
                 ForEach(preferredQualityChoices, id: \.id) { Text($0.label).tag($0.id) }
             }
@@ -263,6 +268,6 @@ struct RemoteQualityRow: View {
 
     var body: some View {
         QualityRow(value: client.state?.preferredQuality ?? "auto", enabled: client.connected,
-                   set: { client.send(.setPreferredQuality($0)) }, showPaywall: $showPaywall)
+                   unlocked: client.state?.sessionPro == true, set: { client.send(.setPreferredQuality($0)) }, showPaywall: $showPaywall)
     }
 }
