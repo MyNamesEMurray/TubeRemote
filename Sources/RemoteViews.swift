@@ -322,7 +322,10 @@ struct RemoteBar: View {
                     }
                     .accessibilityLabel(playing ? "Pause" : "Play")
                 }
-                if hasPlaylist { playlistButton }
+                if hasPlaylist {
+                    PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), send: sendPlaylist)
+                        .equatable()
+                }
                 if canSend { sendButton }
             }
             .foregroundStyle(.primary)
@@ -339,32 +342,6 @@ struct RemoteBar: View {
                 .frame(height: 2)
             }
         }
-    }
-
-    /// Adds the whole playlist the open page belongs to.
-    private var playlistButton: some View {
-        Menu {
-            Section("In playlist order") {
-                ForEach(QueueAction.allCases) { a in
-                    Button { Haptics.tap(); sendPlaylist(a, false) } label: { Label(a.playlistTitle, systemImage: a.icon) }
-                }
-            }
-            Section("Reversed") {
-                ForEach(QueueAction.allCases) { a in
-                    Button { Haptics.tap(); sendPlaylist(a, true) } label: { Label(a.playlistTitle, systemImage: "arrow.up.arrow.down") }
-                }
-            }
-        } label: {
-            Image(systemName: "list.bullet.rectangle")
-                .font(.title3)
-                .frame(width: 44, height: 44)
-                .overlay(alignment: .topTrailing) {
-                    if !pro.has(client.state) { Image(systemName: "lock.fill").font(.system(size: 9)).padding(6) }
-                }
-                .opacity(client.connected || client.needsPairing ? 1 : 0.5)
-        }
-        .menuOrder(.fixed)
-        .accessibilityLabel("Add the whole playlist")
     }
 
     /// Tap sends with the default action from Settings; touch and hold lists every option.
@@ -389,6 +366,42 @@ struct RemoteBar: View {
         }
         .accessibilityLabel(client.needsPairing ? "Pair with \(client.title)" : settings.queueAction.title(on: client.title))
         .accessibilityHint(client.needsPairing ? "Compare a code on both devices" : "Touch and hold for more ways to send")
+    }
+}
+
+/// Adds the whole playlist the open page belongs to. Compared by the viewer and two flags only: the bar is redrawn each time the
+/// viewer reports its position, and a menu that is redrawn while open pulses.
+struct PlaylistMenu: View, Equatable {
+    let target: String
+    let active: Bool
+    let locked: Bool
+    let send: (QueueAction, Bool) -> Void
+
+    static func == (a: PlaylistMenu, b: PlaylistMenu) -> Bool { a.target == b.target && a.active == b.active && a.locked == b.locked }
+
+    var body: some View {
+        Menu {
+            Section("In playlist order") {
+                ForEach(QueueAction.allCases) { a in
+                    Button { Haptics.tap(); send(a, false) } label: { Label(a.playlistTitle, systemImage: a.icon) }
+                }
+            }
+            Section("Reversed") {
+                ForEach(QueueAction.allCases) { a in
+                    Button { Haptics.tap(); send(a, true) } label: { Label(a.playlistTitle, systemImage: "arrow.up.arrow.down") }
+                }
+            }
+        } label: {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.title3)
+                .frame(width: 44, height: 44)
+                .overlay(alignment: .topTrailing) {
+                    if locked { Image(systemName: "lock.fill").font(.system(size: 9)).padding(6) }
+                }
+                .opacity(active ? 1 : 0.5)
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("Add the whole playlist")
     }
 }
 
