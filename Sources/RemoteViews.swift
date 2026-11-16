@@ -45,7 +45,7 @@ struct RemoteView: View {
                     if let c = remote.active {
                         RemoteBar(client: c, canSend: browser.videoID != nil, hasPlaylist: browser.playlistID != nil,
                                   sending: sending, open: { showNow = true }, send: { send($0, to: c) },
-                                  sendPlaylist: { sendPlaylist($0, to: c) }, here: { browser.play() })
+                                  sendPlaylist: { sendPlaylist($0, reversed: $1, to: c) }, here: { browser.play() })
                     } else if browser.videoID != nil {
                         Button { showPicker = true } label: {
                             Label("Choose a Viewer", systemImage: "tv").frame(maxWidth: .infinity)
@@ -115,7 +115,7 @@ struct RemoteView: View {
     }
 
     /// Reads the open playlist from the page and sends all of it to the viewer in one message.
-    private func sendPlaylist(_ action: QueueAction, to c: RemoteClient) {
+    private func sendPlaylist(_ action: QueueAction, reversed: Bool, to c: RemoteClient) {
         guard pro.isPro else { showPaywall = true; return }
         if c.needsPairing {
             Haptics.tap()
@@ -132,15 +132,17 @@ struct RemoteView: View {
         show("Reading the playlist…")
         Task { @MainActor in
             defer { sending = false }
-            guard let items = await browser.playlistItems(id), !items.isEmpty else {
+            guard let read = await browser.playlistItems(id), !read.items.isEmpty else {
                 Haptics.warning()
                 show("Couldn't read this playlist. It may be private, or YouTube changed its page.")
                 return
             }
+            let items = reversed ? Array(read.items.reversed()) : read.items
             c.send(.playlist(items, action))
             browser.pause()
             Haptics.success()
-            show("Sent \(items.count) videos to \(c.title)")
+            // Only the first 200 can be read, so a reversed long playlist does not start from its true last video.
+            show("Sent \(items.count) videos to \(c.title)" + (read.truncated ? (reversed ? ". Only the first \(items.count) could be read, so the reverse starts there." : ". Only the first \(items.count) could be read.") : ""))
         }
     }
 
@@ -269,7 +271,7 @@ struct RemoteBar: View {
     let sending: Bool
     let open: () -> Void
     let send: (QueueAction) -> Void
-    let sendPlaylist: (QueueAction) -> Void
+    let sendPlaylist: (QueueAction, Bool) -> Void
     let here: () -> Void
 
     private var fraction: Double {
@@ -342,8 +344,15 @@ struct RemoteBar: View {
     /// Adds the whole playlist the open page belongs to.
     private var playlistButton: some View {
         Menu {
-            ForEach(QueueAction.allCases) { a in
-                Button { Haptics.tap(); sendPlaylist(a) } label: { Label(a.playlistTitle, systemImage: a.icon) }
+            Section("In playlist order") {
+                ForEach(QueueAction.allCases) { a in
+                    Button { Haptics.tap(); sendPlaylist(a, false) } label: { Label(a.playlistTitle, systemImage: a.icon) }
+                }
+            }
+            Section("Reversed") {
+                ForEach(QueueAction.allCases) { a in
+                    Button { Haptics.tap(); sendPlaylist(a, true) } label: { Label(a.playlistTitle, systemImage: "arrow.up.arrow.down") }
+                }
             }
         } label: {
             Image(systemName: "list.bullet.rectangle")

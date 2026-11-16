@@ -237,22 +237,23 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
       items.push(...more);
       token = next[0];
     }
-    return JSON.stringify({items: items.filter((x) => /^[A-Za-z0-9_-]{6,20}$/.test(x.videoID)).slice(0, 200)});
+    return JSON.stringify({items: items.filter((x) => /^[A-Za-z0-9_-]{6,20}$/.test(x.videoID)).slice(0, 200), truncated: !!token});
     """#
 
     private struct PlaylistResult: Decodable {
         struct Row: Decodable { let videoID: String; let title: String; let channel: String; let duration: Double? }
         let items: [Row]?
+        let truncated: Bool?
     }
 
-    /// The videos in a playlist, or nil if the page could not be read.
+    /// The videos in a playlist, and whether there were more than could be read; nil if the page could not be read.
     @MainActor
-    func playlistItems(_ listID: String) async -> [VideoItem]? {
+    func playlistItems(_ listID: String) async -> (items: [VideoItem], truncated: Bool)? {
         let result = try? await webView.callAsyncJavaScript(Self.playlistScript, arguments: ["listId": listID], in: nil, contentWorld: .page)
         guard let raw = result as? String, let data = raw.data(using: .utf8),
-              let rows = (try? JSONDecoder().decode(PlaylistResult.self, from: data))?.items else { return nil }
-        return rows.map { VideoItem(videoID: $0.videoID, title: $0.title.isEmpty ? "YouTube video" : $0.title,
-                                    channel: $0.channel, duration: $0.duration) }
+              let read = try? JSONDecoder().decode(PlaylistResult.self, from: data), let rows = read.items else { return nil }
+        return (rows.map { VideoItem(videoID: $0.videoID, title: $0.title.isEmpty ? "YouTube video" : $0.title,
+                                     channel: $0.channel, duration: $0.duration) }, read.truncated ?? false)
     }
 
     func pause() {
