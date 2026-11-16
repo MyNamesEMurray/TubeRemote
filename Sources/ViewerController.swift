@@ -295,6 +295,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.onDenied = { [weak self] in self?.denied = $0 }
         server.viewerPro = { ProStore.shared.isPro }
         server.notify = { [weak self] in self?.flash($0) }
+        server.hasVideo = { [weak self] in self?.current != nil }
         pairing.onPaired = { [weak self] d in self?.server.challenge(key: d.key) }
         // Removing a device in Settings disconnects it at once.
         pairedObs = settings.$paired.dropFirst().sink { [weak self] list in self?.server.keep(Set(list.map(\.key))) }
@@ -554,6 +555,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     private func start(_ item: VideoItem, pushPrevious: Bool = true) {
+        server.videoChanged()
         if pushPrevious, let c = current { pushHistory(c) }
         current = item
         position = 0
