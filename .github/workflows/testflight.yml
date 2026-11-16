@@ -16,6 +16,11 @@
 name: TestFlight
 on:
   workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload to TestFlight. Turn off to only build and inspect the signed result.
+        type: boolean
+        default: true
   push:
     tags: ["v*"]
 
@@ -97,7 +102,38 @@ jobs:
           cp Config/TubeRemote.entitlements "$A/archived-expanded-entitlements.xcent"
           cp Config/TubeRemoteShare.entitlements "$A/PlugIns/TubeRemoteShare.appex/archived-expanded-entitlements.xcent"
           cat "$A/archived-expanded-entitlements.xcent" "$A/PlugIns/TubeRemoteShare.appex/archived-expanded-entitlements.xcent"
+      - name: Inspect what export signs
+        continue-on-error: true
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/inspect.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/TubeRemote.xcarchive" \
+            -exportPath "$RUNNER_TEMP/inspect" -exportOptionsPlist "$RUNNER_TEMP/inspect.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          unzip -q "$RUNNER_TEMP"/inspect/*.ipa -d "$RUNNER_TEMP/inspect/x"
+          for B in "$RUNNER_TEMP/inspect/x/Payload/TubeRemote.app" "$RUNNER_TEMP/inspect/x/Payload/TubeRemote.app/PlugIns/TubeRemoteShare.appex"; do
+            echo "=== $B signed with:"
+            codesign -d --entitlements :- "$B" 2>&1 || true
+            echo "=== profile allows:"
+            security cms -D -i "$B/embedded.mobileprovision" | plutil -extract Entitlements xml1 -o - - || true
+          done
       - name: Export and upload to TestFlight
+        if: github.event_name != 'workflow_dispatch' || inputs.upload
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
