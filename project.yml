@@ -16,6 +16,12 @@ targets:
     type: application
     platform: iOS
     sources: [Sources, Assets]
+    dependencies:
+      - target: TubeRemoteShare
+    entitlements:
+      path: Config/TubeRemote.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.exaltedpixels.TubeRemote]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.exaltedpixels.TubeRemote
@@ -37,6 +43,41 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+  # Share > Send to Viewer: sends a YouTube link to a paired viewer. It compiles the app's protocol code and reads the
+  # paired devices the app mirrors into the shared App Group container (Sources/SharedConfig.swift).
+  TubeRemoteShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Share
+      - path: Sources/Models.swift
+      - path: Sources/Transport.swift
+      - path: Sources/Log.swift
+      - path: Sources/SharedConfig.swift
+    entitlements:
+      path: Config/TubeRemoteShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.exaltedpixels.TubeRemote]
+    info:
+      path: Config/Share-Info.plist
+      properties:
+        CFBundleDisplayName: Send to Viewer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSLocalNetworkUsageDescription: Find and send videos to your viewers on your Wi-Fi network.
+        NSBonjourServices: ["_ytremote._tcp"]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.exaltedpixels.TubeRemote.Share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
   TubeRemoteTests:
     type: bundle.unit-test
     platform: iOS

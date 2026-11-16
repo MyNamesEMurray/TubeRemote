@@ -57,6 +57,7 @@ struct TubeRemoteApp: App {
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var pro: ProStore
     @Environment(\.scenePhase) private var phase
     @State private var showSettings = false
 
@@ -84,6 +85,7 @@ struct RootView: View {
             default:
                 Log.shared.save()
             }
+            settings.mirrorForShare(pro: pro.isPro)
         }
     }
 }

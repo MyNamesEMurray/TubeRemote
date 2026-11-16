@@ -4,3 +4,5 @@ build/
 Payload/
 *.ipa
 .DS_Store
+Config/Share-Info.plist
+Config/*.entitlements

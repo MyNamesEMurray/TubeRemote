@@ -59,6 +59,14 @@ final class AppSettings: ObservableObject {
     }
 }
 
+extension AppSettings {
+    /// Gives the share extension what it needs to reach a viewer. Written whenever the app comes or goes.
+    func mirrorForShare(pro: Bool) {
+        SharedConfig(deviceKey: deviceKey, deviceName: name, paired: paired, lastViewer: lastViewerKey,
+                     queueAction: queueAction, pro: pro).write()
+    }
+}
+
 /// Small files in Application Support, readable after first unlock so a locked viewer can still authenticate.
 enum Store {
     private static func url(_ name: String) -> URL {
