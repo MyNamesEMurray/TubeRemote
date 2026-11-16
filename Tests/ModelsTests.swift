@@ -29,6 +29,16 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(rateLabel(1.25), "1.25×")
     }
 
+    func testParseListID() {
+        func list(_ s: String) -> String? { parseListID(URL(string: s)) }
+        XCTAssertEqual(list("https://m.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"), "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI")
+        XCTAssertEqual(list("https://m.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc123"), "PLabc123")
+        XCTAssertEqual(list("https://www.youtube.com/playlist?list=WL"), "WL")
+        XCTAssertNil(list("https://m.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ"), "auto-made mixes are not playlists")
+        XCTAssertNil(list("https://example.com/playlist?list=PLabc123"))
+        XCTAssertNil(list("https://m.youtube.com/watch?v=dQw4w9WgXcQ"))
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")
@@ -48,5 +58,13 @@ final class ModelsTests: XCTestCase {
         if case .seek(let s) = try JSONDecoder().decode(Command.self, from: JSONEncoder().encode(Command.seek(12.5))) {
             XCTAssertEqual(s, 12.5)
         } else { XCTFail("wrong case") }
+    }
+
+    func testPlaylistCommandRoundTrip() throws {
+        let item = VideoItem(videoID: "dQw4w9WgXcQ", title: "t", channel: "c", duration: 10)
+        let data = try JSONEncoder().encode(Command.playlist([item], .playNext))
+        guard case .playlist(let items, let action) = try JSONDecoder().decode(Command.self, from: data) else { return XCTFail("wrong case") }
+        XCTAssertEqual(items.map(\.videoID), ["dQw4w9WgXcQ"])
+        XCTAssertEqual(action, .playNext)
     }
 }

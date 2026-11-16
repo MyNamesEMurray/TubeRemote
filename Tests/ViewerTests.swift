@@ -116,6 +116,23 @@ final class ViewerTests: XCTestCase {
         XCTAssertNil(v.snapshot().sleepEndsAt, "an end-of-video timer ends with its video")
     }
 
+    func testPlaylistPlaysFirstQueuesRestAndSkipsBadIds() {
+        let v = makeViewer()
+        let list = [item("aaaaaaaaaaa"), item("x');alert(1)//"), item("bbbbbbbbbbb"), item("ccccccccccc")]
+        v.handle(.playlist(list, .playNow), from: nil)
+        XCTAssertEqual(v.current?.videoID, "aaaaaaaaaaa")
+        XCTAssertEqual(v.queue.map(\.videoID), ["bbbbbbbbbbb", "ccccccccccc"])
+
+        v.handle(.playlist([item("ddddddddddd")], .addToEnd), from: nil)
+        XCTAssertEqual(v.queue.map(\.videoID), ["bbbbbbbbbbb", "ccccccccccc", "ddddddddddd"])
+        v.handle(.playlist([item("eeeeeeeeeee")], .playNext), from: nil)
+        XCTAssertEqual(v.queue.first?.videoID, "eeeeeeeeeee")
+
+        let before = v.queue.count
+        v.handle(.playlist([item("bad id")], .addToEnd), from: nil)
+        XCTAssertEqual(v.queue.count, before, "a playlist with no valid ids changes nothing")
+    }
+
     func testChannelEncryptsBothWaysAndRejectsReplay() throws {
         let secret = Data(repeating: 7, count: 32), salt = Data(repeating: 1, count: 32)
         var remote = Channel(secret: secret, salt: salt, viewer: false)

@@ -6,7 +6,7 @@ enum Mode: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
-enum QueueAction: String, CaseIterable, Identifiable {
+enum QueueAction: String, CaseIterable, Identifiable, Codable {
     case playNow, playNext, addToEnd
     var id: String { rawValue }
 
@@ -15,6 +15,14 @@ enum QueueAction: String, CaseIterable, Identifiable {
         case .playNow: return "Play now"
         case .playNext: return "Play next"
         case .addToEnd: return "Add to end of queue"
+        }
+    }
+
+    var playlistTitle: String {
+        switch self {
+        case .playNow: return "Play playlist now"
+        case .playNext: return "Play playlist next"
+        case .addToEnd: return "Add playlist to end of queue"
         }
     }
 
@@ -108,6 +116,8 @@ enum Command: Codable {
     case setPreferredQuality(String)
     /// Seconds until the viewer pauses; 0 means at the end of the video, nil switches the timer off.
     case setSleepTimer(Double?)
+    /// A whole playlist at once, placed in the queue the way `QueueAction` says.
+    case playlist([VideoItem], QueueAction)
 }
 
 struct PairedDevice: Codable, Identifiable {
@@ -153,6 +163,15 @@ enum ServerMessage: Codable {
 let playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 
 func rateLabel(_ r: Double) -> String { (r == r.rounded() ? "\(Int(r))" : "\(r)") + "×" }
+
+/// The playlist id in a YouTube address, if it names a playlist this app can read. Auto-generated mixes (RD...) are not.
+func parseListID(_ url: URL?) -> String? {
+    guard let url, let host = url.host?.lowercased(), host.hasSuffix("youtube.com"),
+          let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "list" })?.value
+    else { return nil }
+    let ok = id == "LL" || id == "WL" || id.range(of: "^(PL|UU|OLAK5uy_|FL)[A-Za-z0-9_-]{2,}$", options: .regularExpression) != nil
+    return ok ? id : nil
+}
 
 func parseVideoID(_ url: URL?) -> String? {
     guard let url, let host = url.host?.lowercased() else { return nil }

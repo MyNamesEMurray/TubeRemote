@@ -489,6 +489,22 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 sleepEndsAt = Date().addingTimeInterval(min(s, 12 * 3600))
             }
             return "Sleep timer set"
+        case .playlist(let items, let action):
+            // Arrives over the network: only valid ids, and not more than a playlist page holds.
+            let list = items.filter(\.isValid).prefix(200).map(\.fresh)
+            guard let first = list.first else { return nil }
+            switch action {
+            case .playNow:
+                start(first, pushPrevious: current?.videoID != first.videoID)
+                queue.insert(contentsOf: list.dropFirst(), at: 0)
+            case .playNext:
+                queue.insert(contentsOf: list, at: 0)
+                startIfIdle()
+            case .addToEnd:
+                queue.append(contentsOf: list)
+                startIfIdle()
+            }
+            return "Playlist queued: \(list.count) videos"
         case .skipAd:
             js("__tr.skipAd()")
             return "Skipped ad"

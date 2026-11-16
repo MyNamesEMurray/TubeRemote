@@ -5,10 +5,13 @@ import SwiftUI
 struct RemoteView: View {
     @EnvironmentObject var remote: RemoteController
     @EnvironmentObject var browser: Browser
+    @EnvironmentObject var pro: ProStore
     @Binding var showSettings: Bool
     @State private var showPicker = false
     @State private var showNow = false
     @State private var sending = false
+    @State private var showPaywall = false
+    @State private var note: String?
     @AppStorage("seenSendTip") private var seenTip = false
 
     var body: some View {
@@ -16,8 +19,16 @@ struct RemoteView: View {
             Hosted(view: browser.webView)
                 .background(Color.youTubePage.ignoresSafeArea())
                 .overlay(alignment: .top) {
-                    if !seenTip { tip }
+                    if let note {
+                        Text(note)
+                            .font(.subheadline.weight(.medium))
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(8)
+                            .transition(.opacity)
+                    } else if !seenTip { tip }
                 }
+                .animation(.easeInOut(duration: 0.3), value: note)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
@@ -32,8 +43,9 @@ struct RemoteView: View {
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let c = remote.active {
-                        RemoteBar(client: c, canSend: browser.videoID != nil, sending: sending,
-                                  open: { showNow = true }, send: { send($0, to: c) }, here: { browser.play() })
+                        RemoteBar(client: c, canSend: browser.videoID != nil, hasPlaylist: browser.playlistID != nil,
+                                  sending: sending, open: { showNow = true }, send: { send($0, to: c) },
+                                  sendPlaylist: { sendPlaylist($0, to: c) }, here: { browser.play() })
                     } else if browser.videoID != nil {
                         Button { showPicker = true } label: {
                             Label("Choose a Viewer", systemImage: "tv").frame(maxWidth: .infinity)
@@ -52,6 +64,7 @@ struct RemoteView: View {
         .onChange(of: browser.videoID) { if $0 != nil { seenTip = true } }
         .onReceive(browser.playTapped) { _ in playTapped() }
         .sheet(isPresented: $showPicker) { DevicePicker() }
+        .sheet(isPresented: $showPaywall) { PaywallView() }
         .sheet(isPresented: $showNow) {
             NowPlayingView()
                 .presentationDetents([.large])
@@ -93,6 +106,41 @@ struct RemoteView: View {
             c.send(action.command(item))
             browser.pause()
             Haptics.success()
+        }
+    }
+
+    private func show(_ text: String) {
+        note = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if note == text { note = nil } }
+    }
+
+    /// Reads the open playlist from the page and sends all of it to the viewer in one message.
+    private func sendPlaylist(_ action: QueueAction, to c: RemoteClient) {
+        guard pro.isPro else { showPaywall = true; return }
+        if c.needsPairing {
+            Haptics.tap()
+            c.beginPair()
+            return
+        }
+        guard c.connected else {
+            Haptics.warning()
+            showPicker = true
+            return
+        }
+        guard let id = browser.playlistID, !sending else { return }
+        sending = true
+        show("Reading the playlist…")
+        Task { @MainActor in
+            defer { sending = false }
+            guard let items = await browser.playlistItems(id), !items.isEmpty else {
+                Haptics.warning()
+                show("Couldn't read this playlist. It may be private, or YouTube changed its page.")
+                return
+            }
+            c.send(.playlist(items, action))
+            browser.pause()
+            Haptics.success()
+            show("Sent \(items.count) videos to \(c.title)")
         }
     }
 
@@ -217,9 +265,11 @@ struct RemoteBar: View {
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     let canSend: Bool
+    let hasPlaylist: Bool
     let sending: Bool
     let open: () -> Void
     let send: (QueueAction) -> Void
+    let sendPlaylist: (QueueAction) -> Void
     let here: () -> Void
 
     private var fraction: Double {
@@ -230,7 +280,7 @@ struct RemoteBar: View {
     var body: some View {
         let cur = client.state?.current
         let playing = client.state?.isPlaying == true
-        if cur != nil || canSend {
+        if cur != nil || canSend || hasPlaylist {
             HStack(spacing: 8) {
                 Button(action: open) {
                     HStack(spacing: 12) {
@@ -270,6 +320,7 @@ struct RemoteBar: View {
                     }
                     .accessibilityLabel(playing ? "Pause" : "Play")
                 }
+                if hasPlaylist { playlistButton }
                 if canSend { sendButton }
             }
             .foregroundStyle(.primary)
@@ -286,6 +337,25 @@ struct RemoteBar: View {
                 .frame(height: 2)
             }
         }
+    }
+
+    /// Adds the whole playlist the open page belongs to.
+    private var playlistButton: some View {
+        Menu {
+            ForEach(QueueAction.allCases) { a in
+                Button { Haptics.tap(); sendPlaylist(a) } label: { Label(a.playlistTitle, systemImage: a.icon) }
+            }
+        } label: {
+            Image(systemName: "list.bullet.rectangle")
+                .font(.title3)
+                .frame(width: 44, height: 44)
+                .overlay(alignment: .topTrailing) {
+                    if !pro.isPro { Image(systemName: "lock.fill").font(.system(size: 9)).padding(6) }
+                }
+                .opacity(client.connected || client.needsPairing ? 1 : 0.5)
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("Add the whole playlist")
     }
 
     /// Tap sends with the default action from Settings; touch and hold lists every option.
