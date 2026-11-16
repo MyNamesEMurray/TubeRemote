@@ -81,6 +81,8 @@ struct ViewerState: Codable, Equatable {
     var qualities: [String]?
     /// An advert is playing and YouTube is offering its Skip button.
     var adSkippable: Bool?
+    /// What the viewer starts every video at (see `preferredQualityChoices`).
+    var preferredQuality: String?
     /// No quality is forced; `quality` is then whatever YouTube picked.
     var autoQuality: Bool?
     /// "searching": captions were asked for and none are showing yet. "none": this video has none.
@@ -100,6 +102,8 @@ enum Command: Codable {
     /// Quality is YouTube's name ("hd1080"), or "auto".
     case setSpeed(Double), setCaptions(Bool), setQuality(String)
     case skipAd
+    /// The quality every video starts at: YouTube's quality name, "best" or "auto".
+    case setPreferredQuality(String)
 }
 
 struct PairedDevice: Codable, Identifiable {
@@ -158,6 +162,12 @@ func parseVideoID(_ url: URL?) -> String? {
     if p.count >= 3, ["shorts", "embed", "live"].contains(p[1]) { return p[2] }
     return nil
 }
+
+/// What can be chosen as the preferred quality. "best" is the highest the video offers up to 4K, "auto" leaves it to YouTube.
+let preferredQualityChoices: [(id: String, label: String)] = [
+    ("auto", "Auto"), ("best", "Highest available"), ("hd2160", "2160p (4K)"),
+    ("hd1440", "1440p"), ("hd1080", "1080p"), ("hd720", "720p"), ("large", "480p"),
+]
 
 /// "hd1080" -> "1080p".
 func qualityLabel(_ q: String?) -> String {

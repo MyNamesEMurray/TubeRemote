@@ -79,6 +79,24 @@ final class ViewerTests: XCTestCase {
         XCTAssertEqual(v.history.map(\.videoID), ["aaaaaaaaaaa"])
     }
 
+    func testPreferredQualityIsChecked_StoredAndOnlyLastsPerVideoWhenOverridden() {
+        let settings = AppSettings()
+        settings.preferredQuality = "auto"
+        let v = ViewerController(settings: settings, pairing: Pairing(settings: settings), browser: Browser())
+        v.handle(.setPreferredQuality("x');alert(1)//"), from: nil)
+        XCTAssertEqual(v.snapshot().preferredQuality, "auto")
+        v.handle(.setPreferredQuality("best"), from: nil)
+        XCTAssertEqual(v.snapshot().preferredQuality, "best")
+        XCTAssertEqual(v.snapshot().autoQuality, false)
+
+        v.handle(.setPreferredQuality("auto"), from: nil)
+        v.handle(.setQuality("large"), from: nil)
+        XCTAssertEqual(v.snapshot().autoQuality, false)
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        XCTAssertEqual(v.snapshot().autoQuality, true, "the next video returns to the preference")
+        settings.preferredQuality = "auto"
+    }
+
     func testChannelEncryptsBothWaysAndRejectsReplay() throws {
         let secret = Data(repeating: 7, count: 32), salt = Data(repeating: 1, count: 32)
         var remote = Channel(secret: secret, salt: salt, viewer: false)

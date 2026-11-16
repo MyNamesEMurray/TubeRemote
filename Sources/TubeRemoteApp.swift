@@ -49,6 +49,7 @@ struct TubeRemoteApp: App {
                 .environmentObject(model.viewer)
                 .environmentObject(model.remote)
                 .environmentObject(model.pairing)
+                .environmentObject(ProStore.shared)
         }
     }
 }
@@ -207,7 +208,10 @@ struct OnboardingView: View {
 struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showPaywall = false
 
     private var version: String {
         let i = Bundle.main.infoDictionary
@@ -221,6 +225,30 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("TubeRemote Pro") {
+                    if pro.isPro {
+                        Label("Pro unlocked", systemImage: "checkmark.seal.fill")
+                    } else {
+                        Button { showPaywall = true } label: {
+                            Label("Unlock TubeRemote Pro", systemImage: "star.fill").font(.headline)
+                        }
+                    }
+                    Button("Restore Purchases") { Task { await pro.restore() } }
+                }
+                Section {
+                    if model.mode == .viewer {
+                        QualityRow(value: settings.preferredQuality, enabled: true,
+                                   set: { model.viewer.handle(.setPreferredQuality($0), from: nil) }, showPaywall: $showPaywall)
+                    } else if let c = remote.active {
+                        RemoteQualityRow(client: c, showPaywall: $showPaywall)
+                    } else {
+                        Text("Choose a viewer to set the quality it starts videos at.").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Playback")
+                } footer: {
+                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose.")
+                }
                 Section {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }
@@ -266,6 +294,9 @@ struct SettingsView: View {
                     LabeledContent("Build", value: build)
                     NavigationLink("Debug Log") { DebugLogView() }
                 }
+                Section("Debug") {
+                    Toggle("Debug: unlock Pro", isOn: $pro.debugUnlocked)
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -276,6 +307,7 @@ struct SettingsView: View {
                     if !settings.paired.isEmpty { EditButton() }
                 }
             }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
         }
         .onDisappear { model.viewer.rename() }
     }

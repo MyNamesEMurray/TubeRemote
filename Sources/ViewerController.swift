@@ -123,6 +123,20 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       document.documentElement.appendChild(css);
       function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
       function ad(){ return !!document.querySelector('.ad-showing,.ad-interrupting') }
+      // The quality to hold, resolved for this video: "best" is the top one offered below 8K, and a fixed one
+      // that this video lacks becomes the nearest one below it.
+      function target(){
+        if (!wq) return null;
+        try {
+          var l = mp().getAvailableQualityLevels().filter(function(x){ return x !== 'auto' && x !== 'highres' });
+          if (!l.length) return null;
+          if (wq === 'best') return l[0];
+          if (l.indexOf(wq) >= 0) return wq;
+          var order = ['hd2160','hd1440','hd1080','hd720','large','medium','small','tiny'];
+          for (var k = Math.max(order.indexOf(wq), 0); k < order.length; k++) if (l.indexOf(order[k]) >= 0) return order[k];
+          return l[l.length - 1];
+        } catch(e) { return wq }
+      }
       // YouTube has renamed its Skip button more than once; try each known name.
       function skipButton(){
         var b = document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button,.ytp-ad-skip-button-container button');
@@ -218,7 +232,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
               if (v.playbackRate !== wr) v.playbackRate = wr;
               // Twelve seconds of trying; after that the video has no captions to show.
               if (wc !== null && cc() !== wc && tc < 24) { setCC(wc, tc === 0); tc++; if (tc === 24 && wc) post({t:'nocc'}) }
-              try { if (wq && p.getPlaybackQuality() !== wq && tq++ < 20) p.setPlaybackQualityRange(wq, wq) } catch(e) {}
+              try { var t = target(); if (t && p.getPlaybackQuality() !== t && tq++ < 20) p.setPlaybackQualityRange(t, t) } catch(e) {}
             }
             try { q = p.getPlaybackQuality(); qs = p.getAvailableQualityLevels() } catch(e) {}
             post({t:'time', pos:v.currentTime, dur:v.duration, rate:v.playbackRate, cc:cc(), q:q, qs:qs,
@@ -443,6 +457,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .clearHistory:
             history = []
             return nil
+        case .setPreferredQuality(let q):
+            // Also arrives over the network and is put into script on the page, so only known values.
+            guard preferredQualityChoices.contains(where: { $0.id == q }) else { return nil }
+            settings.preferredQuality = q
+            wantQuality = q == "auto" ? nil : q
+            autoQuality = wantQuality == nil
+            pushSettings()
+            return nil
         case .skipAd:
             js("__tr.skipAd()")
             return "Skipped ad"
@@ -488,6 +510,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         loading = true
         adSkippable = false
         captionsNone = false
+        // A quality picked by hand lasts for one video; the next starts at the preferred quality.
+        wantQuality = settings.preferredQuality == "auto" ? nil : settings.preferredQuality
+        autoQuality = wantQuality == nil
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
@@ -669,7 +694,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         ViewerState(deviceName: settings.name, current: current, isPlaying: isPlaying,
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
-                    adSkippable: adSkippable, autoQuality: autoQuality, captionsStatus: captionsStatus)
+                    adSkippable: adSkippable, autoQuality: autoQuality, captionsStatus: captionsStatus,
+                    preferredQuality: settings.preferredQuality)
     }
 
     private func broadcast() {

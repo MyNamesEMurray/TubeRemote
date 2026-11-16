@@ -5,6 +5,7 @@ iPhone/iPad app: browse YouTube in an embedded web view, send videos to another 
 - **Viewer mode**: full-screen player, holds the queue and history, accepts commands from any number of remotes.
 - **Remote mode**: YouTube browser, device picker, one bottom bar (now playing, play/pause, Send), Now Playing screen (controls, queue, history). Tapping play on a YouTube page plays that video on the viewer.
 - Choose the mode in Settings ("Use this device as").
+- TubeRemote Pro (one-time purchase, `Sources/Pro.swift`, product `com.exaltedpixels.TubeRemote.pro`, which must exist in App Store Connect): preferred quality, so every video starts at Highest available or a chosen quality. Set it in Settings on the remote or the viewer; the viewer stores it. Settings has a "Debug: unlock Pro" switch for testing; remove it before a public release.
 - While Now Playing is open on a remote, its hardware volume buttons change the viewer's volume (`Sources/VolumeKeys.swift`).
 
 ## Build without a Mac

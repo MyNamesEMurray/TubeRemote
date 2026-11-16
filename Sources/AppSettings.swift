@@ -10,6 +10,10 @@ final class AppSettings: ObservableObject {
     @Published var queueAction: QueueAction {
         didSet { UserDefaults.standard.set(queueAction.rawValue, forKey: "queueAction") }
     }
+    /// Used by the viewer. A remote changes it by sending a command.
+    @Published var preferredQuality: String {
+        didSet { UserDefaults.standard.set(preferredQuality, forKey: "preferredQuality") }
+    }
     @Published var hasOnboarded: Bool {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
     }
@@ -42,6 +46,7 @@ final class AppSettings: ObservableObject {
         deviceName = d.string(forKey: "deviceName") ?? UIDevice.current.name
         defaultMode = Mode(rawValue: d.string(forKey: "defaultMode") ?? "") ?? .remote
         queueAction = QueueAction(rawValue: d.string(forKey: "queueAction") ?? "") ?? .playNow
+        preferredQuality = d.string(forKey: "preferredQuality") ?? "auto"
         hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {
