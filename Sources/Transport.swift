@@ -234,6 +234,8 @@ final class ViewerServer {
         notify?("Extra remotes disconnected. Sharing a viewer needs Pro on the viewer or on one remote.")
     }
 
+    var anyRemotePro: Bool { remotes().contains { $0.pro } }
+
     private func remotes(excluding id: ObjectIdentifier? = nil) -> [SessionRules.Remote] {
         conns.compactMap {
             $0.key != id && $0.value.authed ? SessionRules.Remote(key: $0.value.key ?? "", pro: $0.value.pro, since: $0.value.since) : nil

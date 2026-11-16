@@ -30,6 +30,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private let pairing: Pairing
     private let browser: Browser
     private let server = ViewerServer()
+    /// Pro on this device or on a connected remote unlocks Pro features on the viewer.
+    var sessionPro: Bool { ProStore.shared.isPro || server.anyRemotePro }
     private var timer: Timer?
     private var toastWork: DispatchWorkItem?
     private var volumeObs: NSKeyValueObservation?

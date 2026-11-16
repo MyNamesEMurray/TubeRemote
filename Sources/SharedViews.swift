@@ -30,7 +30,7 @@ struct EmptyState: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 44)).foregroundStyle(.tertiary)
+            Image(systemName: symbol).font(.system(size: 44)).foregroundStyle(.tertiary).frame(height: 56)
             Text(title).font(.headline)
             Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }

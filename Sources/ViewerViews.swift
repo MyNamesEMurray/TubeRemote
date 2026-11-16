@@ -270,7 +270,7 @@ struct ViewerControls: View {
             .disabled(viewer.captionsStatus == "none")
             .accessibilityLabel(viewer.captionsStatus == "none" ? "This video has no captions"
                                 : viewer.captions ? "Turn captions off" : "Turn captions on")
-            SleepTimerMenu(endsAt: viewer.sleepEndsAt, onDark: true) {
+            SleepTimerMenu(endsAt: viewer.sleepEndsAt, onDark: true, unlocked: viewer.sessionPro) {
                 touched()
                 viewer.handle(.setSleepTimer($0), from: nil)
             }

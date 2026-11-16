@@ -182,9 +182,11 @@ struct GatedBadge: View {
 struct SleepTimerMenu: View {
     let endsAt: Date?
     var onDark = false
+    var unlocked = false
     let set: (Double?) -> Void
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
+    private var isPro: Bool { pro.isPro || unlocked }
 
     private var label: some View {
         HStack(spacing: 6) {
@@ -196,7 +198,7 @@ struct SleepTimerMenu: View {
             } else {
                 Text("Sleep timer")
             }
-            if !pro.isPro { GatedBadge() }
+            if !isPro { GatedBadge() }
         }
         .font(.subheadline.weight(.medium))
         .lineLimit(1)
@@ -208,7 +210,7 @@ struct SleepTimerMenu: View {
 
     var body: some View {
         Group {
-            if pro.isPro {
+            if isPro {
                 Menu {
                     Button { Haptics.tap(); set(nil) } label: { Label("Off", systemImage: "xmark") }
                     ForEach([15, 30, 45, 60], id: \.self) { m in
