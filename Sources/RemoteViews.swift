@@ -934,7 +934,11 @@ struct RemoteQueue: View {
         QueueList(
             items: client.state?.queue ?? [],
             onPlay: { client.send(.playQueueItem($0.id)) },
-            onRemove: { client.send(.remove($0.id)) },
+            onRemove: { item in
+                // The row must leave the list now; waiting for the viewer's next state makes the list crash.
+                client.state?.queue.removeAll { $0.id == item.id }
+                client.send(.remove(item.id))
+            },
             onMove: { from, to in
                 guard var q = client.state?.queue else { return }
                 q.move(fromOffsets: from, toOffset: to)
