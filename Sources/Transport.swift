@@ -143,6 +143,7 @@ final class ViewerServer {
     /// Whether a video is loaded, so extra remotes can be sent away when nothing is playing.
     var hasVideo: (() -> Bool)?
     private var excessPending = false
+    private var idleSince: Date?
 
     /// Remotes that said hello but are not authenticated, so they can be offered for pairing.
     var pending: [PendingPeer] {
@@ -191,22 +192,32 @@ final class ViewerServer {
         }
     }
 
-    /// When the Pro device leaves and several remotes remain, they keep going until the video ends or the next one starts.
-    /// Then all but the one connected longest are sent away. With nothing playing it happens at once.
+    /// When the Pro device leaves and several remotes remain: while a video plays they keep going until it ends or the next
+    /// one starts. With nothing playing they get a minute for the Pro device to come back. Then all but the remote
+    /// connected longest are sent away.
     private func tickSession() {
         let excess = SessionRules.excess(remotes(), viewerPro: viewerPro?() ?? false)
         guard !excess.isEmpty else {
+            idleSince = nil
             if excessPending {
                 excessPending = false
                 notify?("A Pro device is connected again. Remotes stay connected.")
             }
             return
         }
+        let playing = hasVideo?() == true
         if !excessPending {
             excessPending = true
-            if hasVideo?() == true { notify?("A Pro device left. Extra remotes disconnect when this video ends.") }
+            notify?(playing ? "A Pro device left. Extra remotes disconnect when this video ends."
+                            : "A Pro device left. Extra remotes disconnect in a minute unless it comes back.")
         }
-        if hasVideo?() != true { trimExtras() }
+        guard !playing else {
+            idleSince = nil
+            return
+        }
+        let since = idleSince ?? Date()
+        idleSince = since
+        if Date().timeIntervalSince(since) >= 60 { trimExtras() }
     }
 
     /// The viewer calls this when a new video starts.
@@ -216,6 +227,7 @@ final class ViewerServer {
 
     private func trimExtras() {
         excessPending = false
+        idleSince = nil
         let excess = SessionRules.excess(remotes(), viewerPro: viewerPro?() ?? false)
         guard !excess.isEmpty else { return }
         for (id, p) in conns where p.authed && excess.contains(p.key ?? "") { disconnect(id, with: .busy) }
