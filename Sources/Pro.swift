@@ -3,31 +3,20 @@ import SwiftUI
 
 final class ProStore: ObservableObject {
     static let shared = ProStore()
-    /// TestFlight and Xcode builds carry a sandbox receipt; App Store builds do not.
-    static let isTestBuild = Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
     static let productID = "com.exaltedpixels.TubeRemote.pro"
 
     @Published private(set) var isPro: Bool
     @Published private(set) var product: Product?
     @Published private(set) var busy = false
     @Published private(set) var message: String?
-    /// For testing before the product exists in App Store Connect. Remove before a public release.
-    @Published var debugUnlocked: Bool {
-        didSet {
-            UserDefaults.standard.set(debugUnlocked, forKey: "proDebugUnlocked")
-            isPro = entitled || (debugUnlocked && Self.isTestBuild)
-        }
-    }
-
     private var entitled: Bool
     private var updates: Task<Void, Never>?
 
     init() {
         let d = UserDefaults.standard
-        let e = d.bool(forKey: "proEntitled"), g = d.bool(forKey: "proDebugUnlocked") && Self.isTestBuild
+        let e = d.bool(forKey: "proEntitled")
         entitled = e
-        isPro = e || g
-        debugUnlocked = g
+        isPro = e
         updates = Task { [weak self] in
             for await result in Transaction.updates {
                 if case .verified(let t) = result { await t.finish() }
@@ -51,7 +40,7 @@ final class ProStore: ObservableObject {
         }
         entitled = found
         UserDefaults.standard.set(found, forKey: "proEntitled")
-        isPro = found || (debugUnlocked && Self.isTestBuild)
+        isPro = found
     }
 
     @MainActor func purchase() async {
