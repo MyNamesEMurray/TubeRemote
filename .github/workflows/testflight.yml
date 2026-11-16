@@ -96,12 +96,12 @@ jobs:
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" "${VERSION[@]}"
       - name: Put the entitlements into the archive
         run: |
-          # An unsigned archive carries no entitlements, so export would sign the app and its extension without the
-          # App Group. Export reads them from archived-expanded-entitlements.xcent in each bundle, so provide that.
+          # An unsigned archive carries no entitlements, and export only keeps the ones already on the binary, so the
+          # App Group was dropped (the profile has it). Sign ad hoc with the entitlements; export signs again for real.
           A="$RUNNER_TEMP/TubeRemote.xcarchive/Products/Applications/TubeRemote.app"
-          cp Config/TubeRemote.entitlements "$A/archived-expanded-entitlements.xcent"
-          cp Config/TubeRemoteShare.entitlements "$A/PlugIns/TubeRemoteShare.appex/archived-expanded-entitlements.xcent"
-          cat "$A/archived-expanded-entitlements.xcent" "$A/PlugIns/TubeRemoteShare.appex/archived-expanded-entitlements.xcent"
+          codesign --force --sign - --entitlements Config/TubeRemoteShare.entitlements "$A/PlugIns/TubeRemoteShare.appex"
+          codesign --force --sign - --entitlements Config/TubeRemote.entitlements "$A"
+          codesign -d --entitlements - "$A" 2>&1 | grep -a "application-groups" || echo "app has no group"
       - name: Inspect what export signs
         continue-on-error: true
         env:
