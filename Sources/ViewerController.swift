@@ -202,6 +202,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         // Opens the window again without toggling, for after the player swapped the video and WebKit closed it.
         pipEnter: function(){
           var v = vid(); if (!v) return;
+          post({t:'log', m:'pip enter: mode=' + v.webkitPresentationMode});
           try {
             if (typeof v.webkitSetPresentationMode === 'function') v.webkitSetPresentationMode('picture-in-picture');
             else v.requestPictureInPicture();
@@ -209,7 +210,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         },
         pip: function(){
           var v = vid(); if (!v) return;
-          var on = function(){ return v.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === v };
+          // Only the presentation mode is trusted: document.pictureInPictureElement stays set after WebKit closes the window.
+          var on = function(){ return v.webkitPresentationMode === 'picture-in-picture' };
           var was = on();
           post({t:'log', m:'pip button: was=' + was + ' mode=' + v.webkitPresentationMode + ' el=' + !!document.pictureInPictureElement + ' id=' + eid(v)});
           try {
@@ -230,7 +232,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       ['webkitpresentationmodechanged','enterpictureinpicture','leavepictureinpicture'].forEach(function(n){
         document.addEventListener(n, function(e){
           if (e.target.tagName === 'VIDEO') post({t:'log', m:'pip event ' + n + ' el=' + eid(e.target) + ' mode=' + e.target.webkitPresentationMode});
-          if (e.target.tagName === 'VIDEO') post({t:'pip', on: e.target.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === e.target});
+          if (e.target.tagName === 'VIDEO') post({t:'pip', on: e.target.webkitPresentationMode === 'picture-in-picture'});
         }, true);
       });
       document.addEventListener('playing', function(e){
