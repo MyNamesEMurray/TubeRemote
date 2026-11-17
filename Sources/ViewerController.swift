@@ -79,6 +79,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var unmuteTries = 0
     /// The video is in a Picture in Picture window, so the next one is loaded into the same page.
     private var inPiP = false
+    /// The window closed when the player swapped the video; ask for it back a few times while the next one starts.
+    private var pipRetries = 0
     /// The video is still muted after the automatic attempts, so the overlay offers a button.
     @Published private(set) var needsUnmute = false
     private var pairedObs: AnyCancellable?
@@ -197,6 +199,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         },
         // Asks for Picture in Picture the way any web page may. YouTube decides whether to allow it
         // (it does for Premium accounts); nothing here overrides a refusal.
+        // Opens the window again without toggling, for after the player swapped the video and WebKit closed it.
+        pipEnter: function(){
+          var v = vid(); if (!v) return;
+          try {
+            if (typeof v.webkitSetPresentationMode === 'function') v.webkitSetPresentationMode('picture-in-picture');
+            else v.requestPictureInPicture();
+          } catch(e) { post({t:'log', m:'pip enter failed ' + e}) }
+        },
         pip: function(){
           var v = vid(); if (!v) return;
           var on = function(){ return v.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === v };
@@ -616,6 +626,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         wantQuality = settings.preferredQuality == "auto" ? nil : settings.preferredQuality
         autoQuality = wantQuality == nil
         if inPiP, webView.url?.path == "/watch" {
+            pipRetries = 6
             js("__tr.load('\(item.videoID)')")
             return
         }
@@ -692,6 +703,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         switch t {
         case "pip":
             inPiP = b["on"] as? Bool ?? false
+            if inPiP { pipRetries = 0 }
         case "page":
             // A page loaded in place keeps the video element, so it keeps the window; a new document does not.
             if b["inpage"] == nil { inPiP = false }
@@ -734,6 +746,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 broadcast()
             }
         case "time":
+            if pipRetries > 0, !inPiP {
+                pipRetries -= 1
+                Log.add("asking for Picture in Picture again (\(pipRetries) left)")
+                js("__tr.pipEnter()")
+            }
             if let p = b["pos"] as? Double, p.isFinite, Date() >= seekHoldUntil { position = p }
             if let d = b["dur"] as? Double, d.isFinite, d > 0 {
                 duration = d
