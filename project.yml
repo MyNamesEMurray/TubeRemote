@@ -1,6 +1,10 @@
 name: TubeRemote
 options:
   bundleIdPrefix: com.exaltedpixels
+  fileTypes:
+    icon:
+      file: true
+      buildPhase: resources
   deploymentTarget:
     iOS: "16.0"
 settings:
