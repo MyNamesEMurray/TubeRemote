@@ -132,6 +132,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         '#movie_player video{position:absolute!important;width:100vw!important;height:100vh!important;left:0!important;top:0!important;object-fit:contain!important}' +
         'html,body{overflow:hidden!important;background:#000!important}';
       document.documentElement.appendChild(css);
+      var eidn = 0;
+      function eid(v){ if (!v) return 'none'; if (!v.__trId) v.__trId = ++eidn; return v.__trId }
       function vid(){ return document.querySelector('#movie_player video') || document.querySelector('video') }
       function ad(){ return !!document.querySelector('.ad-showing,.ad-interrupting') }
       // The quality to hold, resolved for this video: "best" is the top one offered below 8K, and a fixed one
@@ -165,8 +167,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         // would give a new video element and the window would close.
         load: function(id){
           want = true; started = false; alive = false; failed = false; ticks = 0; errored = false; tc = 0; tq = 0;
+          var v0 = vid(), id0 = eid(v0);
+          post({t:'log', m:'in-page load: el=' + id0 + ' mode=' + (v0 && v0.webkitPresentationMode)});
           try { mp().loadVideoById(id) } catch(e) { location.href = '/watch?v=' + id; return }
-          post({t:'page', inpage:true})
+          post({t:'page', inpage:true});
+          [700, 2500].forEach(function(ms){ setTimeout(function(){ var v = vid();
+            post({t:'log', m:'after load +' + ms + ': el=' + eid(v) + ' same=' + (eid(v) === id0) + ' mode=' + (v && v.webkitPresentationMode) + ' paused=' + (v && v.paused)}) }, ms) })
         },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
         // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the
@@ -195,6 +201,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           var v = vid(); if (!v) return;
           var on = function(){ return v.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === v };
           var was = on();
+          post({t:'log', m:'pip button: was=' + was + ' mode=' + v.webkitPresentationMode + ' el=' + !!document.pictureInPictureElement + ' id=' + eid(v)});
           try {
             if (typeof v.webkitSetPresentationMode === 'function') v.webkitSetPresentationMode(was ? 'inline' : 'picture-in-picture');
             else if (was) document.exitPictureInPicture();
@@ -212,6 +219,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       };
       ['webkitpresentationmodechanged','enterpictureinpicture','leavepictureinpicture'].forEach(function(n){
         document.addEventListener(n, function(e){
+          if (e.target.tagName === 'VIDEO') post({t:'log', m:'pip event ' + n + ' el=' + eid(e.target) + ' mode=' + e.target.webkitPresentationMode});
           if (e.target.tagName === 'VIDEO') post({t:'pip', on: e.target.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === e.target});
         }, true);
       });
