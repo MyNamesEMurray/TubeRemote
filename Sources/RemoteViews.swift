@@ -596,9 +596,19 @@ struct NowPlayingContent: View {
 
     @ObservedObject var client: RemoteClient
     let dismiss: () -> Void
-    @State private var panel = Panel.controls
+    @State private var panel: Panel
     @State private var showPicker = false
     @State private var keys = VolumeKeys()
+
+    init(client: RemoteClient, dismiss: @escaping () -> Void) {
+        self.client = client
+        self.dismiss = dismiss
+        var start = Panel.controls
+        #if DEBUG
+        if ScreenshotStage.panel == "queue" { start = .queue } else if ScreenshotStage.panel == "history" { start = .history }
+        #endif
+        _panel = State(initialValue: start)
+    }
 
     var body: some View {
         NavigationStack {

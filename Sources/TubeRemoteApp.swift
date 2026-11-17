@@ -42,15 +42,23 @@ struct TubeRemoteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(model)
-                .environmentObject(model.settings)
-                .environmentObject(model.browser)
-                .environmentObject(model.viewer)
-                .environmentObject(model.remote)
-                .environmentObject(model.pairing)
-                .environmentObject(ProStore.shared)
+            #if DEBUG
+            if ScreenshotStage.shot != nil { StagedShot() } else { root }
+            #else
+            root
+            #endif
         }
+    }
+
+    private var root: some View {
+        RootView()
+            .environmentObject(model)
+            .environmentObject(model.settings)
+            .environmentObject(model.browser)
+            .environmentObject(model.viewer)
+            .environmentObject(model.remote)
+            .environmentObject(model.pairing)
+            .environmentObject(ProStore.shared)
     }
 }
 

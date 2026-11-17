@@ -1,0 +1,69 @@
+# Takes the App Store screenshots in the simulator, using the Debug-only staged screens in
+# Sources/ScreenshotStage.swift, and commits them to AppStore/screenshots on the branch it runs on.
+# 6.9" iPhone: 1320 x 2868. 13" iPad: 2064 x 2752. Run it from the Actions tab.
+name: Screenshots
+on:
+  workflow_dispatch:
+    inputs:
+      appearance:
+        description: System appearance
+        type: choice
+        default: dark
+        options: [dark, light]
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Pick simulators
+        run: |
+          pick() { xcrun simctl list devices available -j | python3 -c "import json,sys; r=json.load(sys.stdin)['devices']; print(next(d['udid'] for k in sorted(r, reverse=True) if 'iOS' in k for d in r[k] if sys.argv[1] in d['name']))" "$1"; }
+          echo "IPHONE=$(pick 'Pro Max')" >> "$GITHUB_ENV"
+          echo "IPAD=$(pick '13-inch')" >> "$GITHUB_ENV"
+      - name: Build for the simulator (Debug)
+        run: |
+          set -o pipefail
+          xcodebuild build -project TubeRemote.xcodeproj -scheme TubeRemote -configuration Debug \
+            -destination "id=$IPHONE" -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO
+      - name: Capture
+        env:
+          APPEARANCE: ${{ inputs.appearance }}
+        run: |
+          APP=DerivedData/Build/Products/Debug-iphonesimulator/TubeRemote.app
+          for pair in "iphone-6.9:$IPHONE" "ipad-13:$IPAD"; do
+            DIR="${pair%%:*}"; U="${pair##*:}"
+            mkdir -p "AppStore/screenshots/$DIR"
+            xcrun simctl boot "$U" || true
+            xcrun simctl bootstatus "$U" -b
+            xcrun simctl ui "$U" appearance "$APPEARANCE"
+            xcrun simctl status_bar "$U" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 \
+              --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+            xcrun simctl install "$U" "$APP"
+            for SHOT in controls queue history; do
+              xcrun simctl launch --terminate-running-process "$U" com.exaltedpixels.TubeRemote -TubeRemoteScreenshots "$SHOT"
+              sleep 8
+              xcrun simctl io "$U" screenshot "AppStore/screenshots/$DIR/$SHOT.png"
+            done
+            xcrun simctl shutdown "$U"
+          done
+          file AppStore/screenshots/*/*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-screenshots
+          path: AppStore/screenshots
+      - name: Commit the screenshots
+        run: |
+          git config user.name "github-actions"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add AppStore/screenshots
+          git commit -m "Store screenshots" || exit 0
+          git push
