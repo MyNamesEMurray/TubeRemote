@@ -1,7 +1,7 @@
 #if DEBUG
 import SwiftUI
 
-/// Debug builds only. Launched with `-TubeRemoteScreenshots controls|queue|history`, the app opens straight onto that
+/// Debug builds only. Launched with `-TubeRemoteScreenshots controls|queue`, the app opens straight onto that
 /// Now Playing panel with a staged viewer in place of a network, for the store screenshots (`screenshots.yml`).
 enum ScreenshotStage {
     static var shot: String? { UserDefaults.standard.string(forKey: "TubeRemoteScreenshots") }
@@ -13,13 +13,14 @@ enum ScreenshotStage {
 
     // Blender Foundation's open movies, so the pictures are not someone else's work.
     private static let bunny = video("aqz-KE-bpKQ", "Big Buck Bunny", "Blender", 635)
-    private static let sintel = video("eRsGyueVLvQ", "Sintel", "Blender", 888)
+    private static let spring = video("WhWc3b3KhnY", "Spring", "Blender", 464)
+    private static let llamigos = video("SkVqJ1SGeL0", "Caminandes 3: Llamigos", "Blender", 150)
     private static let steel = video("R6MlUcmOul8", "Tears of Steel", "Blender", 734)
     private static let laundromat = video("Y-rmzh0PI3c", "Cosmos Laundromat: First Cycle", "Blender", 725)
 
     static var state: ViewerState {
-        ViewerState(deviceName: "Living Room iPad", current: sintel, isPlaying: true, position: 372, duration: 888,
-                    volume: 0.625, queue: [steel, laundromat, bunny], history: [bunny, laundromat], speed: 1,
+        ViewerState(deviceName: "Living Room iPad", current: bunny, isPlaying: true, position: 254, duration: 635,
+                    volume: 0.625, queue: [steel, laundromat, spring, llamigos], history: [laundromat, steel], speed: 1,
                     captions: false, quality: "hd1080", qualities: ["hd2160", "hd1440", "hd1080", "hd720", "large"],
                     adSkippable: false, preferredQuality: "best", sleepEndsAt: nil, autoQuality: false,
                     captionsStatus: nil, sessionPro: true)
