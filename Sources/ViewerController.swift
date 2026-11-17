@@ -81,6 +81,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var inPiP = false
     /// The window closed when the player swapped the video; ask for it back a few times while the next one starts.
     private var pipRetries = 0
+    /// Half seconds the reopened window has stayed open; it counts as back once it has held for two seconds.
+    private var pipHeld = 0
     /// The video is still muted after the automatic attempts, so the overlay offers a button.
     @Published private(set) var needsUnmute = false
     private var pairedObs: AnyCancellable?
@@ -628,7 +630,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         wantQuality = settings.preferredQuality == "auto" ? nil : settings.preferredQuality
         autoQuality = wantQuality == nil
         if inPiP, webView.url?.path == "/watch" {
-            pipRetries = 6
+            pipRetries = 10
+            pipHeld = 0
             js("__tr.load('\(item.videoID)')")
             return
         }
@@ -705,7 +708,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         switch t {
         case "pip":
             inPiP = b["on"] as? Bool ?? false
-            if inPiP { pipRetries = 0 }
         case "page":
             // A page loaded in place keeps the video element, so it keeps the window; a new document does not.
             if b["inpage"] == nil { inPiP = false }
@@ -748,10 +750,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 broadcast()
             }
         case "time":
-            if pipRetries > 0, !inPiP {
-                pipRetries -= 1
-                Log.add("asking for Picture in Picture again (\(pipRetries) left)")
-                js("__tr.pipEnter()")
+            if pipRetries > 0 {
+                if inPiP {
+                    pipHeld += 1
+                    if pipHeld >= 4 { pipRetries = 0 }
+                } else {
+                    pipHeld = 0
+                    pipRetries -= 1
+                    Log.add("asking for Picture in Picture again (\(pipRetries) left)")
+                    js("__tr.pipEnter()")
+                }
             }
             if let p = b["pos"] as? Double, p.isFinite, Date() >= seekHoldUntil { position = p }
             if let d = b["dur"] as? Double, d.isFinite, d > 0 {
