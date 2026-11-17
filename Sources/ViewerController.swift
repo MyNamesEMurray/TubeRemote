@@ -77,6 +77,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// Just after a seek the page may still report the old time; it is not passed on until then.
     private var seekHoldUntil = Date.distantPast
     private var unmuteTries = 0
+    /// The video is in a Picture in Picture window, so the next one is loaded into the same page.
+    private var inPiP = false
     /// The video is still muted after the automatic attempts, so the overlay offers a button.
     @Published private(set) var needsUnmute = false
     private var pairedObs: AnyCancellable?
@@ -159,6 +161,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           try { var p = mp(); if (p && p.seekTo) { p.seekTo(t, true); return } } catch(e) {}
           var v = vid(); if (v) v.currentTime = t
         },
+        // Next video on the same page and the same <video>, so a Picture in Picture window carries on. A new page
+        // would give a new video element and the window would close.
+        load: function(id){
+          want = true; started = false; alive = false; failed = false; ticks = 0; errored = false; tc = 0; tq = 0;
+          try { mp().loadVideoById(id) } catch(e) { location.href = '/watch?v=' + id; return }
+          post({t:'page', inpage:true})
+        },
         skipAd: function(){ var b = skipButton(); if (b) b.click() },
         // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the
         // debug log. Called from the app, so it runs as the same kind of call as a tap on Play.
@@ -201,6 +210,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           }
           wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
       };
+      ['webkitpresentationmodechanged','enterpictureinpicture','leavepictureinpicture'].forEach(function(n){
+        document.addEventListener(n, function(e){
+          if (e.target.tagName === 'VIDEO') post({t:'pip', on: e.target.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === e.target});
+        }, true);
+      });
       document.addEventListener('playing', function(e){
         if (e.target.tagName !== 'VIDEO') return;
         alive = true;
@@ -593,6 +607,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         // A quality picked by hand lasts for one video; the next starts at the preferred quality.
         wantQuality = settings.preferredQuality == "auto" ? nil : settings.preferredQuality
         autoQuality = wantQuality == nil
+        if inPiP, webView.url?.path == "/watch" {
+            js("__tr.load('\(item.videoID)')")
+            return
+        }
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
@@ -610,6 +628,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             if let c = current { pushHistory(c) }
             current = nil
             isPlaying = false
+            inPiP = false
             position = 0
             duration = 0
             webView.loadHTMLString("<body style='background:#000'>", baseURL: nil)
@@ -663,7 +682,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         guard let b = m.body as? [String: Any], let t = b["t"] as? String else { return }
         switch t {
+        case "pip":
+            inPiP = b["on"] as? Bool ?? false
         case "page":
+            // A page loaded in place keeps the video element, so it keeps the window; a new document does not.
+            if b["inpage"] == nil { inPiP = false }
             loading = false
             // A pause that arrived while the page was still loading must hold once it starts.
             if !isPlaying { js("__tr.pause()") }
