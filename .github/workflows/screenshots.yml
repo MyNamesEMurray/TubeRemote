@@ -10,6 +10,12 @@ on:
         type: choice
         default: dark
         options: [dark, light]
+  # A workflow that is not on the default branch cannot be started by hand, so pushing it (or the staged screens) starts it.
+  push:
+    branches-ignore: [main]
+    paths:
+      - .github/workflows/screenshots.yml
+      - Sources/ScreenshotStage.swift
 
 permissions:
   contents: write
@@ -36,7 +42,7 @@ jobs:
             -destination "id=$IPHONE" -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO
       - name: Capture
         env:
-          APPEARANCE: ${{ inputs.appearance }}
+          APPEARANCE: ${{ inputs.appearance || 'dark' }}
         run: |
           APP=DerivedData/Build/Products/Debug-iphonesimulator/TubeRemote.app
           for pair in "iphone-6.9:$IPHONE" "ipad-13:$IPAD"; do
