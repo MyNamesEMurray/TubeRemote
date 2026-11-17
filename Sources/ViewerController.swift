@@ -655,7 +655,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func seek(_ t: Double) {
         let clamped = max(0, duration > 0 ? min(t, duration) : t)
         position = clamped
-        seekHoldUntil = Date().addingTimeInterval(1)
+        seekHoldUntil = Date().addingTimeInterval(1.5)
         js("__tr.seek(\(clamped))")
     }
 

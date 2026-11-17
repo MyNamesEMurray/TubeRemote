@@ -211,6 +211,7 @@ struct ViewerControls: View {
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     @State private var scrub: Double?
+    @State private var seekWork: DispatchWorkItem?
 
     private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
         Button {
@@ -292,6 +293,22 @@ struct ViewerControls: View {
         }
     }
 
+    /// Sends where the slider was left. The end of the drag normally triggers it; a timer backs that up, because the
+    /// row is redrawn twice a second and iOS does not always report the end of a drag that was interrupted by that.
+    private func commitSeek() {
+        seekWork?.cancel()
+        guard let v = scrub else { return }
+        scrub = nil
+        viewer.handle(.seek(v), from: nil)
+    }
+
+    private func scheduleSeek() {
+        seekWork?.cancel()
+        let w = DispatchWorkItem { commitSeek() }
+        seekWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             if let c = viewer.current {
@@ -303,13 +320,10 @@ struct ViewerControls: View {
                 HStack(spacing: 12) {
                     Text(clock(pos))
                     Slider(
-                        value: Binding(get: { pos }, set: { scrub = $0; touched() }),
+                        value: Binding(get: { pos }, set: { scrub = $0; touched(); scheduleSeek() }),
                         in: 0...max(viewer.duration, 1)
                     ) { editing in
-                        if !editing, let v = scrub {
-                            viewer.handle(.seek(v), from: nil)
-                            scrub = nil
-                        }
+                        if !editing { commitSeek() }
                     }
                     .accessibilityLabel("Playback position")
                     .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
