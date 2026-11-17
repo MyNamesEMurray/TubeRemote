@@ -56,7 +56,7 @@ jobs:
             xcrun simctl install "$U" "$APP"
             for SHOT in controls queue; do
               xcrun simctl launch --terminate-running-process "$U" com.exaltedpixels.TubeRemote -TubeRemoteScreenshots "$SHOT"
-              sleep 8
+              sleep 20
               xcrun simctl io "$U" screenshot "AppStore/screenshots/$DIR/$SHOT.png"
             done
             xcrun simctl shutdown "$U"
