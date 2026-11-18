@@ -18,10 +18,10 @@ final class AppSettings: ObservableObject {
     @Published var saveQueue: Bool {
         didSet {
             UserDefaults.standard.set(saveQueue, forKey: "saveQueue")
-            if !saveQueue { savedQueue = [] }
+            if !saveQueue { savedQueue = SavedQueue() }
         }
     }
-    @Published var savedQueue: [VideoItem] {
+    @Published var savedQueue: SavedQueue {
         didSet { Store.write("queue.json", try? JSONEncoder().encode(savedQueue)) }
     }
     /// Viewer: when the sleep timer ends, stop holding the screen awake so the device can lock by itself.
@@ -62,7 +62,9 @@ final class AppSettings: ObservableObject {
         queueAction = QueueAction(rawValue: d.string(forKey: "queueAction") ?? "") ?? .playNow
         preferredQuality = d.string(forKey: "preferredQuality") ?? "auto"
         saveQueue = d.object(forKey: "saveQueue") as? Bool ?? true
-        savedQueue = Store.read("queue.json").flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? []
+        let stored = Store.read("queue.json")
+        savedQueue = stored.flatMap { try? JSONDecoder().decode(SavedQueue.self, from: $0) }
+            ?? SavedQueue(queue: stored.flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? [])
         lockOnSleep = d.object(forKey: "lockOnSleep") as? Bool ?? true
         hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []

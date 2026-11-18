@@ -12,6 +12,19 @@ final class ViewerTests: XCTestCase {
         return v
     }
 
+    func testAResumedVideoStartsPartwayAndLeavesNoStartTimeBehind() {
+        let v = makeViewer()
+        var a = item("aaaaaaaaaaa")
+        a.startAt = 372
+        v.handle(.playlist([a, item("bbbbbbbbbbb")], .playNow), from: nil)
+        XCTAssertEqual(v.position, 372)
+        var bad = item("ccccccccccc")
+        bad.startAt = .infinity
+        v.handle(.play(bad), from: nil)
+        XCTAssertEqual(v.position, 0, "a start time that makes no sense is ignored")
+        XCTAssertNil(v.history.first?.startAt)
+    }
+
     func testHistorySurvivesARestartAndPreviousUsesIt() {
         let v = makeViewer()
         v.handle(.play(item("aaaaaaaaaaa")), from: nil)

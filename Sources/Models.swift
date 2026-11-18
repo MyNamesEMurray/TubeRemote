@@ -62,6 +62,8 @@ struct VideoItem: Codable, Identifiable, Hashable {
     var title: String
     var channel: String
     var duration: Double?
+    /// Where the viewer starts this video, in seconds. Only set on a resumed video; it does not stay on the item.
+    var startAt: Double?
 
     var thumbnailURL: URL { URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg")! }
     /// Sharper image for the large Now Playing artwork. Older videos lack it, so pair it with thumbnailURL.
@@ -70,6 +72,22 @@ struct VideoItem: Codable, Identifiable, Hashable {
     var fresh: VideoItem { var c = self; c.id = UUID(); return c }
     /// videoID is interpolated into JS on the viewer, and arrives over the network: whitelist it.
     var isValid: Bool { videoID.range(of: "^[A-Za-z0-9_-]{6,20}$", options: .regularExpression) != nil }
+}
+
+/// What a remote keeps of a viewer's queue: the video that was playing, where it had got to, and what was next.
+struct SavedQueue: Codable, Equatable {
+    var current: VideoItem?
+    var position = 0.0
+    var queue: [VideoItem] = []
+
+    var count: Int { (current == nil ? 0 : 1) + queue.count }
+    var isEmpty: Bool { count == 0 }
+    /// Videos in the order they would play, the first starting where it left off.
+    var items: [VideoItem] {
+        guard var c = current else { return queue }
+        c.startAt = position > 5 ? position : nil
+        return [c] + queue
+    }
 }
 
 struct ViewerState: Codable, Equatable {

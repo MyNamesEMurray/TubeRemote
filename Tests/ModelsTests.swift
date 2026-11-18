@@ -75,12 +75,28 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(SessionRules.shouldTrim(playing: false, idleSince: now - 60, now: now))
     }
 
-    func testQueueKeeperSavesUnlessTheViewerIsIdleAndEmpty() {
-        let a = VideoItem(videoID: "aaaaaaaaaaa", title: "a", channel: "c", duration: 1)
-        XCTAssertTrue(QueueKeeper.shouldSave(saved: [], viewerQueue: [a], idle: false))
-        XCTAssertTrue(QueueKeeper.shouldSave(saved: [a], viewerQueue: [], idle: false), "cleared while playing: forget it")
-        XCTAssertFalse(QueueKeeper.shouldSave(saved: [a], viewerQueue: [], idle: true), "an idle empty viewer must not wipe the saved queue")
-        XCTAssertFalse(QueueKeeper.shouldSave(saved: [a], viewerQueue: [a], idle: false))
+    func testQueueKeeperSavesTheVideoPositionAndQueue() {
+        let a = VideoItem(videoID: "aaaaaaaaaaa", title: "a", channel: "c", duration: 600)
+        let b = VideoItem(videoID: "bbbbbbbbbbb", title: "b", channel: "c", duration: 600)
+        func state(_ current: VideoItem?, at position: Double, queue: [VideoItem] = []) -> ViewerState {
+            ViewerState(deviceName: "d", current: current, isPlaying: true, position: position, duration: 600, volume: 0.5,
+                        queue: queue, history: [])
+        }
+        XCTAssertNil(QueueKeeper.snapshot(state(nil, at: 0)), "an idle empty viewer says nothing about what was saved")
+        let mid = QueueKeeper.snapshot(state(a, at: 372, queue: [b]))
+        XCTAssertEqual(mid?.current?.videoID, "aaaaaaaaaaa")
+        XCTAssertEqual(mid?.position, 372)
+        XCTAssertEqual(mid?.items.map(\.videoID), ["aaaaaaaaaaa", "bbbbbbbbbbb"])
+        XCTAssertEqual(mid?.items.first?.startAt, 372, "the video resumes where it was")
+        XCTAssertNil(mid?.items.last?.startAt)
+        XCTAssertTrue(QueueKeeper.snapshot(state(a, at: 595))?.isEmpty == true, "a video that has all but ended is done, and forgets it")
+        XCTAssertNil(QueueKeeper.snapshot(state(a, at: 3, queue: []))?.items.first?.startAt, "no start time for the first seconds")
+
+        let saved = mid!
+        XCTAssertFalse(QueueKeeper.shouldSave(saved: saved, new: QueueKeeper.snapshot(state(a, at: 376, queue: [b]))!))
+        XCTAssertTrue(QueueKeeper.shouldSave(saved: saved, new: QueueKeeper.snapshot(state(a, at: 384, queue: [b]))!))
+        XCTAssertTrue(QueueKeeper.shouldSave(saved: saved, new: QueueKeeper.snapshot(state(b, at: 1))!), "a new video")
+        XCTAssertTrue(QueueKeeper.shouldSave(saved: saved, new: QueueKeeper.snapshot(state(a, at: 372))!), "the queue changed")
     }
 
     func testClock() {

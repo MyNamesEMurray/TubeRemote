@@ -592,8 +592,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func start(_ item: VideoItem, pushPrevious: Bool = true) {
         server.videoChanged()
         if pushPrevious, let c = current { pushHistory(c) }
+        // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
+        let at = item.startAt.flatMap { $0.isFinite && $0 > 5 ? min($0, 86_400) : nil }
         current = item
-        position = 0
+        position = at ?? 0
         duration = item.duration ?? 0
         // An "end of video" timer belongs to the video it was set on.
         if sleepAtEnd {
@@ -619,7 +621,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
         browser.restoreCookies { [weak self] in
             guard let self, self.current?.id == item.id else { return }
-            self.webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(item.videoID)")!))
+            self.webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(item.videoID)" + (at.map { "&t=\(Int($0))s" } ?? ""))!))
         }
     }
 
@@ -657,6 +659,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     private func pushHistory(_ item: VideoItem) {
+        var item = item
+        item.startAt = nil
         history.removeAll { $0.videoID == item.videoID }
         history = Array(([item] + history).prefix(50))
     }

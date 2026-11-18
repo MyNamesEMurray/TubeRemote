@@ -358,15 +358,18 @@ struct ResumeQueueBar: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var pro: ProStore
+    @State private var showPreview = false
+
+    private func resume() {
+        Haptics.tap()
+        client.send(.playlist(settings.savedQueue.items, .playNow))
+    }
 
     var body: some View {
         if settings.saveQueue, pro.has(client.state), client.connected, let s = client.state,
            s.current == nil, s.queue.isEmpty, !settings.savedQueue.isEmpty {
             HStack(spacing: 8) {
-                Button {
-                    Haptics.tap()
-                    client.send(.playlist(settings.savedQueue, .playNow))
-                } label: {
+                Button(action: resume) {
                     Label("Resume queue (\(settings.savedQueue.count))", systemImage: "play.fill").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -374,7 +377,14 @@ struct ResumeQueueBar: View {
                 .controlSize(.large)
                 Button {
                     Haptics.tap()
-                    settings.savedQueue = []
+                    showPreview = true
+                } label: {
+                    Image(systemName: "list.bullet").frame(width: 44, height: 44)
+                }
+                .accessibilityLabel("Preview the saved queue")
+                Button {
+                    Haptics.tap()
+                    settings.savedQueue = SavedQueue()
                 } label: {
                     Image(systemName: "xmark").frame(width: 44, height: 44)
                 }
@@ -383,6 +393,44 @@ struct ResumeQueueBar: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
             .background(.bar)
+            .sheet(isPresented: $showPreview) {
+                SavedQueueSheet(saved: settings.savedQueue, title: client.title) {
+                    showPreview = false
+                    resume()
+                }
+            }
+        }
+    }
+}
+
+/// The saved queue as it would play, before any of it is sent.
+struct SavedQueueSheet: View {
+    let saved: SavedQueue
+    let title: String
+    let resume: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let c = saved.current {
+                    Section("Was playing") {
+                        VideoRow(item: c)
+                        if saved.position > 5 {
+                            Text("Resumes at \(clock(saved.position))").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !saved.queue.isEmpty {
+                    Section("Up Next") { ForEach(saved.queue) { VideoRow(item: $0) } }
+                }
+            }
+            .navigationTitle("Saved queue")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Resume on \(title)", action: resume) }
+            }
         }
     }
 }
