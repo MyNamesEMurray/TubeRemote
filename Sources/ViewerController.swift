@@ -13,7 +13,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var position = 0.0
     var duration = 0.0
     @Published var queue: [VideoItem] = []
-    @Published var history: [VideoItem] = []
+    /// Kept on this device between launches.
+    @Published var history: [VideoItem] = [] {
+        didSet { Store.write("history.json", try? JSONEncoder().encode(history)) }
+    }
     @Published var toast: String?
     @Published var pending: [PendingPeer] = []
     @Published var connected: [PendingPeer] = []
@@ -276,6 +279,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             source: Self.bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: cfg)
         super.init()
+        history = Store.read("history.json").flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? []
         cfg.userContentController.add(self, name: "yt")
         webView.isOpaque = false
         webView.backgroundColor = .black

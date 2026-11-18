@@ -4,9 +4,26 @@ import XCTest
 final class ViewerTests: XCTestCase {
     private func item(_ v: String) -> VideoItem { VideoItem(videoID: v, title: v, channel: "c", duration: 100) }
 
-    private func makeViewer() -> ViewerController {
+    /// History is saved on the device, so a viewer starts empty unless a test asks to keep what an earlier one saved.
+    private func makeViewer(keepingHistory: Bool = false) -> ViewerController {
         let settings = AppSettings()
-        return ViewerController(settings: settings, pairing: Pairing(settings: settings), browser: Browser())
+        let v = ViewerController(settings: settings, pairing: Pairing(settings: settings), browser: Browser())
+        if !keepingHistory { v.history = [] }
+        return v
+    }
+
+    func testHistorySurvivesARestartAndPreviousUsesIt() {
+        let v = makeViewer()
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.play(item("bbbbbbbbbbb")), from: nil)
+        XCTAssertEqual(v.history.map(\.videoID), ["aaaaaaaaaaa"])
+
+        let w = makeViewer(keepingHistory: true)
+        XCTAssertEqual(w.history.map(\.videoID), ["aaaaaaaaaaa"])
+        w.handle(.play(item("ccccccccccc")), from: nil)
+        w.handle(.previous, from: nil)
+        XCTAssertEqual(w.current?.videoID, "aaaaaaaaaaa", "previous plays the most recent video from history")
+        XCTAssertEqual(w.queue.first?.videoID, "ccccccccccc", "and the one that was playing goes next in the queue")
     }
 
     func testQueueAdvanceAndPrevious() {

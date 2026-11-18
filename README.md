@@ -26,7 +26,7 @@ Change the bundle id in `project.yml` if signing complains it is taken.
 - Pairing: a remote and a viewer compare a six-digit code once (`Sources/Pairing.swift`). Each side commits to its key before seeing the other's, so the code cannot be forced to match. The shared secret is saved on both devices.
 - Sign-in: the viewer challenges each remote; a paired remote proves it holds the secret. After that every state and command message is encrypted and counted (`Channel` in `Sources/Transport.swift`). Unpaired devices can only ask to pair.
 - Versions: `hello` carries `Transport.version`. Devices on different versions show "Update TubeRemote on both devices" instead of failing silently. Add new message fields as optionals.
-- The viewer is the single source of truth for queue/history. Remotes only send commands.
+- The viewer is the single source of truth for queue/history. Remotes only send commands. The viewer keeps its history (50 videos) in `history.json`, so it survives a relaunch; the queue does not.
 - Playback runs on the real YouTube watch page in the viewer's web view, styled to fill the screen and driven by a small script (`bridge` in `Sources/ViewerController.swift`). It shares the YouTube sign-in with the viewer's Browse YouTube screen, so sign in there once and Premium applies. Volume is the system volume (iOS web views cannot set their own).
 - Internet/account control later: keep the same messages and put a relay server between viewer and remote.
 
