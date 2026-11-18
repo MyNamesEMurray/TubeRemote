@@ -63,6 +63,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// When the sleep timer will pause playback. Only set when it changes, so the screen is not redrawn each second.
     @Published private(set) var sleepEndsAt: Date?
     private var sleepAtEnd = false
+    /// Pause when the queue runs out, whatever video that is on.
+    private var sleepAtQueueEnd = false
     private var adSkippable = false
     /// What was last asked for, as opposed to `isPlaying`, which is what the page reports.
     private var wantPlaying = false
@@ -354,6 +356,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.stop()
         sleepEndsAt = nil
         sleepAtEnd = false
+        sleepAtQueueEnd = false
         pairedObs = nil
         pairing.cancel()
         timer?.invalidate()
@@ -378,6 +381,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         Log.add("session ended")
         sleepEndsAt = nil
         sleepAtEnd = false
+        sleepAtQueueEnd = false
         queue = []
         advance()
         wantPlaying = false
@@ -437,6 +441,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .resume:
             isPlaying = true
             wantPlaying = true
+            if running { UIApplication.shared.isIdleTimerDisabled = true }
             js("__tr.play()")
             return "Resumed"
         case .seek(let t):
@@ -493,11 +498,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return nil
         case .setSleepTimer(let s):
             sleepAtEnd = false
-            guard let s, s.isFinite, s >= 0 else {
+            sleepAtQueueEnd = false
+            guard let s, s.isFinite, s >= -1 else {
                 sleepEndsAt = nil
                 return "Sleep timer off"
             }
-            if s == 0 {
+            if s == -1 {
+                guard current != nil else { return nil }
+                sleepAtQueueEnd = true
+                sleepEndsAt = queueEndEstimate()
+            } else if s == 0 {
                 guard current != nil, duration > 0 else { return nil }
                 sleepAtEnd = true
                 sleepEndsAt = Date().addingTimeInterval(max(duration - position, 0))
@@ -549,9 +559,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Playback
 
+    /// When the queue should run out: what is left of this video and the lengths the queued ones are known to have.
+    private func queueEndEstimate() -> Date {
+        Date().addingTimeInterval(max(duration - position, 0) + queue.compactMap(\.duration).reduce(0, +))
+    }
+
     private func tickSleep() {
-        if sleepAtEnd {
-            let end = Date().addingTimeInterval(max(duration - position, 0))
+        if sleepAtEnd || sleepAtQueueEnd {
+            let end = sleepAtQueueEnd ? queueEndEstimate() : Date().addingTimeInterval(max(duration - position, 0))
             // The estimate barely moves while playing; only publish a real change.
             if let e = sleepEndsAt, abs(e.timeIntervalSince(end)) < 3 { return }
             sleepEndsAt = end
@@ -563,7 +578,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func sleepFire() {
         sleepEndsAt = nil
         sleepAtEnd = false
+        sleepAtQueueEnd = false
         _ = apply(.pause)
+        // iOS has no call to lock the screen. Letting go of the "stay awake" hold makes the device lock after its Auto-Lock time.
+        if settings.lockOnSleep { UIApplication.shared.isIdleTimerDisabled = false }
         flash("Sleep timer ended")
     }
 
@@ -580,6 +598,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         }
         isPlaying = true
         wantPlaying = true
+        if running { UIApplication.shared.isIdleTimerDisabled = true }
         firstPlay = nil
         startedAt = Date()
         lastPos = -1
@@ -613,6 +632,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             position = 0
             duration = 0
             webView.loadHTMLString("<body style='background:#000'>", baseURL: nil)
+            if sleepAtQueueEnd { sleepFire() }
         } else {
             start(queue.removeFirst())
         }

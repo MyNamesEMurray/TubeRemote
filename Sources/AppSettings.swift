@@ -24,6 +24,10 @@ final class AppSettings: ObservableObject {
     @Published var savedQueue: [VideoItem] {
         didSet { Store.write("queue.json", try? JSONEncoder().encode(savedQueue)) }
     }
+    /// Viewer: when the sleep timer ends, stop holding the screen awake so the device can lock by itself.
+    @Published var lockOnSleep: Bool {
+        didSet { UserDefaults.standard.set(lockOnSleep, forKey: "lockOnSleep") }
+    }
     @Published var hasOnboarded: Bool {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
     }
@@ -59,6 +63,7 @@ final class AppSettings: ObservableObject {
         preferredQuality = d.string(forKey: "preferredQuality") ?? "auto"
         saveQueue = d.object(forKey: "saveQueue") as? Bool ?? true
         savedQueue = Store.read("queue.json").flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? []
+        lockOnSleep = d.object(forKey: "lockOnSleep") as? Bool ?? true
         hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {

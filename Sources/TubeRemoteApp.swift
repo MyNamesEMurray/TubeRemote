@@ -277,6 +277,13 @@ struct SettingsView: View {
                 } footer: {
                     Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here. A viewer with nothing queued then offers to resume it when you connect.")
                 }
+                if model.mode == .viewer {
+                    Section {
+                        Toggle("Let the screen lock when the sleep timer ends", isOn: $settings.lockOnSleep)
+                    } footer: {
+                        Text("iOS has no way for an app to lock the screen. The viewer keeps the screen awake while it plays. When the timer ends it stops doing that, and the device locks after its Auto-Lock time. If Auto-Lock is set to Never, the screen stays on.")
+                    }
+                }
                 Section {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }

@@ -116,7 +116,7 @@ enum Command: Codable {
     case skipAd
     /// The quality every video starts at: YouTube's quality name, "best" or "auto".
     case setPreferredQuality(String)
-    /// Seconds until the viewer pauses; 0 means at the end of the video, nil switches the timer off.
+    /// Seconds until the viewer pauses; 0 means at the end of the video, -1 at the end of the queue, nil switches the timer off.
     case setSleepTimer(Double?)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.
     case playlist([VideoItem], QueueAction)

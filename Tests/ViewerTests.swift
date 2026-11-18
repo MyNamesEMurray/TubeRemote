@@ -104,6 +104,21 @@ final class ViewerTests: XCTestCase {
         XCTAssertEqual(v.queue.count, ViewerController.maxQueue)
     }
 
+    func testSleepTimerAtTheEndOfTheQueue() {
+        let v = makeViewer()
+        v.handle(.setSleepTimer(-1), from: nil)
+        XCTAssertNil(v.snapshot().sleepEndsAt, "needs a video")
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.enqueue(item("bbbbbbbbbbb")), from: nil)
+        v.handle(.setSleepTimer(-1), from: nil)
+        XCTAssertNotNil(v.snapshot().sleepEndsAt)
+        v.handle(.next, from: nil)
+        XCTAssertNotNil(v.snapshot().sleepEndsAt, "the queue is not empty yet, and the timer outlives a video")
+        v.handle(.next, from: nil)
+        XCTAssertNil(v.snapshot().sleepEndsAt, "the queue ran out")
+        XCTAssertFalse(v.isPlaying)
+    }
+
     func testSleepTimerSetsClearsAndRejectsBadValues() {
         let v = makeViewer()
         v.handle(.setSleepTimer(.nan), from: nil)

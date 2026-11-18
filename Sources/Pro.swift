@@ -181,6 +181,7 @@ struct SleepTimerMenu: View {
     let set: (Double?) -> Void
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
+    @State private var showCustom = false
     private var isPro: Bool { pro.isPro || unlocked }
 
     private var label: some View {
@@ -211,7 +212,9 @@ struct SleepTimerMenu: View {
                     ForEach([15, 30, 45, 60], id: \.self) { m in
                         Button(m == 60 ? "1 hour" : "\(m) minutes") { Haptics.tap(); set(Double(m * 60)) }
                     }
+                    Button("Custom…") { Haptics.tap(); showCustom = true }
                     Button("End of video") { Haptics.tap(); set(0) }
+                    Button("End of queue") { Haptics.tap(); set(-1) }
                 } label: { label }
                 .menuOrder(.fixed)
                 .accessibilityLabel(endsAt == nil ? "Sleep timer" : "Sleep timer running")
@@ -220,6 +223,39 @@ struct SleepTimerMenu: View {
             }
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
+        .sheet(isPresented: $showCustom) { CustomSleepSheet(set: set).presentationDetents([.height(320)]) }
+    }
+}
+
+/// Hours and minutes for a sleep timer of any length up to twelve hours.
+struct CustomSleepSheet: View {
+    let set: (Double?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var hours = 0
+    @State private var minutes = 20
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Picker("Hours", selection: $hours) { ForEach(0..<12, id: \.self) { Text("\($0) h").tag($0) } }
+                    Picker("Minutes", selection: $minutes) { ForEach(0..<60, id: \.self) { Text("\($0) min").tag($0) } }
+                }
+                .pickerStyle(.wheel)
+                Button {
+                    Haptics.tap()
+                    set(Double(hours * 3600 + minutes * 60))
+                    dismiss()
+                } label: { Text("Start timer").font(.headline).frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(hours == 0 && minutes == 0)
+                    .padding([.horizontal, .bottom])
+            }
+            .navigationTitle("Sleep timer")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
     }
 }
 
