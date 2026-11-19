@@ -7,7 +7,7 @@ App Store Connect > TubeRemote > Monetization > In-App Purchases > TubeRemote Pr
 | Type | Non-Consumable (already set) |
 | Reference Name | TubeRemote Pro |
 | Product ID | `com.exaltedpixels.TubeRemote.pro` (already set; the app looks for exactly this) |
-| Price | Your choice. $4.99 USD is the tier the paywall screenshot shows. Set it in Pricing, then check the other countries |
+| Price | The paywall screenshot shows $6.99, the price the App Store returned for this product. Keep the product at that price, or run the Screenshots workflow again after changing it |
 | Availability | All countries and regions (it shows "No" now) |
 | Family Sharing | On (already) |
 | Tax category | App Store software (the default) |
