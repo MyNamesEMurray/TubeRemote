@@ -52,7 +52,7 @@ jobs:
       - name: Test
         run: |
           # Pick whichever iPhone simulator this runner image has, newest iOS first.
-          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; r=json.load(sys.stdin)['devices']; print(next(d['udid'] for k in sorted(r, reverse=True) if 'iOS' in k for d in r[k] if 'iPhone' in d['name']))")
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; r=json.load(sys.stdin)['devices']; print(next(d['udid'] for k in sorted(r, reverse=True) if 'iOS' in k for d in r[k] if 'iPhone' in d['name'] and 'Duo' not in d['name']))")
           xcodebuild test -project TubeRemote.xcodeproj -scheme TubeRemote \
             -destination "id=$UDID" \
             CODE_SIGNING_ALLOWED=NO
