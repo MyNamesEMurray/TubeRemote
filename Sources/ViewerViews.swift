@@ -70,7 +70,7 @@ struct ViewerView: View {
         }
         .overlay(alignment: .bottom) {
             if showControls, viewer.current != nil {
-                ViewerControls(touched: keepControls)
+                ViewerControls(touched: { keepControls() }, menuOpened: { keepControls(for: 12) })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -117,13 +117,13 @@ struct ViewerView: View {
         .preferredColorScheme(.dark)
     }
 
-    /// Shows the controls and hides them again after four quiet seconds.
-    private func keepControls() {
+    /// Shows the controls and hides them again after four quiet seconds, or `seconds`.
+    private func keepControls(for seconds: Double = 4) {
         hideWork?.cancel()
         showControls = true
         let w = DispatchWorkItem { showControls = false }
         hideWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: w)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: w)
     }
 
     private func announce() {
@@ -210,6 +210,8 @@ struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
+    /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
+    let menuOpened: () -> Void
     @State private var scrub: Double?
     @State private var seekWork: DispatchWorkItem?
 
@@ -291,6 +293,7 @@ struct ViewerControls: View {
                 .accessibilityLabel("Quality, \(qualityLabel(viewer.quality))")
             }
         }
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in menuOpened() })
     }
 
     /// Sends where the slider was left. The end of the drag normally triggers it; a timer backs that up, because the
