@@ -11,6 +11,8 @@ iPhone/iPad app: browse YouTube in an embedded web view, send videos to another 
 - Share extension (`Share/`, bundle `com.exaltedpixels.TubeRemote.Share`): sends a YouTube link from other apps to a paired viewer. The app mirrors the paired devices and secrets into the App Group `group.com.exaltedpixels.TubeRemote` (`Sources/SharedConfig.swift`) when it comes to or leaves the foreground, and the extension signs in to the viewer the way the remote does. The App Group and the extension's App ID must be registered for signing to work.
 - While Now Playing is open on a remote, its hardware volume buttons change the viewer's volume (`Sources/VolumeKeys.swift`).
 
+`site/` is the static website (privacy policy and support pages the App Store links to). `.github/workflows/pages.yml` publishes it with GitHub Pages from `main`: https://mynamesemurray.github.io/TubeRemote/ (privacy at `/privacy/`, support at `/support/`).
+
 ## Build without a Mac
 
 GitHub Actions (`.github/workflows/build.yml`) generates the Xcode project with [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml` and builds an **unsigned** `.ipa`. Download it from the run's artifacts, then sign and install it with Sideloadly or AltStore using your Apple ID (free accounts: 7-day expiry).
