@@ -1,0 +1,26 @@
+name: Xcode 27 and an iPhone simulator
+description: Selects the newest release Xcode 27 and returns the UDID of an iPhone simulator to test on.
+outputs:
+  simulator:
+    description: UDID of the newest iOS iPhone simulator, never the iPhone Duo
+    value: ${{ steps.pick.outputs.udid }}
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode 27
+      shell: bash
+      run: |
+        # App Store Connect wants the iOS 27 SDK from April 2027, so use the newest release Xcode 27, never a beta.
+        XCODE=$(ls -d /Applications/Xcode_27.*.app /Applications/Xcode_27.app 2>/dev/null | grep -vi beta | sort -V | tail -1)
+        if [ -z "$XCODE" ]; then
+          echo "::error::No release Xcode 27 on this runner image. Installed:"
+          ls /Applications | grep -i xcode || true
+          exit 1
+        fi
+        sudo xcode-select -s "$XCODE"
+        xcodebuild -version
+    - id: pick
+      shell: bash
+      run: |
+        UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; r=json.load(sys.stdin)['devices']; print(next(d['udid'] for k in sorted(r, reverse=True) if 'iOS' in k for d in r[k] if 'iPhone' in d['name'] and 'Duo' not in d['name']))")
+        echo "udid=$UDID" >> "$GITHUB_OUTPUT"

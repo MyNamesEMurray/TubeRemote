@@ -11,6 +11,8 @@ struct ViewerView: View {
     @State private var showPair = false
     @State private var showControls = false
     @State private var hideWork: DispatchWorkItem?
+    @State private var showMenu = false
+    @State private var menuWork: DispatchWorkItem?
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
@@ -18,20 +20,16 @@ struct ViewerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             HStack(spacing: 0) {
-                HostedWebView(webView: viewer.webView)
+                Hosted(view: viewer.webView)
                 if showQueue && hSize == .regular {
                     Divider()
                     QueueSidebar().frame(width: 340)
                         .transition(.move(edge: .trailing))
                 }
             }
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { toggleControls() }
-                .accessibilityHidden(true)
-            if viewer.current == nil { IdleView().allowsHitTesting(false) }
+            if viewer.current == nil { IdleView { showPair = true } }
             // Off-screen volume slider; the only way to set system volume from an app.
-            VolumeHost(view: viewer.volumeView).frame(width: 10, height: 10).opacity(0.01).allowsHitTesting(false)
+            Hosted(view: viewer.volumeView).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false)
         }
         .overlay(alignment: .trailing) {
             if showQueue && hSize == .compact {
@@ -44,7 +42,7 @@ struct ViewerView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if let n = nowPlaying {
+            if let n = nowPlaying, !showControls {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(n.title).font(.headline).lineLimit(2)
                     Text(n.channel).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
@@ -62,18 +60,55 @@ struct ViewerView: View {
             if let t = viewer.toast {
                 Text(t)
                     .font(.subheadline.bold())
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .overlay(alignment: .topTrailing) {
-            if showControls || showQueue || viewer.current == nil { menu.transition(.opacity) }
+        .overlay(alignment: .bottom) {
+            if showControls, viewer.current != nil {
+                ViewerControls(touched: keepControls)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .overlay(alignment: .topTrailing) {
+            // Shown with the overlay, and while the menu or queue is open. Hidden, it also lets taps through.
+            let visible = showMenu || showControls || showQueue || viewer.current == nil
+            menu
+                .opacity(visible ? 1 : 0)
+                .allowsHitTesting(visible)
+                .accessibilityHidden(!visible)
+        }
+        .overlay(alignment: .topLeading) {
+            if viewer.needsUnmute {
+                Button {
+                    Haptics.tap()
+                    viewer.unmuteVideo()
+                } label: {
+                    Label("Tap to unmute", systemImage: "speaker.slash.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .padding(12)
+                .transition(.opacity)
+            }
+        }
+        // The page reports taps on the video; nothing native sits on top of it to catch them.
+        .onReceive(viewer.tapped) { _ in
+            closeMenu()
+            if showControls { hideWork?.cancel(); showControls = false } else { keepControls() }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showControls)
+        .animation(.easeInOut(duration: 0.4), value: showMenu)
+        .animation(.easeInOut(duration: 0.3), value: viewer.needsUnmute)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.toast)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showQueue)
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showControls)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
         .onChange(of: viewer.current?.videoID) { _ in announce() }
         .sheet(isPresented: $showBrowse) { LocalBrowse() }
@@ -82,10 +117,9 @@ struct ViewerView: View {
         .preferredColorScheme(.dark)
     }
 
-    private func toggleControls() {
-        Haptics.tap()
+    /// Shows the controls and hides them again after four quiet seconds.
+    private func keepControls() {
         hideWork?.cancel()
-        if showControls { showControls = false; return }
         showControls = true
         let w = DispatchWorkItem { showControls = false }
         hideWork = w
@@ -101,61 +135,283 @@ struct ViewerView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: w)
     }
 
-    private var menu: some View {
-        Menu {
-            Button { showBrowse = true } label: { Label("Browse YouTube", systemImage: "safari") }
-            Button { showPair = true } label: { Label("Pair a device", systemImage: "link") }
-            Button { showQueue.toggle() } label: { Label(showQueue ? "Hide queue" : "Show queue", systemImage: "list.bullet") }
-            Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
-            ModeMenu()
+    private func closeMenu() {
+        menuWork?.cancel()
+        showMenu = false
+    }
+
+    /// Opens or closes the menu. Unlike a system menu it fades away by itself after six seconds.
+    private func toggleMenu() {
+        Haptics.tap()
+        guard !showMenu else { return closeMenu() }
+        showMenu = true
+        let w = DispatchWorkItem { showMenu = false }
+        menuWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: w)
+    }
+
+    private func menuRow(_ title: String, _ symbol: String, tint: Color = .white, _ action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            closeMenu()
+            action()
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.title3.weight(.semibold))
+            HStack(spacing: 12) {
+                Text(title)
+                Spacer(minLength: 8)
+                Image(systemName: symbol)
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var menu: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            Button(action: toggleMenu) {
+                Image(systemName: "ellipsis")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .contentShape(Circle())
+            }
+            .accessibilityLabel("Menu")
+            if showMenu {
+                VStack(alignment: .leading, spacing: 0) {
+                    menuRow("Browse YouTube", "safari") { showBrowse = true }
+                    Divider()
+                    menuRow("Devices", "link") { showPair = true }
+                    Divider()
+                    menuRow(showQueue ? "Hide queue" : "Show queue", "list.bullet") { showQueue.toggle() }
+                    Divider()
+                    menuRow("Settings", "gearshape") { showSettings = true }
+                    Divider()
+                    menuRow("End session", "stop.circle", tint: .red) {
+                        showQueue = false
+                        viewer.endSession()
+                    }
+                }
                 .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
-                .contentShape(Circle())
+                .frame(width: 240)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
+            }
         }
         .padding(12)
-        .accessibilityLabel("Menu")
     }
 }
 
-struct VolumeHost: UIViewRepresentable {
-    let view: MPVolumeView
-    func makeUIView(context: Context) -> MPVolumeView { view }
-    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+/// Playback controls on the viewer itself, shown by tapping the video.
+struct ViewerControls: View {
+    @EnvironmentObject var viewer: ViewerController
+    /// Called on every interaction so the controls stay up while in use.
+    let touched: () -> Void
+    @State private var scrub: Double?
+    @State private var seekWork: DispatchWorkItem?
+
+    private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
+        Button {
+            Haptics.tap()
+            touched()
+            viewer.handle(cmd, from: nil)
+        } label: {
+            Image(systemName: symbol).font(.system(size: size)).frame(width: 56, height: 56).contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+    }
+
+    private func option(_ text: String, _ symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.subheadline.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(.white.opacity(0.18), in: Capsule())
+            .frame(minHeight: 44)
+    }
+
+    private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            touched()
+            action()
+        } label: {
+            if on { Label(text, systemImage: "checkmark") } else { Text(text) }
+        }
+    }
+
+    /// Captions and quality, the same options the remote has.
+    private var options: some View {
+        HStack(spacing: 12) {
+            Menu {
+                ForEach(playbackSpeeds, id: \.self) { r in
+                    check(rateLabel(r), r == viewer.speed) { viewer.handle(.setSpeed(r), from: nil) }
+                }
+            } label: {
+                option(rateLabel(viewer.speed), "speedometer")
+            }
+            .menuOrder(.fixed)
+            .accessibilityLabel("Playback speed, \(rateLabel(viewer.speed))")
+            Button {
+                Haptics.tap()
+                touched()
+                // While searching, a tap cancels the request.
+                viewer.handle(.setCaptions(!viewer.captions && viewer.captionsStatus == nil), from: nil)
+            } label: {
+                switch viewer.captionsStatus {
+                case "none": option("No captions", "captions.bubble").opacity(0.5)
+                case "searching": option("Finding captions…", "captions.bubble")
+                default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+                }
+            }
+            .disabled(viewer.captionsStatus == "none")
+            .accessibilityLabel(viewer.captionsStatus == "none" ? "This video has no captions"
+                                : viewer.captions ? "Turn captions off" : "Turn captions on")
+            SleepTimerMenu(endsAt: viewer.sleepEndsAt, onDark: true, unlocked: viewer.sessionPro) {
+                touched()
+                viewer.handle(.setSleepTimer($0), from: nil)
+            }
+            if viewer.qualities.count > 1 {
+                Menu {
+                    check("Auto", viewer.autoQuality) { viewer.handle(.setQuality("auto"), from: nil) }
+                    ForEach(viewer.qualities, id: \.self) { q in
+                        check(qualityLabel(q), !viewer.autoQuality && q == viewer.quality) {
+                            viewer.handle(.setQuality(q), from: nil)
+                        }
+                    }
+                } label: {
+                    // In automatic mode say so, with the quality YouTube picked.
+                    option(viewer.autoQuality ? "Auto \(qualityLabel(viewer.quality))" : qualityLabel(viewer.quality), "tv")
+                }
+                .menuOrder(.fixed)
+                .accessibilityLabel("Quality, \(qualityLabel(viewer.quality))")
+            }
+        }
+    }
+
+    /// Sends where the slider was left. The end of the drag normally triggers it; a timer backs that up, because the
+    /// row is redrawn twice a second and iOS does not always report the end of a drag that was interrupted by that.
+    private func commitSeek() {
+        seekWork?.cancel()
+        guard let v = scrub else { return }
+        scrub = nil
+        viewer.handle(.seek(v), from: nil)
+    }
+
+    private func scheduleSeek() {
+        seekWork?.cancel()
+        let w = DispatchWorkItem { commitSeek() }
+        seekWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let c = viewer.current {
+                Text(c.title).font(.headline).lineLimit(1)
+            }
+            // Position is read on a timer here instead of being published, so only this row redraws.
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                let pos = scrub ?? viewer.position
+                HStack(spacing: 12) {
+                    Text(clock(pos))
+                    Slider(
+                        value: Binding(get: { pos }, set: { scrub = $0; touched(); scheduleSeek() }),
+                        in: 0...max(viewer.duration, 1)
+                    ) { editing in
+                        if !editing { commitSeek() }
+                    }
+                    .accessibilityLabel("Playback position")
+                    .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
+                    Text(clock(viewer.duration))
+                }
+                .font(.caption.monospacedDigit())
+            }
+            HStack(spacing: 16) {
+                button("backward.end.fill", "Previous", .previous)
+                button("gobackward.10", "Back 10 seconds", .skip(-10))
+                button(viewer.isPlaying ? "pause.fill" : "play.fill", viewer.isPlaying ? "Pause" : "Play",
+                       viewer.isPlaying ? .pause : .resume, size: 40)
+                button("goforward.10", "Forward 10 seconds", .skip(10))
+                button("forward.end.fill", "Next", .next)
+                Button {
+                    Haptics.tap()
+                    touched()
+                    viewer.togglePictureInPicture()
+                } label: {
+                    Image(systemName: "pip.enter").font(.system(size: 24)).frame(width: 56, height: 56).contentShape(Rectangle())
+                }
+                .accessibilityLabel("Picture in Picture")
+            }
+            options
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 560)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(16)
+    }
 }
 
 struct IdleView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var viewer: ViewerController
+    let onPair: () -> Void
 
     private var pairedLine: String {
         settings.paired.isEmpty
-            ? "Not paired yet. Use the menu, then Pair a device."
+            ? "Not paired yet."
             : "Paired with " + settings.paired.map(\.name).joined(separator: ", ")
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            // This screen can stay up for hours with the display kept awake, so nudge it each minute against burn-in.
+            TimelineView(.periodic(from: .now, by: 60)) { t in
+                let m = Int(t.date.timeIntervalSinceReferenceDate / 60)
+                content.offset(x: CGFloat(m % 5 - 2) * 10, y: CGFloat(m % 3 - 1) * 10)
+            }
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 12) {
             VStack(spacing: 12) {
                 Image(systemName: "tv").font(.system(size: 64, weight: .light)).accessibilityHidden(true)
-                Text(settings.name).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                Text("Ready to receive videos").font(.title3).foregroundStyle(.secondary)
-                VStack(spacing: 4) {
+                Text(settings.name).font(.largeTitle.bold())
+                if viewer.denied {
+                    Text("Local Network access is off").font(.title3).foregroundStyle(.orange)
+                    Text("Other devices cannot find this viewer until you allow it in Settings.")
+                        .font(.title3).foregroundStyle(.secondary)
+                } else {
+                    Text("Ready to receive videos").font(.title2).foregroundStyle(.secondary)
                     Text("Open TubeRemote on another device and choose this viewer.")
-                    Text(pairedLine)
+                        .font(.title3).foregroundStyle(.secondary)
+                    Text(pairedLine).font(.title3).foregroundStyle(.secondary)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.top, 8)
             }
-            .foregroundStyle(.white)
-            .padding(32)
+            .multilineTextAlignment(.center)
             .accessibilityElement(children: .combine)
+            if viewer.denied {
+                Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.top, 8)
+            } else {
+                Button(action: onPair) { Label("Pair a Device", systemImage: "link") }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .padding(.top, 8)
+            }
         }
+        .foregroundStyle(.white)
+        .padding(32)
     }
 }
 
@@ -199,56 +455,112 @@ struct LocalBrowse: View {
     @EnvironmentObject var browser: Browser
     @EnvironmentObject var viewer: ViewerController
     @Environment(\.dismiss) private var dismiss
+    @State private var sending = false
+
+    private func send(_ action: QueueAction) {
+        guard !sending else { return }
+        sending = true
+        Task { @MainActor in
+            defer { sending = false }
+            guard let item = await browser.makeItem() else { return }
+            viewer.handle(action.command(item), from: nil)
+            browser.pause()
+        }
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HostedWebView(webView: browser.webView)
+                Hosted(view: browser.webView).background(Color.youTubePage.ignoresSafeArea())
                 if browser.videoID != nil {
-                    ActionBar(target: "this device", enabled: true, showHere: false, onAction: { a in
-                        Task { @MainActor in
-                            guard let item = await browser.makeItem() else { return }
-                            viewer.handle(a.command(item), from: nil)
-                            browser.pause()
-                        }
-                    })
+                    ActionBar(target: "this device", enabled: !sending, onAction: send)
                 }
             }
             .navigationTitle("YouTube")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if browser.canGoBack {
-                        Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                            .accessibilityLabel("Back")
-                    }
-                }
+                ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .pairingPrompt()
+        }
+        .onAppear { browser.ensureLoaded() }
+        // Tapping play on the page plays the video on this viewer and closes the browser.
+        .onReceive(browser.playTapped) { _ in
+            send(.playNow)
+            dismiss()
         }
     }
 }
 
-/// Remotes that connected but are not paired yet; picking one starts the code comparison.
+/// Every paired device, with the ones connected right now first, and devices that connected but are not paired yet.
 struct PairSheet: View {
     @EnvironmentObject var viewer: ViewerController
+    @EnvironmentObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @State private var forgetting: PairedDevice?
+
+    private func live(_ d: PairedDevice) -> PendingPeer? { viewer.connected.first { $0.key == d.key } }
+
+    private var devices: [PairedDevice] {
+        settings.paired.sorted { a, b in
+            let la = live(a) != nil, lb = live(b) != nil
+            return la != lb ? la : a.name < b.name
+        }
+    }
+
+    private func row(_ d: PairedDevice) -> some View {
+        let peer = live(d)
+        return HStack(spacing: 12) {
+            Image(systemName: "iphone")
+                .foregroundStyle(peer == nil ? Color.secondary : Color.accentColor)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(peer?.name ?? d.name)
+                Text(peer == nil ? "Not connected" : "Connected")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let peer {
+                Button("Disconnect", role: .destructive) {
+                    Haptics.warning()
+                    viewer.disconnect(peer)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .frame(minHeight: 44)
+        .swipeActions { Button("Forget", role: .destructive) { forgetting = d } }
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if viewer.pending.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "iphone").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
-                        Text("No unpaired devices found. Open the app on the other device in Remote mode.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                } else {
+                if !settings.paired.isEmpty {
                     Section {
+                        ForEach(devices) { row($0) }
+                    } header: {
+                        Text("Paired devices")
+                    } footer: {
+                        Text("Disconnect closes the connection but keeps the pairing; the device reconnects when its owner chooses this viewer again. Swipe a device to forget it. Without Pro, a viewer serves one remote at a time; Pro on this device or on any connected remote lifts that.")
+                    }
+                }
+                if viewer.pending.isEmpty {
+                    if settings.paired.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "iphone").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                            Text("No devices yet. Open the app on the other device in Remote mode.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    }
+                } else {
+                    Section("Waiting to pair") {
                         ForEach(viewer.pending) { p in
                             Button {
                                 Haptics.tap()
@@ -271,13 +583,25 @@ struct PairSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Pair a device")
+            .navigationTitle("Devices")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
+            .confirmationDialog(
+                "Forget \(forgetting?.name ?? "this device")?",
+                isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                titleVisibility: .visible,
+                presenting: forgetting
+            ) { d in
+                Button("Forget", role: .destructive) {
+                    settings.paired.removeAll { $0.key == d.key }
+                }
+            } message: { _ in
+                Text("It is disconnected now and must pair again to reconnect.")
+            }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .pairingPrompt()
     }
 }

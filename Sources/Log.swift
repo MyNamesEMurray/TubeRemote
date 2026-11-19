@@ -10,7 +10,26 @@ final class Log: ObservableObject {
         return f
     }()
 
-    private init() { lines = UserDefaults.standard.stringArray(forKey: "log") ?? [] }
+    private static let cleanKey = "logCleanExit"
+
+    /// The log is cleared on the first launch after a normal exit and kept after a crash. The app counts as
+    /// exited cleanly once it reaches the background, which is where a swipe-away from the app switcher happens,
+    /// and as running again as soon as it is active.
+    private init() {
+        let d = UserDefaults.standard
+        lines = d.bool(forKey: Self.cleanKey) ? [] : (d.stringArray(forKey: "log") ?? [])
+        d.set(false, forKey: Self.cleanKey)
+        save()
+    }
+
+    /// Names, titles and addresses stay out of the log. A device appears as the last four characters of its
+    /// random key, which tells two devices apart and nothing more.
+    static func who(_ key: String?) -> String { key.map { "device \($0.suffix(4))" } ?? "a device" }
+
+    func setCleanExit(_ clean: Bool) {
+        UserDefaults.standard.set(clean, forKey: Self.cleanKey)
+        save()
+    }
 
     static func add(_ s: String) {
         DispatchQueue.main.async { shared.append("\(fmt.string(from: Date())) \(tag) \(s)") }
@@ -20,10 +39,10 @@ final class Log: ObservableObject {
 
     private func append(_ s: String) {
         lines = Array((lines + [s]).suffix(300))
-        save()
     }
 
-    private func save() { UserDefaults.standard.set(lines, forKey: "log") }
+    /// Called when the app leaves the foreground; writing on every line stalls the main thread.
+    func save() { UserDefaults.standard.set(lines, forKey: "log") }
 }
 
 struct DebugLogView: View {

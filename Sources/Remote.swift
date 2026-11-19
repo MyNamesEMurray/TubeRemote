@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import Foundation
 import Network
@@ -10,22 +11,35 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var connected = false
     @Published var detail = ""
     @Published var needsPairing = false
+    /// The two devices run app versions that cannot talk to each other.
+    @Published var outdated = false
+    /// The viewer disconnected this remote on purpose, so it stays away until its owner reconnects.
+    @Published var released = false
+    /// The viewer already serves another remote, and nothing connected has Pro. Pro on this device would let it in.
+    @Published var busy = false
     var endpoints: [NWEndpoint]
     private var attempt = 0
     var id: String { key }
     var title: String { state?.deviceName ?? name }
+    private var tag: String { Log.who(key) }
 
     private let settings: AppSettings
     private let pairing: Pairing
+    private let keeper: QueueKeeper?
     private var conn: NWConnection?
     private var ready = false
+    private var channel: Channel?
+    private var peerVersion: Int?
     private var lastActivity = Date()
     private var watchdog: Timer?
     private var keepalive: Timer?
     private var stopped = false
     private var retryPending = false
 
-    init(key: String, name: String, endpoints: [NWEndpoint], settings: AppSettings, pairing: Pairing) {
+    init(key: String, name: String, endpoints: [NWEndpoint], settings: AppSettings, pairing: Pairing,
+         state: ViewerState? = nil, keeper: QueueKeeper? = nil) {
+        self.state = state
+        self.keeper = keeper
         self.key = key
         self.name = name
         self.endpoints = endpoints
@@ -42,22 +56,24 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     func connect() {
-        guard !stopped, conn == nil else { return }
+        guard !stopped, !released, conn == nil else { return }
         retryPending = false
         lastActivity = Date()
+        peerVersion = nil
         // shortcut: a renamed or stale Bonjour twin may share the key, so rotate endpoints on each retry
         let endpoint = endpoints[attempt % endpoints.count]
         attempt += 1
         let c = NWConnection(to: endpoint, using: Transport.parameters())
-        Log.add("connecting to \(title) at \(endpoint)")
+        Log.add("connecting to \(tag)")
         conn = c
         c.stateUpdateHandler = { [weak self, weak c] s in
             guard let self, let c, c === self.conn else { return }
-            Log.add("outbound \(self.title): \(s)")
+            Log.add("outbound \(self.tag): \(s)")
             switch s {
             case .ready:
                 self.ready = true
-                Transport.send(ClientMessage.hello(name: self.settings.name, key: self.settings.deviceKey), on: c)
+                Transport.send(ClientMessage.hello(name: self.settings.name, key: self.settings.deviceKey,
+                                                   version: Transport.version, pro: ProStore.shared.isPro), on: c)
                 Transport.receiveLoop(c, as: ServerMessage.self, onMessage: { [weak self] m in
                     guard let self, c === self.conn else { return }
                     self.lastActivity = Date()
@@ -79,30 +95,85 @@ final class RemoteClient: ObservableObject, Identifiable {
         c.start(queue: .main)
     }
 
-    var isPaired: Bool { settings.paired(key) != nil }
+    func reconnect() {
+        guard released || busy else { return }
+        released = false
+        busy = false
+        connect()
+    }
+
+    /// Signs in again, so the viewer learns about a change such as buying Pro.
+    func refresh() {
+        guard !released else { return }
+        busy = false
+        drop()
+    }
 
     func beginPair() {
-        pairing.begin { [weak self] in self?.sendRaw(.pair($0)) }
+        pairing.begin(peer: key) { [weak self] in self?.sendRaw(.pair($0)) }
+    }
+
+    /// False when the viewer runs an app version this one cannot talk to. Older viewers never say hello back.
+    private func sameVersion() -> Bool {
+        if peerVersion == nil { outdated = true }
+        return !outdated
     }
 
     private func handle(_ m: ServerMessage) {
         switch m {
-        case .state(let st):
-            if !connected { Log.add("first state from \(title)") }
-            state = st
-            connected = true
-            needsPairing = false
-            detail = ""
+        case .hello(let v):
+            peerVersion = v
+            outdated = v != Transport.version
+        case .sealed(let box):
+            guard let body = channel?.open(box) else {
+                Log.add("bad encrypted message from \(tag)")
+                return drop()
+            }
+            switch try? JSONDecoder().decode(ServerMessage.self, from: body) {
+            case .state(let st)?:
+                if !connected { Log.add("first state from \(tag)") }
+                let previous = connected ? state : nil
+                state = st
+                connected = true
+                needsPairing = false
+                busy = false
+                detail = ""
+                keeper?.observe(st, previous: previous, key: key)
+            case .goodbye?:
+                Log.add("disconnected by \(tag)")
+                released = true
+                drop()
+            default:
+                Log.add("rx sealed decode failed")
+            }
+        case .state:
+            Log.add("ignored unencrypted state")
+        case .goodbye:
+            // Only the signed-in channel may tell a remote to stay away; anything on the network can send this.
+            Log.add("ignored unsigned goodbye")
+        case .busy:
+            // Cannot be signed (it comes before sign-in), so it only slows the retries instead of stopping them.
+            Log.add("viewer is in use by another remote: \(tag)")
+            busy = true
+            drop()
         case .unpaired:
+            guard sameVersion() else { return }
+            channel = nil
+            // What it was playing was reported by an earlier pairing; showing it now would mislead.
+            state = nil
             connected = false
             needsPairing = true
             detail = ""
         case .challenge(let nonce):
-            guard let d = settings.paired(key) else { return }
+            guard sameVersion() else { return }
+            // No secret on this side: answer with an empty proof so the viewer reports "unpaired" and offers pairing.
+            guard let d = settings.paired(key) else { return sendRaw(.auth(mac: Data(), nonce: Data())) }
+            let mine = Transport.nonce()
             let mac = HMAC<SHA256>.authenticationCode(for: nonce, using: SymmetricKey(data: d.secret))
-            sendRaw(.auth(Data(mac)))
+            channel = Channel(secret: d.secret, salt: nonce + mine, viewer: false)
+            sendRaw(.auth(mac: Data(mac), nonce: mine))
         case .pair(let pm):
-            pairing.receive(pm) { [weak self] in self?.sendRaw(.pair($0)) }
+            pairing.receive(pm, from: key) { [weak self] in self?.sendRaw(.pair($0)) }
         }
     }
 
@@ -112,9 +183,11 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 
     func send(_ cmd: Command) {
-        guard connected else { return Log.add("send \(cmd) dropped: not connected") }
-        Log.add("send \(cmd)")
-        sendRaw(.command(cmd))
+        guard connected, let box = channel?.seal(ClientMessage.command(cmd)) else {
+            return Log.add("send \(cmd.logName) dropped: not connected")
+        }
+        Log.add("send \(cmd.logName)")
+        sendRaw(.sealed(box))
     }
 
     func stop() {
@@ -125,18 +198,22 @@ final class RemoteClient: ObservableObject, Identifiable {
         conn = nil
         ready = false
         connected = false
+        channel = nil
+        pairing.cancel(peer: key)
     }
 
     private func drop() {
-        Log.add("drop \(title)")
+        Log.add("drop \(tag)")
         let old = conn
         conn = nil
         old?.cancel()
         ready = false
         connected = false
-        guard !stopped, !retryPending else { return }
+        channel = nil
+        pairing.cancel(peer: key)
+        guard !stopped, !released, !retryPending else { return }
         retryPending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.connect() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (busy ? 30 : 2)) { [weak self] in self?.connect() }
     }
 }
 
@@ -146,29 +223,57 @@ final class RemoteController: ObservableObject {
     @Published var selectedKey: String? {
         didSet { settings.lastViewerKey = selectedKey }
     }
+    /// iOS refused Local Network access, so no viewer can ever be found.
+    @Published var denied = false
     var active: RemoteClient? { devices.first { $0.key == selectedKey } }
 
     private var clients: [String: RemoteClient] = [:]
     private var missing: [String: Date] = [:]
+    /// What each viewer last reported, so a client rebuilt after a return from the background shows
+    /// the last known controls (dimmed, "Reconnecting") instead of flashing "Nothing Playing".
+    private var lastState: [String: ViewerState] = [:]
     private var browser: NWBrowser?
+    private var running = false
     private let settings: AppSettings
     private let pairing: Pairing
+    private var proObs: AnyCancellable?
+    private let keeper: QueueKeeper
 
     init(settings: AppSettings, pairing: Pairing) {
         self.settings = settings
         self.pairing = pairing
+        keeper = QueueKeeper(settings: settings)
         selectedKey = settings.lastViewerKey
+        // Buying or restoring Pro changes what this device may do on a viewer, so sign in again.
+        proObs = ProStore.shared.$isPro.dropFirst().removeDuplicates().sink { [weak self] _ in
+            self?.clients.values.forEach { $0.refresh() }
+        }
     }
 
     func start() {
+        running = true
         guard browser == nil else { return }
         let b = NWBrowser(for: .bonjour(type: Transport.serviceType, domain: nil), using: .tcp)
         b.stateUpdateHandler = { [weak self] s in
             Log.add("browser \(s)")
-            if case .failed = s { self?.stop() }
+            switch s {
+            case .ready:
+                self?.denied = false
+            case .waiting(let e):
+                self?.denied = Transport.isDenied(e)
+            case .failed(let e):
+                self?.denied = Transport.isDenied(e)
+                self?.teardown()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    guard let self, self.running else { return }
+                    self.start()
+                }
+            default:
+                break
+            }
         }
         b.browseResultsChangedHandler = { [weak self] results, _ in
-            Log.add("browse results: \(results.map { "\($0.endpoint)" })")
+            Log.add("browse results: \(results.count)")
             self?.update(results)
         }
         b.start(queue: .main)
@@ -176,6 +281,12 @@ final class RemoteController: ObservableObject {
     }
 
     func stop() {
+        running = false
+        teardown()
+    }
+
+    private func teardown() {
+        for (k, c) in clients { if let s = c.state { lastState[k] = s } }
         browser?.cancel()
         browser = nil
         clients.values.forEach { $0.stop() }
@@ -210,7 +321,8 @@ final class RemoteController: ObservableObject {
                 c.name = v.name
                 c.endpoints = v.endpoints
             } else {
-                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints, settings: settings, pairing: pairing)
+                let c = RemoteClient(key: k, name: v.name, endpoints: v.endpoints, settings: settings, pairing: pairing,
+                                    state: lastState[k], keeper: keeper)
                 clients[k] = c
                 c.connect()
             }
@@ -223,6 +335,7 @@ final class RemoteController: ObservableObject {
                 self.missing[k] = nil
                 self.clients[k]?.stop()
                 self.clients[k] = nil
+                self.lastState[k] = nil
                 self.devices.removeAll { $0.key == k }
             }
         }

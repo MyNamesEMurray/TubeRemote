@@ -2,7 +2,7 @@ import SwiftUI
 
 final class AppModel: ObservableObject {
     let settings: AppSettings
-    let browser = Browser()
+    let browser: Browser
     let viewer: ViewerController
     let remote: RemoteController
     let pairing: Pairing
@@ -13,7 +13,9 @@ final class AppModel: ObservableObject {
         settings = s
         let p = Pairing(settings: s)
         pairing = p
-        viewer = ViewerController(settings: s, pairing: p)
+        let b = Browser()
+        browser = b
+        viewer = ViewerController(settings: s, pairing: p, browser: b)
         remote = RemoteController(settings: s, pairing: p)
         mode = s.defaultMode
     }
@@ -40,20 +42,30 @@ struct TubeRemoteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(model)
-                .environmentObject(model.settings)
-                .environmentObject(model.browser)
-                .environmentObject(model.viewer)
-                .environmentObject(model.remote)
-                .environmentObject(model.pairing)
+            #if DEBUG
+            if ScreenshotStage.shot != nil { StagedShot() } else { root }
+            #else
+            root
+            #endif
         }
+    }
+
+    private var root: some View {
+        RootView()
+            .environmentObject(model)
+            .environmentObject(model.settings)
+            .environmentObject(model.browser)
+            .environmentObject(model.viewer)
+            .environmentObject(model.remote)
+            .environmentObject(model.pairing)
+            .environmentObject(ProStore.shared)
     }
 }
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var pro: ProStore
     @Environment(\.scenePhase) private var phase
     @State private var showSettings = false
 
@@ -70,28 +82,29 @@ struct RootView: View {
             OnboardingView()
         }
         .pairingPrompt()
-        .onAppear { model.apply() }
-        .onChange(of: phase) { if $0 == .active { model.apply() } }
+        .onAppear {
+            model.apply()
+            settings.mirrorForShare(pro: pro.isPro)
+        }
+        .onChange(of: settings.paired.count) { _ in settings.mirrorForShare(pro: pro.isPro) }
+        .onChange(of: pro.isPro) { _ in settings.mirrorForShare(pro: pro.isPro) }
+        .onChange(of: phase) {
+            switch $0 {
+            case .active:
+                model.apply()
+                Log.shared.setCleanExit(false)
+            case .background:
+                Log.shared.setCleanExit(true)
+            default:
+                Log.shared.save()
+            }
+            settings.mirrorForShare(pro: pro.isPro)
+        }
     }
 }
 
 private extension Mode {
     var symbol: String { self == .viewer ? "tv" : "iphone.radiowaves.left.and.right" }
-}
-
-struct ModeMenu: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        Menu {
-            Picker("Mode", selection: $model.mode) {
-                ForEach(Mode.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
-            }
-        } label: {
-            Image(systemName: model.mode.symbol)
-        }
-        .accessibilityLabel("Mode")
-    }
 }
 
 struct OnboardingView: View {
@@ -114,8 +127,10 @@ struct OnboardingView: View {
     private var welcome: some View {
         VStack(spacing: 28) {
             Spacer(minLength: 0)
-            Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 64))
+            HStack(spacing: 6) {
+                Image(systemName: "play.fill").font(.system(size: 48))
+                Image(systemName: "wave.3.right").font(.system(size: 34)).opacity(0.6)
+            }
                 .foregroundStyle(.white)
                 .frame(width: 112, height: 112)
                 .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -163,9 +178,10 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
             card(.viewer, "Viewer", "Plays videos on this screen. Great for an iPad or TV-connected device.")
             card(.remote, "Remote", "Browse YouTube and send videos to a viewer.")
-            Text("You can change this later in Settings.")
+            Text("You can change this later in Settings.\nNext, iOS asks to find devices on your local network. Choose Allow, or your devices cannot see each other.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             Spacer(minLength: 0)
         }
     }
@@ -207,7 +223,10 @@ struct OnboardingView: View {
 struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showPaywall = false
 
     private var version: String {
         let i = Bundle.main.infoDictionary
@@ -221,6 +240,50 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("TubeRemote Pro") {
+                    if pro.isPro {
+                        Label("Pro unlocked", systemImage: "checkmark.seal.fill")
+                    } else {
+                        Button { showPaywall = true } label: {
+                            Label("Unlock TubeRemote Pro", systemImage: "star.fill").font(.headline)
+                        }
+                    }
+                    Button("Restore Purchases") { Task { await pro.restore() } }
+                }
+                Section {
+                    if model.mode == .viewer {
+                        QualityRow(value: settings.preferredQuality, enabled: true,
+                                   set: { model.viewer.handle(.setPreferredQuality($0), from: nil) }, showPaywall: $showPaywall)
+                    } else if let c = remote.active {
+                        RemoteQualityRow(client: c, showPaywall: $showPaywall)
+                    } else {
+                        Text("Choose a viewer to set the quality it starts videos at.").foregroundStyle(.secondary)
+                    }
+                    if model.mode == .remote {
+                        if pro.has(remote.active?.state) {
+                            Toggle("Keep the queue on this device", isOn: $settings.saveQueue)
+                        } else {
+                            Button { showPaywall = true } label: {
+                                HStack {
+                                    Text("Keep the queue on this device").foregroundStyle(.primary)
+                                    GatedBadge()
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Playback")
+                } footer: {
+                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here. A viewer with nothing queued then offers to resume it when you connect.")
+                }
+                if model.mode == .viewer {
+                    Section {
+                        Toggle("Let the screen lock when the sleep timer ends", isOn: $settings.lockOnSleep)
+                    } footer: {
+                        Text("iOS has no way for an app to lock the screen. The viewer keeps the screen awake while it plays. When the timer ends it stops doing that, and the device locks after its Auto-Lock time. If Auto-Lock is set to Never, the screen stays on.")
+                    }
+                }
                 Section {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }
@@ -229,11 +292,16 @@ struct SettingsView: View {
                 } footer: {
                     Text("Shown to other devices on your network.")
                 }
-                Section("On Launch") {
-                    Picker("Mode", selection: $settings.defaultMode) {
+                Section {
+                    Picker("Use this device as", selection: Binding(
+                        get: { model.mode },
+                        set: { model.mode = $0; settings.defaultMode = $0 }
+                    )) {
                         ForEach(Mode.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
                     }
                     .pickerStyle(.menu)
+                } footer: {
+                    Text("A viewer plays videos on this screen. A remote browses YouTube and sends them.")
                 }
                 Section {
                     Picker("Queue action", selection: $settings.queueAction) {
@@ -254,7 +322,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Paired Devices")
                 } footer: {
-                    Text("Removing a device takes effect the next time it connects.")
+                    Text("Removing a device disconnects it right away.")
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)
@@ -267,7 +335,11 @@ struct SettingsView: View {
             .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    if !settings.paired.isEmpty { EditButton() }
+                }
             }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
         }
         .onDisappear { model.viewer.rename() }
     }
