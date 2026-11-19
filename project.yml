@@ -19,7 +19,11 @@ targets:
   TubeRemote:
     type: application
     platform: iOS
-    sources: [Sources, Assets]
+    sources:
+      - Sources
+      - Assets
+      - path: Privacy/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - target: TubeRemoteShare
     entitlements:
@@ -54,6 +58,8 @@ targets:
     platform: iOS
     sources:
       - Share
+      - path: Privacy/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: Sources/Models.swift
       - path: Sources/Transport.swift
       - path: Sources/Log.swift

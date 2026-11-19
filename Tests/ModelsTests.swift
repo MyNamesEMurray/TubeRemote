@@ -99,6 +99,23 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(QueueKeeper.shouldSave(saved: saved, new: QueueKeeper.snapshot(state(a, at: 372))!), "the queue changed")
     }
 
+    func testSavedQueueReadsTheOldListFormat() throws {
+        let old = [VideoItem(videoID: "aaaaaaaaaaa", title: "a", channel: "c", duration: 600)]
+        Store.write("queue.json", try JSONEncoder().encode(old))
+        XCTAssertEqual(AppSettings().savedQueue.items.map(\.videoID), ["aaaaaaaaaaa"])
+        Store.write("queue.json", try JSONEncoder().encode(SavedQueue()))
+    }
+
+    func testQueueKeeperShortVideoAndEmptiedViewer() {
+        let s = VideoItem(videoID: "aaaaaaaaaaa", title: "a", channel: "c", duration: 9)
+        func state(_ current: VideoItem?, at position: Double) -> ViewerState {
+            ViewerState(deviceName: "d", current: current, isPlaying: true, position: position, duration: 9, volume: 0.5,
+                        queue: [], history: [])
+        }
+        XCTAssertEqual(QueueKeeper.snapshot(state(s, at: 3))?.current?.videoID, "aaaaaaaaaaa", "a 9 second clip is not already finished at 3 s")
+        XCTAssertTrue(QueueKeeper.snapshot(state(s, at: 8.8))?.isEmpty == true)
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")

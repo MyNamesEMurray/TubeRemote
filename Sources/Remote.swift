@@ -132,12 +132,13 @@ final class RemoteClient: ObservableObject, Identifiable {
             switch try? JSONDecoder().decode(ServerMessage.self, from: body) {
             case .state(let st)?:
                 if !connected { Log.add("first state from \(tag)") }
+                let previous = connected ? state : nil
                 state = st
                 connected = true
                 needsPairing = false
                 busy = false
                 detail = ""
-                keeper?.observe(st, key: key)
+                keeper?.observe(st, previous: previous, key: key)
             case .goodbye?:
                 Log.add("disconnected by \(tag)")
                 released = true

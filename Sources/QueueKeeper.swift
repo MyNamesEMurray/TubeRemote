@@ -11,11 +11,11 @@ final class QueueKeeper {
     /// A position moves every second; it is only worth writing again once it has moved this far.
     static let positionStep = 10.0
 
-    /// Nil for an idle, empty viewer: that says nothing about what was saved. A video within ten seconds of its end counts as played.
+    /// Nil for an idle, empty viewer: that says nothing about what was saved. A video within ten seconds (or 5% of a short one) of its end counts as played.
     static func snapshot(_ st: ViewerState) -> SavedQueue? {
         if st.current == nil && st.queue.isEmpty { return nil }
         var current = st.current
-        if st.duration > 0, st.position >= st.duration - 10 { current = nil }
+        if st.duration > 0, st.position >= st.duration - min(10, st.duration * 0.05) { current = nil }
         current?.startAt = nil
         return SavedQueue(current: current, position: current == nil ? 0 : st.position, queue: st.queue)
     }
@@ -25,9 +25,14 @@ final class QueueKeeper {
             || abs(new.position - saved.position) >= positionStep
     }
 
-    func observe(_ st: ViewerState, key: String) {
-        guard settings.saveQueue, ProStore.shared.has(st), key == settings.lastViewerKey,
-              let new = Self.snapshot(st), Self.shouldSave(saved: settings.savedQueue, new: new) else { return }
-        settings.savedQueue = new
+    /// `previous` is the last state of this same connection. A viewer that goes from active to idle while connected was
+    /// emptied on purpose or finished, so nothing is left to resume.
+    func observe(_ st: ViewerState, previous: ViewerState?, key: String) {
+        guard settings.saveQueue, ProStore.shared.has(st), key == settings.lastViewerKey else { return }
+        guard let new = Self.snapshot(st) else {
+            if let previous, Self.snapshot(previous) != nil { settings.savedQueue = SavedQueue() }
+            return
+        }
+        if Self.shouldSave(saved: settings.savedQueue, new: new) { settings.savedQueue = new }
     }
 }

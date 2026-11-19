@@ -10,27 +10,16 @@ jobs:
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 27
-        run: |
-          # App Store Connect wants the iOS 27 SDK from April 2027, so use the newest release Xcode 27, never a beta.
-          XCODE=$(ls -d /Applications/Xcode_27.*.app /Applications/Xcode_27.app 2>/dev/null | grep -vi beta | sort -V | tail -1)
-          if [ -z "$XCODE" ]; then
-            echo "::error::No release Xcode 27 on this runner image. Installed:"
-            ls /Applications | grep -i xcode || true
-            exit 1
-          fi
-          sudo xcode-select -s "$XCODE"
-          xcodebuild -version
+      - uses: ./.github/actions/xcode
+        id: xcode
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
         run: xcodegen generate
       - name: Test
         run: |
-          # Pick whichever iPhone simulator this runner image has, newest iOS first.
-          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; r=json.load(sys.stdin)['devices']; print(next(d['udid'] for k in sorted(r, reverse=True) if 'iOS' in k for d in r[k] if 'iPhone' in d['name'] and 'Duo' not in d['name']))")
           xcodebuild test -project TubeRemote.xcodeproj -scheme TubeRemote \
-            -destination "id=$UDID" \
+            -destination "id=${{ steps.xcode.outputs.simulator }}" \
             CODE_SIGNING_ALLOWED=NO
       - name: Build (unsigned, device)
         run: |

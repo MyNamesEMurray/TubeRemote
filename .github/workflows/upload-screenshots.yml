@@ -1,12 +1,8 @@
 # Uploads AppStore/screenshots to the editable App Store version, replacing whatever is in its 6.9" iPhone and 13" iPad
-# sets (en-US). A workflow that is not on the default branch cannot be started by hand, so pushing this file runs it.
+# sets (en-US). Run by hand only: it overwrites screenshots added in App Store Connect.
 name: Upload Screenshots
 on:
   workflow_dispatch:
-  push:
-    branches-ignore: [main]
-    paths:
-      - .github/workflows/upload-screenshots.yml
 
 permissions:
   contents: read

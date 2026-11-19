@@ -151,12 +151,16 @@ def main():
             continue
         set_id = screenshot_set(localization["id"], display_type)
         existing = api("GET", f"/v1/appScreenshotSets/{set_id}/appScreenshots?limit=50")["data"]
-        for screenshot in existing:
-            api("DELETE", f"/v1/appScreenshots/{screenshot['id']}")
         ids = [upload(set_id, path) for path in files]
-        api("PATCH", f"/v1/appScreenshotSets/{set_id}/relationships/appScreenshots", {
-            "data": [{"type": "appScreenshots", "id": screenshot_id} for screenshot_id in ids]})
         failures = wait_for_processing(ids)
+        if failures:
+            for screenshot_id in ids:
+                api("DELETE", f"/v1/appScreenshots/{screenshot_id}")
+        else:
+            for screenshot in existing:
+                api("DELETE", f"/v1/appScreenshots/{screenshot['id']}")
+            api("PATCH", f"/v1/appScreenshotSets/{set_id}/relationships/appScreenshots", {
+                "data": [{"type": "appScreenshots", "id": screenshot_id} for screenshot_id in ids]})
         problems += [f"{locale}: {failure}" for failure in failures]
         status = "ok" if not failures else f"{len(failures)} problem(s)"
         print(f"{locale}: replaced {len(existing)} with {len(ids)} screenshots in {display_type} (set {set_id}), {status}")
