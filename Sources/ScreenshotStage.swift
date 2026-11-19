@@ -1,7 +1,7 @@
 #if DEBUG
 import SwiftUI
 
-/// Debug builds only. Launched with `-TubeRemoteScreenshots controls|queue`, the app opens straight onto that
+/// Debug builds only. Launched with `-TubeRemoteScreenshots controls|queue|paywall`, the app opens straight onto that
 /// Now Playing panel with a staged viewer in place of a network, for the store screenshots (`screenshots.yml`).
 enum ScreenshotStage {
     static var shot: String? { UserDefaults.standard.string(forKey: "TubeRemoteScreenshots") }
@@ -44,12 +44,16 @@ struct StagedShot: View {
         _remote = StateObject(wrappedValue: RemoteController(settings: s, pairing: p))
     }
 
-    var body: some View {
-        NowPlayingContent(client: client, dismiss: {})
-            .environmentObject(settings)
-            .environmentObject(remote)
-            .environmentObject(pairing)
-            .environmentObject(ProStore.shared)
+    @ViewBuilder var body: some View {
+        if ScreenshotStage.shot == "paywall" {
+            PaywallView().environmentObject(ProStore.shared)
+        } else {
+            NowPlayingContent(client: client, dismiss: {})
+                .environmentObject(settings)
+                .environmentObject(remote)
+                .environmentObject(pairing)
+                .environmentObject(ProStore.shared)
+        }
     }
 }
 #endif

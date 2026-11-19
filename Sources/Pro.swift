@@ -4,6 +4,14 @@ import SwiftUI
 final class ProStore: ObservableObject {
     static let shared = ProStore()
     static let productID = "com.exaltedpixels.TubeRemote.pro"
+    /// Debug builds launched with `-TubeRemotePrice '$4.99'` show that price before the product has loaded, for the store screenshot.
+    static var stagedPrice: String? {
+        #if DEBUG
+        UserDefaults.standard.string(forKey: "TubeRemotePrice")
+        #else
+        nil
+        #endif
+    }
 
     @Published private(set) var isPro: Bool
     @Published private(set) var product: Product?
@@ -89,7 +97,9 @@ struct PaywallView: View {
         ("list.bullet.rectangle", "Add a whole playlist to the queue"),
         ("square.and.arrow.up", "Share a video to the viewer from other apps"),
         ("person.2.fill", "Several remotes on one viewer. Pro on the viewer or on any one remote is enough for everyone connected"),
+        ("tray.and.arrow.down.fill", "Keep your queue on the remote, and resume it where you left off"),
     ]
+    private var price: String? { pro.product?.displayPrice ?? ProStore.stagedPrice }
 
     var body: some View {
         NavigationStack {
@@ -125,8 +135,8 @@ struct PaywallView: View {
                             Group {
                                 if pro.busy {
                                     ProgressView()
-                                } else if let p = pro.product {
-                                    Text("Buy for \(p.displayPrice)")
+                                } else if let price {
+                                    Text("Buy for \(price)")
                                 } else {
                                     Text("Unavailable right now")
                                 }
@@ -136,7 +146,7 @@ struct PaywallView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
-                        .disabled(pro.product == nil || pro.busy)
+                        .disabled(price == nil || pro.busy)
                     }
                     Button("Restore Purchases") { Task { await pro.restore() } }
                         .disabled(pro.busy)

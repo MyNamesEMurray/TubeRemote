@@ -10,6 +10,9 @@ on:
         type: choice
         default: dark
         options: [dark, light]
+      price:
+        description: Price shown on the paywall screenshot (the in-app purchase review screenshot)
+        default: $4.99
   # A workflow that is not on the default branch cannot be started by hand, so pushing it (or the staged screens) starts it.
   push:
     branches-ignore: [main]
@@ -43,6 +46,7 @@ jobs:
       - name: Capture
         env:
           APPEARANCE: ${{ inputs.appearance || 'dark' }}
+          PRICE: ${{ inputs.price || '$4.99' }}
         run: |
           APP=DerivedData/Build/Products/Debug-iphonesimulator/TubeRemote.app
           for pair in "iphone-6.9:$IPHONE" "ipad-13:$IPAD"; do
@@ -54,8 +58,8 @@ jobs:
             xcrun simctl status_bar "$U" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 \
               --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
             xcrun simctl install "$U" "$APP"
-            for SHOT in controls queue; do
-              xcrun simctl launch --terminate-running-process "$U" com.exaltedpixels.TubeRemote -TubeRemoteScreenshots "$SHOT"
+            for SHOT in controls queue paywall; do
+              xcrun simctl launch --terminate-running-process "$U" com.exaltedpixels.TubeRemote -TubeRemoteScreenshots "$SHOT" -TubeRemotePrice "$PRICE"
               sleep 20
               xcrun simctl io "$U" screenshot "AppStore/screenshots/$DIR/$SHOT.png"
             done
