@@ -184,7 +184,7 @@ extension ProStore {
 }
 
 /// Sleep timer menu. The viewer holds the timer; `endsAt` is when it will pause, if one is running.
-struct SleepTimerMenu: View {
+struct SleepTimerMenu: View, Equatable {
     let endsAt: Date?
     var onDark = false
     var unlocked = false
@@ -193,6 +193,8 @@ struct SleepTimerMenu: View {
     @State private var showPaywall = false
     @State private var showCustom = false
     private var isPro: Bool { pro.isPro || unlocked }
+
+    static func == (a: SleepTimerMenu, b: SleepTimerMenu) -> Bool { a.endsAt == b.endsAt && a.onDark == b.onDark && a.unlocked == b.unlocked }
 
     private var label: some View {
         HStack(spacing: 6) {

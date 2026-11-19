@@ -827,6 +827,7 @@ struct ControlsPane: View {
                     }
                     if let speed = s.speed { playbackOptions(s, speed: speed) }
                     SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
+                        .equatable()
                     HStack(spacing: 12) {
                         Button {
                             Haptics.tap()
