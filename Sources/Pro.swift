@@ -209,6 +209,7 @@ struct SleepTimerMenu: View, Equatable {
             if !isPro { GatedBadge() }
         }
         .font(.subheadline.weight(.medium))
+        .foregroundStyle(onDark ? Color.white : Color.primary)
         .lineLimit(1)
         .padding(.horizontal, 14)
         .frame(minHeight: 36)
