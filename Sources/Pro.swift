@@ -98,6 +98,7 @@ struct PaywallView: View {
         ("square.and.arrow.up", "Share a video to the viewer from other apps"),
         ("person.2.fill", "Several remotes on one viewer. Pro on the viewer or on any one remote is enough for everyone connected"),
         ("tray.and.arrow.down.fill", "Keep your queue on the remote, and resume it where you left off"),
+        ("infinity", "Autoplay: keep going with what YouTube suggests when the queue runs out"),
     ]
     private var price: String? { pro.product?.displayPrice ?? ProStore.stagedPrice }
 
@@ -237,6 +238,39 @@ struct SleepTimerMenu: View, Equatable {
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
         .sheet(isPresented: $showCustom) { CustomSleepSheet(set: set).presentationDetents([.height(320)]) }
+    }
+}
+
+/// Pro: switches autoplay on or off. The viewer holds the setting.
+struct AutoplayButton: View {
+    let on: Bool
+    var onDark = false
+    var unlocked = false
+    let set: (Bool) -> Void
+    @EnvironmentObject var pro: ProStore
+    @State private var showPaywall = false
+    private var isPro: Bool { pro.isPro || unlocked }
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            if isPro { set(!on) } else { showPaywall = true }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: on ? "infinity.circle.fill" : "infinity.circle")
+                Text("Autoplay")
+                if !isPro { GatedBadge() }
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(onDark ? Color.white : Color.primary)
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
+            .frame(minHeight: 44)
+        }
+        .accessibilityLabel(on ? "Autoplay on" : "Autoplay off")
+        .sheet(isPresented: $showPaywall) { PaywallView() }
     }
 }
 

@@ -39,6 +39,17 @@ final class ViewerTests: XCTestCase {
         XCTAssertEqual(w.queue.first?.videoID, "ccccccccccc", "and the one that was playing goes next in the queue")
     }
 
+    func testAutoplayIsASettingTheRemoteSeesAndAnEmptyViewerStaysIdleWithoutIt() {
+        let v = makeViewer()
+        v.handle(.setAutoplay(true), from: nil)
+        XCTAssertEqual(v.snapshot().autoplay, true)
+        v.handle(.setAutoplay(false), from: nil)
+        XCTAssertEqual(v.snapshot().autoplay, false)
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.next, from: nil)
+        XCTAssertNil(v.current, "without autoplay the end of the queue stops playback")
+    }
+
     func testQueueAdvanceAndPrevious() {
         let v = makeViewer()
         v.handle(.enqueue(item("aaaaaaaaaaa")), from: nil)

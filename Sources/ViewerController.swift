@@ -30,6 +30,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     let volumeView = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
 
     private let settings: AppSettings
+    var autoplay: Bool { settings.autoplay }
     private let pairing: Pairing
     private let browser: Browser
     private let server = ViewerServer()
@@ -68,6 +69,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var sleepAtEnd = false
     /// Pause when the queue runs out, whatever video that is on.
     private var sleepAtQueueEnd = false
+    private var awaitingNext = false
+    private var autoplayStreak = 0
+    static let maxAutoplay = 50
     private var adSkippable = false
     /// What was last asked for, as opposed to `isPlaying`, which is what the page reports.
     private var wantPlaying = false
@@ -197,6 +201,29 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             else v.requestPictureInPicture();
           } catch(e) {}
           if (!was) setTimeout(function(){ if (!on()) post({t:'nopip'}) }, 1500);
+        },
+        // What YouTube would play next, for autoplay: its own pick if the page carries one, else the first
+        // suggested video that has not been played lately. The app is told the id, or null.
+        next: function(skip){
+          var ok = function(x){ return typeof x === 'string' && x.length === 11 && skip.indexOf(x) < 0 };
+          var id = null;
+          try {
+            var sets = window.ytInitialData.contents.singleColumnWatchNextResults.autoplay.autoplay.sets;
+            for (var i = 0; i < sets.length && !id; i++) {
+              var x = sets[i].autoplayVideo.watchEndpoint.videoId;
+              if (ok(x)) id = x;
+            }
+          } catch(e) {}
+          if (!id) {
+            var as = document.querySelectorAll('a[href*="/watch?v="]');
+            for (var j = 0; j < as.length && !id; j++) {
+              var h = as[j].getAttribute('href') || '', k = h.indexOf('v=');
+              var y = k < 0 ? '' : h.substr(k + 2, 11);
+              if (ok(y)) id = y;
+            }
+          }
+          post({t:'log', m:'autoplay candidate ' + id});
+          post({t:'next', id:id});
         },
         set: function(o){
           // Back to automatic: lift the limit and forget the choice YouTube saved for later videos.
@@ -387,7 +414,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         sleepAtEnd = false
         sleepAtQueueEnd = false
         queue = []
-        advance()
+        goIdle()
         wantPlaying = false
         server.disconnectAll()
     }
@@ -500,6 +527,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             autoQuality = wantQuality == nil
             pushSettings()
             return nil
+        case .setAutoplay(let on):
+            settings.autoplay = on
+            objectWillChange.send()
+            if !on { awaitingNext = false }
+            return on ? "Autoplay on" : "Autoplay off"
         case .setSleepTimer(let s):
             sleepAtEnd = false
             sleepAtQueueEnd = false
@@ -589,8 +621,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         flash("Sleep timer ended")
     }
 
-    private func start(_ item: VideoItem, pushPrevious: Bool = true) {
+    private func start(_ item: VideoItem, pushPrevious: Bool = true, auto: Bool = false) {
         server.videoChanged()
+        autoplayStreak = auto ? autoplayStreak + 1 : 0
+        awaitingNext = false
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
         let at = item.startAt.flatMap { $0.isFinite && $0 > 5 ? min($0, 86_400) : nil }
@@ -631,16 +665,46 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     /// Next in queue, or stop and go idle when the queue is empty.
     private func advance() {
-        if queue.isEmpty {
-            if let c = current { pushHistory(c) }
-            current = nil
-            isPlaying = false
-            position = 0
-            duration = 0
-            webView.loadHTMLString("<body style='background:#000'>", baseURL: nil)
-            if sleepAtQueueEnd { sleepFire() }
-        } else {
-            start(queue.removeFirst())
+        if !queue.isEmpty { return start(queue.removeFirst()) }
+        if !sleepAtQueueEnd, settings.autoplay, sessionPro, current != nil, autoplayStreak < Self.maxAutoplay {
+            return askUpNext()
+        }
+        goIdle()
+    }
+
+    private func goIdle() {
+        awaitingNext = false
+        if let c = current { pushHistory(c) }
+        current = nil
+        isPlaying = false
+        position = 0
+        duration = 0
+        webView.loadHTMLString("<body style='background:#000'>", baseURL: nil)
+        if sleepAtQueueEnd { sleepFire() }
+    }
+
+    /// Autoplay: the page names what YouTube suggests, skipping this video and the last twenty. If it names nothing
+    /// within four seconds, an older video from the history is played instead.
+    private func askUpNext() {
+        guard !awaitingNext else { return }
+        awaitingNext = true
+        let skip = [current?.videoID].compactMap { $0 } + history.prefix(20).map(\.videoID)
+        let json = (try? JSONSerialization.data(withJSONObject: skip)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        js("__tr.next(\(json))")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.upNext(nil) }
+    }
+
+    func upNext(_ id: String?) {
+        guard awaitingNext else { return }
+        awaitingNext = false
+        guard let was = current?.id else { return }
+        guard let id = id ?? history.dropFirst(5).map(\.videoID).randomElement() else { return goIdle() }
+        Log.add("autoplay \(id)")
+        Task { @MainActor in
+            let item = await VideoMetadata.item(videoID: id, duration: nil)
+            guard current?.id == was else { return }
+            guard item.isValid else { return goIdle() }
+            if queue.isEmpty { start(item, auto: true) } else { advance() }
         }
     }
 
@@ -722,6 +786,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             broadcast()
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
+        case "next":
+            upNext(b["id"] as? String)
         case _ where loading:
             break
         case "ad":
@@ -804,7 +870,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     position: position, duration: duration, volume: volume, queue: queue, history: history,
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
-                    autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro)
+                    autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
+                    autoplay: settings.autoplay)
     }
 
     private func broadcast() {
