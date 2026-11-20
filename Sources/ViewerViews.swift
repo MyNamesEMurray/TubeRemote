@@ -277,6 +277,10 @@ struct ViewerControls: View {
                 touched()
                 viewer.handle(.setSleepTimer($0), from: nil)
             }
+            AutoplayButton(on: viewer.autoplay, onDark: true, unlocked: viewer.sessionPro) {
+                touched()
+                viewer.handle(.setAutoplay($0), from: nil)
+            }
             if viewer.qualities.count > 1 {
                 Menu {
                     check("Auto", viewer.autoQuality) { viewer.handle(.setQuality("auto"), from: nil) }

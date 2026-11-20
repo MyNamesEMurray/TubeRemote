@@ -28,6 +28,10 @@ final class AppSettings: ObservableObject {
     @Published var lockOnSleep: Bool {
         didSet { UserDefaults.standard.set(lockOnSleep, forKey: "lockOnSleep") }
     }
+    /// Viewer, Pro: start what YouTube suggests when the queue runs out. A remote changes it by sending a command.
+    @Published var autoplay: Bool {
+        didSet { UserDefaults.standard.set(autoplay, forKey: "autoplay") }
+    }
     @Published var hasOnboarded: Bool {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
     }
@@ -66,6 +70,7 @@ final class AppSettings: ObservableObject {
         savedQueue = stored.flatMap { try? JSONDecoder().decode(SavedQueue.self, from: $0) }
             ?? SavedQueue(queue: stored.flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? [])
         lockOnSleep = d.object(forKey: "lockOnSleep") as? Bool ?? true
+        autoplay = d.bool(forKey: "autoplay")
         hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {

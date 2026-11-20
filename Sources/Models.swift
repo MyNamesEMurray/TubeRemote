@@ -117,6 +117,8 @@ struct ViewerState: Codable, Equatable {
     var captionsStatus: String?
     /// Pro is on the viewer or a connected remote, so every remote may use Pro features.
     var sessionPro: Bool?
+    /// Pro: when the queue runs out the viewer starts what YouTube suggests next. Nil on a viewer that cannot do this.
+    var autoplay: Bool?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -136,6 +138,7 @@ enum Command: Codable {
     case setPreferredQuality(String)
     /// Seconds until the viewer pauses; 0 means at the end of the video, -1 at the end of the queue, nil switches the timer off.
     case setSleepTimer(Double?)
+    case setAutoplay(Bool)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.
     case playlist([VideoItem], QueueAction)
 }
