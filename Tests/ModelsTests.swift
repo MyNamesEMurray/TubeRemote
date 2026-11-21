@@ -135,6 +135,14 @@ final class ModelsTests: XCTestCase {
         }
     }
 
+    func testListsMessageRoundTrip() throws {
+        let item = VideoItem(videoID: "aaaaaaaaaaa", title: "a", channel: "c", duration: 10)
+        let data = try JSONEncoder().encode(ServerMessage.lists(queue: [item], history: []))
+        guard case .lists(let q, let h) = try JSONDecoder().decode(ServerMessage.self, from: data) else { return XCTFail("wrong case") }
+        XCTAssertEqual(q.map(\.videoID), ["aaaaaaaaaaa"])
+        XCTAssertTrue(h.isEmpty)
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")
