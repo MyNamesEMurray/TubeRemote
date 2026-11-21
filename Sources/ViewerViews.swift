@@ -40,7 +40,7 @@ struct ViewerView: View {
                     if open {
                         SwipeAway(onClose: closePanel) { sidePanel }
                             .frame(width: panel)
-                            .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5) }
+                            .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5).ignoresSafeArea(edges: .vertical) }
                             .transition(.move(edge: .trailing))
                     }
                 }
@@ -503,7 +503,7 @@ struct SwipeAway<Content: View>: View {
                     .frame(width: 30, height: 120, alignment: .leading)
                     .contentShape(Rectangle())
                     .gesture(
-                        DragGesture(minimumDistance: 4)
+                        DragGesture(minimumDistance: 4, coordinateSpace: .global)
                             .onChanged { drag = max(0, $0.translation.width) }
                             .onEnded { v in
                                 if v.translation.width > 80 || v.predictedEndTranslation.width > 200 {
