@@ -79,6 +79,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var watching = false
     private var infoTries = 0
     var live = false
+    private var liveReloaded = false
     var atLiveHead = false
     private var commentsNext: String?
     private var commentsLoading = false
@@ -765,6 +766,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         autoplayStreak = auto ? autoplayStreak + 1 : 0
         live = false
         atLiveHead = false
+        liveReloaded = false
         awaitingNext = false
         autoplayNext = nil
         candidateFor = nil
@@ -1054,6 +1056,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             let now = Date()
             if let p = b["pos"] as? Double, abs(p - lastPos) > 0.05 { lastPos = p; lastMove = now }
             let notMoving = now.timeIntervalSince(lastMove) > 1.2
+            if live, wantPlaying, !liveReloaded, now.timeIntervalSince(lastMove) > 20, let id = current?.videoID {
+                liveReloaded = true
+                Log.add("live stream has stopped moving, reloading it as a video")
+                loading = true
+                lastMove = now
+                lastPos = -1
+                startedAt = now
+                webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(max(Int(position) - 10, 0))s")!))
+                break
+            }
             if wantPlaying, notMoving, now.timeIntervalSince(startedAt) < 25, now.timeIntervalSince(lastKick) > 1.2 {
                 lastKick = now
                 Log.add("not moving at \(lastPos) paused=\(b["paused"] ?? "?") muted=\(b["muted"] ?? "?"), attempt \(kickCount % 3)")
