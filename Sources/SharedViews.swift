@@ -76,10 +76,10 @@ struct GlassBackground<S: Shape>: ViewModifier {
 }
 
 struct PanelBackground: ViewModifier {
-    @Environment(\.horizontalSizeClass) private var hSize
+    let floating: Bool
 
     func body(content: Content) -> some View {
-        if hSize == .compact {
+        if floating {
             content.glassBackground(RoundedRectangle(cornerRadius: 22, style: .continuous), .regularMaterial)
         } else {
             content.background(.regularMaterial)

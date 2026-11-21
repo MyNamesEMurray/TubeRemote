@@ -4,8 +4,8 @@ import MediaPlayer
 struct ViewerView: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
-    @Environment(\.horizontalSizeClass) private var hSize
     @Binding var showSettings: Bool
+    @State private var viewWidth: CGFloat = 1024
     @State private var showQueue = false
     @State private var showBrowse = false
     @State private var showPair = false
@@ -16,12 +16,14 @@ struct ViewerView: View {
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
+    private var docked: Bool { viewWidth >= 700 }
+
     private var sideWidth: CGFloat {
-        hSize == .regular && (viewer.richView || showQueue) ? (viewer.richView ? 380 : 340) : 0
+        docked && (viewer.richView || showQueue) ? (viewer.richView ? 380 : 340) : 0
     }
 
     @ViewBuilder private var sidePanel: some View {
-        if viewer.richView { RichPanel() } else { QueueSidebar(onClose: closePanel) }
+        if viewer.richView { RichPanel(floating: !docked) } else { QueueSidebar(floating: !docked, onClose: closePanel) }
     }
 
     private func closePanel() {
@@ -33,7 +35,7 @@ struct ViewerView: View {
             Color.black.ignoresSafeArea()
             GeometryReader { geo in
                 let panel: CGFloat = viewer.richView ? 380 : 340
-                let open = hSize == .regular && (viewer.richView || showQueue)
+                let open = docked && (viewer.richView || showQueue)
                 ZStack(alignment: .trailing) {
                     Hosted(view: viewer.webView)
                         .scaleEffect(open ? max(geo.size.width - panel, 1) / max(geo.size.width, 1) : 1, anchor: .leading)
@@ -50,8 +52,13 @@ struct ViewerView: View {
             Hosted(view: viewer.volumeView).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { viewWidth = g.size.width }
+                .onChange(of: g.size.width) { viewWidth = $0 }
+        })
         .overlay(alignment: .trailing) {
-            if (showQueue || viewer.richView) && hSize == .compact {
+            if (showQueue || viewer.richView) && !docked {
                 SwipeAway(onClose: closePanel) { sidePanel }
                     .frame(width: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -541,6 +548,7 @@ struct PanelClose: View {
 
 struct RichPanel: View {
     @EnvironmentObject var viewer: ViewerController
+    var floating = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -561,12 +569,13 @@ struct RichPanel: View {
             }
             .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         }
-        .modifier(PanelBackground())
+        .modifier(PanelBackground(floating: floating))
     }
 }
 
 struct QueueSidebar: View {
     @EnvironmentObject var viewer: ViewerController
+    var floating = false
     var onClose: () -> Void = {}
     @State private var tab = 0
 
@@ -604,7 +613,7 @@ struct QueueSidebar: View {
                     onClear: { viewer.handle(.clearHistory, from: nil) })
             }
         }
-        .modifier(PanelBackground())
+        .modifier(PanelBackground(floating: floating))
     }
 }
 
