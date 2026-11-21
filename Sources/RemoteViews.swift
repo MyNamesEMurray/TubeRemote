@@ -46,7 +46,7 @@ struct RemoteView: View {
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let c = remote.active {
-                        RemoteBar(client: c, canSend: browser.videoID != nil, hasPlaylist: browser.playlistID != nil,
+                        RemoteBar(client: c, canSend: browser.videoID != nil, pageVideoID: browser.videoID, hasPlaylist: browser.playlistID != nil,
                                   sending: sending, open: { showNow = true }, send: { send($0, to: c) }, play: { playTapped() },
                                   sendPlaylist: { sendPlaylist($0, reversed: $1, to: c) }, here: { browser.play() })
                     } else if browser.videoID != nil {
@@ -258,6 +258,7 @@ struct RemoteBar: View {
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     let canSend: Bool
+    let pageVideoID: String?
     let hasPlaylist: Bool
     let sending: Bool
     let open: () -> Void
@@ -305,12 +306,21 @@ struct RemoteBar: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .frame(minHeight: 44)
+                } else if canSend && (pageVideoID != cur?.videoID || client.needsPairing) {
+                    PlayMenu(target: client.key, title: client.title, pairing: client.needsPairing,
+                             active: client.connected || client.needsPairing, sending: sending, play: play, here: here)
+                        .equatable()
                 } else if cur != nil {
                     Button {
                         Haptics.tap()
                         client.send(playing ? .pause : .resume)
                     } label: {
-                        Image(systemName: playing ? "pause.fill" : "play.fill").font(.title2).frame(width: 44, height: 44)
+                        Image(systemName: playing ? "pause.fill" : "play.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.accentColor, in: Circle())
+                            .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel(playing ? "Pause" : "Play")
                 }
@@ -318,14 +328,9 @@ struct RemoteBar: View {
                     PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), send: sendPlaylist)
                         .equatable()
                 }
-                if canSend {
-                    PlayMenu(target: client.key, title: client.title, pairing: client.needsPairing,
-                             active: client.connected || client.needsPairing, sending: sending, play: play, here: here)
+                if canSend && !client.needsPairing {
+                    QueueMenu(target: client.key, title: client.title, active: client.connected, sending: sending, send: send)
                         .equatable()
-                    if !client.needsPairing {
-                        QueueMenu(target: client.key, title: client.title, active: client.connected, sending: sending, send: send)
-                            .equatable()
-                    }
                 }
             }
             .foregroundStyle(.primary)
