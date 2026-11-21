@@ -191,17 +191,24 @@ struct ViewerView: View {
         .buttonStyle(.plain)
     }
 
+    private func menuButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: Circle())
+                .contentShape(Circle())
+        }
+        .accessibilityLabel(label)
+    }
+
     private var menu: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            Button(action: toggleMenu) {
-                Image(systemName: "ellipsis")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .contentShape(Circle())
+            HStack(spacing: 8) {
+                menuButton("gearshape", "Settings") { closeMenu(); showSettings = true }
+                menuButton("ellipsis", "Menu", action: toggleMenu)
             }
-            .accessibilityLabel("Menu")
             if showMenu {
                 VStack(alignment: .leading, spacing: 0) {
                     menuRow("Browse YouTube", "safari") { showBrowse = true }
@@ -209,8 +216,6 @@ struct ViewerView: View {
                     menuRow("Devices", "link") { showPair = true }
                     Divider()
                     menuRow(showQueue ? "Hide queue" : "Show queue", "list.bullet") { showQueue.toggle() }
-                    Divider()
-                    menuRow("Settings", "gearshape") { showSettings = true }
                     Divider()
                     menuRow("End session", "stop.circle", tint: .red) {
                         showQueue = false
