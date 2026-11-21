@@ -781,6 +781,7 @@ struct ControlsPane: View {
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     @State private var scrub: Double?
+    @State private var scrubbing = false
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
     @State private var seekWork: DispatchWorkItem?
@@ -822,16 +823,13 @@ struct ControlsPane: View {
                             .background(Color.red, in: Capsule())
                     } else {
                     VStack(spacing: 2) {
-                        Slider(
-                            value: Binding(get: { s.live == true && s.liveHead == true ? s.duration : pos }, set: { scrub = $0; scheduleSeek() }),
-                            in: 0...max(s.duration, 1)
-                        ) { editing in
-                            if !editing { commitSeek() }
-                        }
-                        // State arrives once a second; glide between updates instead of jumping.
+                        ScrubBar(
+                            value: scrub ?? (s.live == true && s.liveHead == true ? s.duration : pos),
+                            maxValue: s.duration,
+                            onScrub: { scrub = $0; scheduleSeek() },
+                            onEnd: commitSeek,
+                            onActive: { scrubbing = $0 })
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
-                        .accessibilityLabel("Playback position")
-                        .accessibilityValue("\(clock(pos)) of \(clock(s.duration))")
                         HStack {
                             Text(clock(pos))
                             Spacer()
@@ -909,6 +907,7 @@ struct ControlsPane: View {
                 .frame(maxWidth: .infinity)
                 .disabled(!client.connected)
             }
+            .scrollDisabled(scrubbing)
             .sheet(isPresented: $showPaywall) { PaywallView() }
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
