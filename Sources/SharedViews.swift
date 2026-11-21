@@ -268,7 +268,7 @@ struct QueueList: View {
                                     .tint(.accentColor)
                                 }
                         } header: {
-                            Label("Autoplay next", systemImage: "infinity")
+                            Label("Autoplay", systemImage: "infinity")
                         }
                     }
                 }
