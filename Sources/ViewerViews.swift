@@ -26,7 +26,7 @@ struct ViewerView: View {
                     Hosted(view: viewer.webView)
                         .scaleEffect(open ? max(geo.size.width - panel, 1) / max(geo.size.width, 1) : 1, anchor: .leading)
                     if open {
-                        Group { if viewer.richView { RichPanel() } else { QueueSidebar() } }
+                        Group { if viewer.richView { RichPanel() } else { QueueSidebar(onClose: { showQueue = false }) } }
                             .frame(width: panel)
                             .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5) }
                             .transition(.move(edge: .trailing))
@@ -39,7 +39,7 @@ struct ViewerView: View {
         }
         .overlay(alignment: .trailing) {
             if (showQueue || viewer.richView) && hSize == .compact {
-                Group { if viewer.richView { RichPanel() } else { QueueSidebar() } }
+                Group { if viewer.richView { RichPanel() } else { QueueSidebar(onClose: { showQueue = false }) } }
                     .frame(width: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: .black.opacity(0.4), radius: 16)
@@ -455,36 +455,67 @@ struct IdleView: View {
 }
 
 /// The description or comments beside the video. The remote opens it, picks the tab and scrolls it.
+struct PanelClose: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: "xmark.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Hide")
+    }
+}
+
 struct RichPanel: View {
     @EnvironmentObject var viewer: ViewerController
 
     var body: some View {
-        Group {
-            if viewer.richTab == 1 {
-                CommentsList(details: viewer.details, follow: viewer.richScroll)
-            } else if let info = viewer.details?.info {
-                DescriptionLines(info: info, follow: viewer.richScroll)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            HStack {
+                Text(viewer.richTab == 1 ? "Comments" : "Description").font(.headline)
+                Spacer()
+                PanelClose { viewer.handle(.setRichView(false), from: nil) }
             }
+            .padding(.leading, 16)
+            Group {
+                if viewer.richTab == 1 {
+                    CommentsList(details: viewer.details, follow: viewer.richScroll)
+                } else if let info = viewer.details?.info {
+                    DescriptionLines(info: info, follow: viewer.richScroll)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         }
-        .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         .background(.regularMaterial)
     }
 }
 
 struct QueueSidebar: View {
     @EnvironmentObject var viewer: ViewerController
+    var onClose: () -> Void = {}
     @State private var tab = 0
 
     var body: some View {
         VStack(spacing: 8) {
-            Picker("List", selection: $tab) {
-                Text("Up next").tag(0)
-                Text("History").tag(1)
+            HStack(spacing: 4) {
+                Picker("List", selection: $tab) {
+                    Text("Up next").tag(0)
+                    Text("History").tag(1)
+                }
+                .pickerStyle(.segmented)
+                PanelClose(action: onClose)
             }
-            .pickerStyle(.segmented)
-            .padding([.horizontal, .top])
+            .padding(.leading)
+            .padding(.top, 4)
             if tab == 0 {
                 QueueList(
                     items: viewer.queue,
