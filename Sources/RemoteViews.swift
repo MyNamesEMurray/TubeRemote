@@ -536,7 +536,13 @@ struct QueueMenu: View, Equatable {
 
 struct DevicePicker: View {
     @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @State private var forgetting: PairedDevice?
+
+    private var away: [PairedDevice] {
+        settings.paired.filter { p in !remote.devices.contains { $0.key == p.key } }
+    }
 
     var body: some View {
         NavigationStack {
@@ -577,9 +583,22 @@ struct DevicePicker: View {
                             c.beginPair()
                             dismiss()
                         })
+                        .swipeActions {
+                            if let p = settings.paired(c.key) { Button("Forget", role: .destructive) { forgetting = p } }
+                        }
                     }
                 } footer: {
                     Text("Open the app on another device and switch it to Viewer mode.")
+                }
+                if !away.isEmpty {
+                    Section("Not found") {
+                        ForEach(away) { p in
+                            Label(p.name, systemImage: "tv")
+                                .foregroundStyle(.secondary)
+                                .frame(minHeight: 44)
+                                .swipeActions { Button("Forget", role: .destructive) { forgetting = p } }
+                        }
+                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -588,6 +607,16 @@ struct DevicePicker: View {
             .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .confirmationDialog(
+                "Forget \(forgetting?.name ?? "this device")?",
+                isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                titleVisibility: .visible,
+                presenting: forgetting
+            ) { d in
+                Button("Forget", role: .destructive) { settings.paired.removeAll { $0.key == d.key } }
+            } message: { _ in
+                Text("It must pair again to reconnect.")
             }
         }
     }
