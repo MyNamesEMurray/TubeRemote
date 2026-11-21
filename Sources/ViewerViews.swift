@@ -19,16 +19,20 @@ struct ViewerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            HStack(spacing: 0) {
-                Hosted(view: viewer.webView)
-                if viewer.richView && hSize == .regular {
-                    Divider()
-                    RichPanel().frame(width: 380)
-                        .transition(.move(edge: .trailing))
-                } else if showQueue && hSize == .regular {
-                    Divider()
-                    QueueSidebar().frame(width: 340)
-                        .transition(.move(edge: .trailing))
+            // The page keeps its full size and is scaled down beside the panel. Resizing the web view on every frame of
+            // the slide made the video re-lay out and judder; a transform only moves a finished picture.
+            GeometryReader { geo in
+                let panel: CGFloat = viewer.richView ? 380 : 340
+                let open = hSize == .regular && (viewer.richView || showQueue)
+                ZStack(alignment: .trailing) {
+                    Hosted(view: viewer.webView)
+                        .scaleEffect(open ? max(geo.size.width - panel, 1) / max(geo.size.width, 1) : 1, anchor: .leading)
+                    if open {
+                        Group { if viewer.richView { RichPanel() } else { QueueSidebar() } }
+                            .frame(width: panel)
+                            .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5) }
+                            .transition(.move(edge: .trailing))
+                    }
                 }
             }
             if viewer.current == nil { IdleView { showPair = true } }
