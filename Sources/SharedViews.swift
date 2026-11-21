@@ -61,6 +61,30 @@ struct VideoRow: View {
     }
 }
 
+struct LivePill: View {
+    let atHead: Bool
+    let action: () -> Void
+    var onDark = false
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                Circle().fill(atHead ? Color.white : Color.red).frame(width: 7, height: 7)
+                Text(atHead ? "LIVE" : "Go live").font(.caption.bold())
+            }
+            .foregroundStyle(atHead || onDark ? Color.white : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(atHead ? Color.red : onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
+        }
+        .disabled(atHead)
+        .accessibilityLabel(atHead ? "Live" : "Go to the live edge")
+    }
+}
+
 struct Pill<Content: View>: View {
     var selected = false
     var onDark = false

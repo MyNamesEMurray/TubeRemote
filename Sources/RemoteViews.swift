@@ -823,7 +823,7 @@ struct ControlsPane: View {
                     } else {
                     VStack(spacing: 2) {
                         Slider(
-                            value: Binding(get: { pos }, set: { scrub = $0; scheduleSeek() }),
+                            value: Binding(get: { s.live == true && s.liveHead == true ? s.duration : pos }, set: { scrub = $0; scheduleSeek() }),
                             in: 0...max(s.duration, 1)
                         ) { editing in
                             if !editing { commitSeek() }
@@ -835,10 +835,13 @@ struct ControlsPane: View {
                         HStack {
                             Text(clock(pos))
                             Spacer()
-                            Text("-" + clock(max(s.duration - pos, 0)))
+                            if s.live == true {
+                                LivePill(atHead: s.liveHead == true) { client.send(.goLive) }
+                            } else {
+                                Text("-" + clock(max(s.duration - pos, 0)))
+                            }
                         }
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
                     }
                     }
                     HStack(spacing: 0) {
