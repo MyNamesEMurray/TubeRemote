@@ -8,7 +8,7 @@ enum Transport {
     static let serviceType = "_ytremote._tcp"
     static let maxMessage = 1 << 20
     /// Bump when a message changes in a way older builds cannot read.
-    static let version = 2
+    static let version = 3
 
     static func parameters() -> NWParameters {
         let p = NWParameters.tcp
@@ -116,6 +116,7 @@ final class ViewerServer {
         var name = "a remote"
         var last = Date()
         var hello = false
+        var listsSent = -1
         var key: String?
         var pro = false
         var since = Date.distantFuture
@@ -265,10 +266,33 @@ final class ViewerServer {
         onPeers?()
     }
 
+    private var listsVersion = 0
+    private var lastQueue: [VideoItem] = []
+    private var lastHistory: [VideoItem] = []
+
+    private func track(_ state: ViewerState) {
+        guard state.queue != lastQueue || state.history != lastHistory else { return }
+        lastQueue = state.queue
+        lastHistory = state.history
+        listsVersion += 1
+    }
+
+    private func sendState(_ state: ViewerState, to id: ObjectIdentifier) {
+        if conns[id]?.listsSent != listsVersion {
+            sendSealed(.lists(queue: lastQueue, history: lastHistory), to: id)
+            conns[id]?.listsSent = listsVersion
+        }
+        var slim = state
+        slim.queue = []
+        slim.history = []
+        sendSealed(.state(slim), to: id)
+    }
+
     func broadcast(_ state: ViewerState) {
+        track(state)
         for (id, p) in conns {
             if p.authed {
-                sendSealed(.state(state), to: id)
+                sendState(state, to: id)
             } else if p.hello, p.nonce == nil {
                 send(.unpaired, to: id)
             }
@@ -402,7 +426,10 @@ final class ViewerServer {
             conns[id]?.since = Date()
             conns[id]?.nonce = nil
             Log.add("authenticated \(Log.who(p.key))")
-            if let s = snapshot?() { sendSealed(.state(s), to: id) }
+            if let s = snapshot?() {
+                track(s)
+                sendState(s, to: id)
+            }
             if let d = currentDetails?() { sendSealed(.details(d), to: id) }
             onPeers?()
         case .ping:

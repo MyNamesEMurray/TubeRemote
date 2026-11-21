@@ -250,6 +250,8 @@ enum ServerMessage: Codable {
     case sealed(Data)
     /// The person at the viewer disconnected this remote; it should not reconnect by itself.
     case goodbye
+    /// The queue and history, sent only when they change; the state that follows carries them empty.
+    case lists(queue: [VideoItem], history: [VideoItem])
     /// The description and comments of the playing video. Older remotes cannot decode this and ignore it.
     case details(VideoDetails)
     /// The viewer already serves another remote and nothing connected has Pro. The remote should not retry by itself.
