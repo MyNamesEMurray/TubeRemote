@@ -81,6 +81,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var live = false
     private var liveReloaded = false
     private var scanDir = 0
+    private var scanMuted = false
     private var scanStart = 0.0
     private var scanStartedAt = Date()
     private var scanTick = Date()
@@ -126,7 +127,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, sr = 0, wc = null, wq = null, tc = 0, tq = 0, errored = false;
+      var wr = 1, sr = 0, pm = null, wc = null, wq = null, tc = 0, tq = 0, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -297,6 +298,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           } catch(e) { log('error ' + e); fail('error') }
         },
         scan: function(r){ sr = r; var v = vid(); if (v) v.playbackRate = r || wr },
+        scanMute: function(on){
+          var v = vid(); if (!v) return;
+          if (on) { if (pm === null) pm = v.muted; v.muted = true }
+          else if (pm !== null) { v.muted = pm; pm = null }
+        },
         goLive: function(){
           try { mp().seekToLiveHead(); return } catch(e) {}
           var b = document.querySelector('.ytp-live-badge'); if (b) b.click();
@@ -670,14 +676,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             guard richView else { return nil }
             richScroll = min(max(i, 0), 5000)
             return nil
-        case .scan(let d):
+        case .scan(let d, let mute):
             guard current != nil else { return nil }
             if d == 0 {
                 stopScan()
             } else {
                 scanSeen = Date()
                 let dir = d > 0 ? 1 : -1
-                if scanDir != dir { startScan(dir) }
+                if scanDir != dir { startScan(dir, mute: mute) }
             }
             return nil
         case .scanEnd(let held):
@@ -961,7 +967,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         if let d = details { server.broadcastDetails(d) }
     }
 
-    private func startScan(_ dir: Int) {
+    private func startScan(_ dir: Int, mute: Bool) {
         let was = scanDir != 0 ? scanWasPlaying : wantPlaying
         stopScan(resume: false)
         scanWasPlaying = was
@@ -970,6 +976,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         scanStartedAt = Date()
         scanTick = scanStartedAt
         scanCap = ScanRamp.cap(duration: duration)
+        scanMuted = mute
+        if mute { js("__tr.scanMute(true)") }
         if dir > 0 { js("__tr.scan(\(ScanRamp.base))") } else { js("__tr.pause()") }
         scanTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.scanStep() }
     }
@@ -993,6 +1001,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         scanTimer?.invalidate()
         scanTimer = nil
         guard scanDir != 0 else { return }
+        if scanMuted { js("__tr.scanMute(false)") }
+        scanMuted = false
         if scanDir > 0 { js("__tr.scan(0)") } else if resume, scanWasPlaying { js("__tr.play()") }
         scanDir = 0
         if resume { broadcast() }
@@ -1162,7 +1172,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 Log.add("not moving at \(lastPos) paused=\(b["paused"] ?? "?") muted=\(b["muted"] ?? "?"), attempt \(kickCount % 3)")
                 js("__tr.kick(\(kickCount % 3))")
                 kickCount += 1
-            } else if wantPlaying, !notMoving, b["muted"] as? Bool == true, now.timeIntervalSince(lastKick) > 1 {
+            } else if wantPlaying, scanDir == 0, !notMoving, b["muted"] as? Bool == true, now.timeIntervalSince(lastKick) > 1 {
                 // Each attempt can pause the video, so only a few; after that the person gets a button.
                 if unmuteTries < 3 {
                     unmuteTries += 1

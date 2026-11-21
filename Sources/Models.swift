@@ -229,7 +229,7 @@ enum Command: Codable {
     case richTab(Int)
     case goLive
     /// Hold to scan: -1 backwards, 1 forwards, 0 stop. Sent again while held; the viewer stops by itself if it stops hearing.
-    case scan(Int)
+    case scan(Int, mute: Bool)
     /// The hold ended after this many seconds; the viewer puts playback where that much scanning leaves it.
     case scanEnd(Double)
     /// The first description line the remote has in view; the viewer scrolls to it.

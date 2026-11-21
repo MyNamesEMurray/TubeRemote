@@ -274,6 +274,7 @@ struct SettingsView: View {
                     Picker("Skip buttons", selection: $settings.skipSeconds) {
                         ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
                     }
+                    Toggle("Mute while scanning", isOn: $settings.muteWhileScanning)
                     if model.mode == .remote {
                         if pro.has(remote.active?.state) {
                             Toggle("Keep the queue", isOn: $settings.saveQueue)
