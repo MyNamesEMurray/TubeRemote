@@ -628,11 +628,16 @@ struct DeviceRow: View {
 
 struct NowPlayingView: View {
     @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var browser: Browser
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         if let c = remote.active {
-            NowPlayingContent(client: c, dismiss: { dismiss() })
+            NowPlayingContent(client: c, dismiss: { dismiss() }, openPage: { item in
+                guard item.isValid, let url = URL(string: "https://www.youtube.com/watch?v=\(item.videoID)") else { return }
+                browser.webView.load(URLRequest(url: url))
+                dismiss()
+            })
         } else {
             EmptyState(symbol: "tv", title: "No Viewer Selected", message: "Choose a viewer to control playback.")
         }
@@ -640,17 +645,20 @@ struct NowPlayingView: View {
 }
 
 struct NowPlayingContent: View {
-    private enum Panel: Hashable { case controls, queue, history }
+    private enum Panel: Hashable { case controls, details, queue, history }
 
     @ObservedObject var client: RemoteClient
     let dismiss: () -> Void
+    /// Opens the video's own YouTube page in the browser.
+    let openPage: (VideoItem) -> Void
     @State private var panel: Panel
     @State private var showPicker = false
     @State private var keys = VolumeKeys()
 
-    init(client: RemoteClient, dismiss: @escaping () -> Void) {
+    init(client: RemoteClient, dismiss: @escaping () -> Void, openPage: @escaping (VideoItem) -> Void = { _ in }) {
         self.client = client
         self.dismiss = dismiss
+        self.openPage = openPage
         var start = Panel.controls
         #if DEBUG
         if ScreenshotStage.panel == "queue" { start = .queue } else if ScreenshotStage.panel == "history" { start = .history }
@@ -693,7 +701,8 @@ struct NowPlayingContent: View {
                     switch panel {
                     case .queue: RemoteQueue(client: client)
                     case .history: RemoteHistory(client: client)
-                    case .controls: ControlsPane(client: client)
+                    case .controls: ControlsPane(client: client, open: openPage)
+                    case .details: DetailsPane(client: client)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -702,6 +711,7 @@ struct NowPlayingContent: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Picker("Show", selection: $panel) {
                     Text("Controls").tag(Panel.controls)
+                    if client.state?.richView != nil { Text("Details").tag(Panel.details) }
                     Text("Up Next").tag(Panel.queue)
                     Text("History").tag(Panel.history)
                 }
@@ -747,6 +757,7 @@ struct NowPlayingContent: View {
 
 struct ControlsPane: View {
     @ObservedObject var client: RemoteClient
+    var open: (VideoItem) -> Void = { _ in }
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     @State private var scrub: Double?
@@ -765,13 +776,22 @@ struct ControlsPane: View {
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                         .padding(.top, 8)
-                    VStack(spacing: 4) {
-                        Text(cur.title).font(.title3.bold()).multilineTextAlignment(.center)
-                        if !cur.channel.isEmpty {
-                            Text(cur.channel).font(.subheadline).foregroundStyle(.secondary)
+                    Button {
+                        Haptics.tap()
+                        open(cur)
+                    } label: {
+                        VStack(spacing: 4) {
+                            (Text(cur.title) + Text(" \(Image(systemName: "arrow.up.right.square"))").foregroundColor(.secondary))
+                                .font(.title3.bold()).multilineTextAlignment(.center)
+                            if !cur.channel.isEmpty {
+                                Text(cur.channel).font(.subheadline).foregroundStyle(.secondary)
+                            }
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
+                    .accessibilityHint("Opens the video's page to read its description and comments")
                     if s.duration <= 0, s.position > 5 {
                         // A live stream has no length to scrub through.
                         Text("LIVE")
@@ -988,6 +1008,54 @@ struct ControlsPane: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel(label)
+    }
+}
+
+/// Rich video view, Pro: the description beside the video on the viewer, scrolled from here.
+struct DetailsPane: View {
+    @ObservedObject var client: RemoteClient
+    @EnvironmentObject var pro: ProStore
+    @State private var showPaywall = false
+
+    var body: some View {
+        Group {
+            if client.state?.richView == true {
+                VStack(spacing: 0) {
+                    HStack {
+                        Label("Showing on \(client.title)", systemImage: "rectangle.righthalf.inset.filled")
+                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        Spacer()
+                        Button("Hide") { Haptics.tap(); client.send(.setRichView(false)) }
+                            .frame(minHeight: 44)
+                    }
+                    .padding(.horizontal)
+                    if let info = client.state?.info {
+                        DescriptionLines(info: info, onTop: { client.send(.richScroll($0)) }).id(info.videoID)
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+            } else {
+                VStack(spacing: 8) {
+                    EmptyState(symbol: "text.alignleft", title: "Rich video view",
+                               message: "Show this video's description beside it on the viewer, and scroll it from here.")
+                    Button {
+                        Haptics.tap()
+                        if pro.has(client.state) { client.send(.setRichView(true)) } else { showPaywall = true }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Label("Show on viewer", systemImage: "rectangle.righthalf.inset.filled")
+                            if !pro.has(client.state) { GatedBadge() }
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+        .sheet(isPresented: $showPaywall) { PaywallView() }
     }
 }
 

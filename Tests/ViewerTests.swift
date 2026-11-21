@@ -52,6 +52,29 @@ final class ViewerTests: XCTestCase {
         XCTAssertNil(v.snapshot().autoplayNext)
     }
 
+    func testRichViewOpensWithAVideoAndClampsTheScroll() {
+        let v = makeViewer()
+        v.handle(.setRichView(true), from: nil)
+        XCTAssertEqual(v.snapshot().richView, false, "nothing to show while nothing plays")
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.setRichView(true), from: nil)
+        XCTAssertEqual(v.snapshot().richView, true)
+        v.handle(.richScroll(99_999), from: nil)
+        XCTAssertEqual(v.richScroll, 5000)
+        v.handle(.play(item("bbbbbbbbbbb")), from: nil)
+        XCTAssertEqual(v.richScroll, 0, "a new video starts at the top")
+        v.handle(.setRichView(false), from: nil)
+        XCTAssertNil(v.snapshot().info)
+    }
+
+    func testVideoInfoStats() {
+        let i = VideoInfo(videoID: "aaaaaaaaaaa", title: "t", channel: "c", views: 1234, published: "2025-03-01T10:00:00-08:00",
+                          description: "a\n\nb")
+        XCTAssertEqual(i.lines, ["a", "", "b"])
+        XCTAssertTrue(i.stats.contains("views"))
+        XCTAssertEqual(VideoInfo(videoID: "x", title: "t", channel: "c", views: nil, published: nil, description: "").stats, "")
+    }
+
     func testQueueAdvanceAndPrevious() {
         let v = makeViewer()
         v.handle(.enqueue(item("aaaaaaaaaaa")), from: nil)

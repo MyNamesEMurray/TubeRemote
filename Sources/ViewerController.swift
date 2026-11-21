@@ -71,6 +71,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var sleepAtQueueEnd = false
     private var awaitingNext = false
     @Published private(set) var autoplayNext: VideoItem?
+    @Published private(set) var richView = false
+    @Published private(set) var info: VideoInfo?
+    @Published private(set) var richScroll = 0
+    private var infoTries = 0
     private var candidateFor: UUID?
     private var skipExtra: [String] = []
     private var autoplayStreak = 0
@@ -204,6 +208,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             else v.requestPictureInPicture();
           } catch(e) {}
           if (!was) setTimeout(function(){ if (!on()) post({t:'nopip'}) }, 1500);
+        },
+        // The page's own facts about the video, for the rich view.
+        info: function(){
+          var r = window.ytInitialPlayerResponse || {}, d = r.videoDetails || {}, m = {};
+          try { m = r.microformat.playerMicroformatRenderer || {} } catch(e) {}
+          post({t:'info', id:d.videoId || null, title:d.title || '', channel:d.author || '', views:d.viewCount || '',
+                date:m.publishDate || m.uploadDate || '', desc:d.shortDescription || ''});
         },
         // What YouTube would play next, for autoplay: its own pick if the page carries one, else the first
         // suggested video that has not been played lately. The app is told the id, or null.
@@ -538,6 +549,17 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 autoplayNext = nil
             }
             return on ? "Autoplay on" : "Autoplay off"
+        case .setRichView(let on):
+            guard on == false || current != nil else { return nil }
+            richView = on
+            info = nil
+            richScroll = 0
+            if on { infoTries = 0; js("__tr.info()") }
+            return nil
+        case .richScroll(let i):
+            guard richView else { return nil }
+            richScroll = min(max(i, 0), 5000)
+            return nil
         case .autoplayAnother:
             guard let n = autoplayNext else { return nil }
             skipExtra.append(n.videoID)
@@ -640,6 +662,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         autoplayNext = nil
         candidateFor = nil
         skipExtra = []
+        info = nil
+        richScroll = 0
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
         let at = item.startAt.flatMap { $0.isFinite && $0 > 5 ? min($0, 86_400) : nil }
@@ -689,6 +713,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     private func goIdle() {
+        richView = false
+        info = nil
         awaitingNext = false
         autoplayNext = nil
         candidateFor = nil
@@ -799,6 +825,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             // A pause that arrived while the page was still loading must hold once it starts.
             if !isPlaying { js("__tr.pause()") }
             pushSettings()
+            if richView { infoTries = 0; js("__tr.info()") }
         case "tap":
             tapped.send()
         case "perr":
@@ -825,6 +852,21 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             broadcast()
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
+        case "info":
+            guard richView else { break }
+            let id = b["id"] as? String ?? ""
+            let title = b["title"] as? String ?? ""
+            if id != "", id != current?.videoID { break }
+            if title.isEmpty {
+                guard infoTries < 3 else { break }
+                infoTries += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.js("__tr.info()") }
+                break
+            }
+            info = VideoInfo(videoID: current?.videoID ?? id, title: title, channel: b["channel"] as? String ?? "",
+                             views: Int(b["views"] as? String ?? ""), published: b["date"] as? String,
+                             description: String((b["desc"] as? String ?? "").prefix(5000)))
+            broadcast()
         case "next":
             if awaitingNext { upNext(b["id"] as? String) } else { prefetched(b["id"] as? String) }
         case _ where loading:
@@ -914,7 +956,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
-                    autoplay: settings.autoplay, autoplayNext: autoplayNext)
+                    autoplay: settings.autoplay, autoplayNext: autoplayNext,
+                    richView: richView, info: richView ? info : nil)
     }
 
     private func broadcast() {
