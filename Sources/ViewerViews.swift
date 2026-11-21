@@ -361,14 +361,11 @@ struct ViewerControls: View {
                 let pos = scrub ?? viewer.position
                 HStack(spacing: 12) {
                     Text(clock(pos))
-                    Slider(
-                        value: Binding(get: { viewer.live && viewer.atLiveHead ? viewer.duration : pos }, set: { scrub = $0; touched(); scheduleSeek() }),
-                        in: 0...max(viewer.duration, 1)
-                    ) { editing in
-                        if !editing { commitSeek() }
-                    }
-                    .accessibilityLabel("Playback position")
-                    .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
+                    ScrubBar(
+                        value: scrub ?? (viewer.live && viewer.atLiveHead ? viewer.duration : viewer.position),
+                        maxValue: viewer.duration,
+                        onScrub: { scrub = $0; touched(); scheduleSeek() },
+                        onEnd: commitSeek)
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {

@@ -61,6 +61,92 @@ struct VideoRow: View {
     }
 }
 
+struct ScrubBar: View {
+    let value: Double
+    let maxValue: Double
+    let onScrub: (Double) -> Void
+    let onEnd: () -> Void
+    var onActive: (Bool) -> Void = { _ in }
+    @State private var active = false
+    @State private var current = 0.0
+    @State private var lastX = 0.0
+    @State private var startY = 0.0
+    @State private var tier = 0
+
+    private static let tiers: [(label: String, factor: Double)] = [("", 1), ("Half speed", 0.5), ("Quarter speed", 0.25), ("Fine", 0.1)]
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = max(geo.size.width, 1)
+            let top = max(maxValue, 1)
+            let frac = min(max((active ? current : value) / top, 0), 1)
+            let knob: CGFloat = active ? 24 : 16
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.3)).frame(height: 4)
+                Capsule().fill(Color.accentColor).frame(width: w * frac, height: 4)
+                Circle()
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                    .frame(width: knob, height: knob)
+                    .offset(x: w * frac - knob / 2)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if active, tier > 0 {
+                    Text(Self.tiers[tier].label)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.black.opacity(0.7), in: Capsule())
+                        .offset(y: -22)
+                        .allowsHitTesting(false)
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        let x = min(max(v.location.x, 0), w)
+                        if !active {
+                            active = true
+                            onActive(true)
+                            current = abs(x - w * min(max(value / top, 0), 1)) > 28 ? x / w * top : value
+                            lastX = x
+                            startY = v.location.y
+                            tier = 0
+                        } else {
+                            let dy = abs(v.location.y - startY)
+                            let t = dy < 50 ? 0 : dy < 110 ? 1 : dy < 180 ? 2 : 3
+                            if t != tier {
+                                tier = t
+                                Haptics.tap()
+                            }
+                            current = min(max(current + (x - lastX) * (top / w) * Self.tiers[tier].factor, 0), top)
+                            lastX = x
+                        }
+                        onScrub(current)
+                    }
+                    .onEnded { _ in
+                        active = false
+                        tier = 0
+                        onActive(false)
+                        onEnd()
+                    }
+            )
+        }
+        .frame(height: 44)
+        .accessibilityElement()
+        .accessibilityLabel("Playback position")
+        .accessibilityValue("\(clock(value)) of \(clock(maxValue))")
+        .accessibilityAdjustableAction { direction in
+            let step = max(maxValue / 50, 5)
+            onScrub(min(max(value + (direction == .increment ? step : -step), 0), maxValue))
+            onEnd()
+        }
+    }
+}
+
 struct LivePill: View {
     let atHead: Bool
     let action: () -> Void
