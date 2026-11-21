@@ -63,8 +63,10 @@ final class ViewerTests: XCTestCase {
         XCTAssertEqual(v.richScroll, 5000)
         v.handle(.play(item("bbbbbbbbbbb")), from: nil)
         XCTAssertEqual(v.richScroll, 0, "a new video starts at the top")
+        v.handle(.richTab(5), from: nil)
+        XCTAssertEqual(v.snapshot().richTab, 1, "only two tabs")
         v.handle(.setRichView(false), from: nil)
-        XCTAssertNil(v.snapshot().info)
+        XCTAssertEqual(v.snapshot().richView, false)
     }
 
     func testVideoInfoStats() {

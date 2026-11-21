@@ -452,18 +452,21 @@ struct IdleView: View {
     }
 }
 
-/// The description beside the video. The remote opens it and scrolls it.
+/// The description or comments beside the video. The remote opens it, picks the tab and scrolls it.
 struct RichPanel: View {
     @EnvironmentObject var viewer: ViewerController
 
     var body: some View {
         Group {
-            if let info = viewer.info {
-                DescriptionLines(info: info, follow: viewer.richScroll).id(info.videoID)
+            if viewer.richTab == 1 {
+                CommentsList(details: viewer.details, follow: viewer.richScroll)
+            } else if let info = viewer.details?.info {
+                DescriptionLines(info: info, follow: viewer.richScroll)
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         .background(.regularMaterial)
     }
 }

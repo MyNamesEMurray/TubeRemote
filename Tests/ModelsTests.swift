@@ -116,6 +116,15 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(QueueKeeper.snapshot(state(s, at: 8.8))?.isEmpty == true)
     }
 
+    func testDetailsMessageRoundTrip() throws {
+        let d = VideoDetails(videoID: "aaaaaaaaaaa", info: nil,
+                             comments: [VideoComment(id: "1", author: "a", text: "hi", likes: "3", age: nil, replies: nil)],
+                             commentsStatus: "ok", moreComments: true)
+        let data = try JSONEncoder().encode(ServerMessage.details(d))
+        guard case .details(let back) = try JSONDecoder().decode(ServerMessage.self, from: data) else { return XCTFail("wrong case") }
+        XCTAssertEqual(back, d)
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")
