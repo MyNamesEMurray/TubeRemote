@@ -5,7 +5,6 @@ struct ViewerView: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
     @Binding var showSettings: Bool
-    @Environment(\.colorScheme) private var systemScheme
     @State private var viewWidth: CGFloat = 1024
     @State private var showQueue = false
     @State private var showBrowse = false
@@ -34,7 +33,7 @@ struct ViewerView: View {
     var body: some View {
         stage
             .environment(\.colorScheme, .dark)
-            .statusBarHidden(systemScheme == .light)
+            .preferredColorScheme(showBrowse || showPair || showSettings ? nil : .dark)
             .sheet(isPresented: $showBrowse) { LocalBrowse() }
             .sheet(isPresented: $showPair) { PairSheet() }
             .pairingPrompt()
@@ -105,9 +104,12 @@ struct ViewerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if showControls, viewer.current != nil {
-                ViewerControls(touched: { keepControls() }, menuOpened: { keepControls(for: 12) })
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            if viewer.current != nil {
+                ViewerControls(visible: showControls, touched: { keepControls() }, menuOpened: { keepControls(for: 12) })
+                    .opacity(showControls ? 1 : 0)
+                    .offset(y: showControls ? 0 : 60)
+                    .allowsHitTesting(showControls)
+                    .accessibilityHidden(!showControls)
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -250,6 +252,7 @@ struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
     @StateObject private var storyboard = Storyboard()
+    let visible: Bool
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
@@ -394,7 +397,7 @@ struct ViewerControls: View {
                 }
             }
             // Position is read on a timer here instead of being published, so only this row redraws.
-            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            TimelineView(.animation(minimumInterval: 0.5, paused: !visible)) { _ in
                 let pos = scrub ?? viewer.position
                 HStack(spacing: 12) {
                     Text(clock(pos))
