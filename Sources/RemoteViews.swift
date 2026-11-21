@@ -1132,12 +1132,13 @@ struct DetailsPane: View {
             Group {
                 if tab == 0 {
                     if let info = details?.info {
-                        DescriptionLines(info: info, onTop: report)
+                        DescriptionLines(info: info, onTop: report, onSeek: { client.send(.seek($0)) })
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
-                    CommentsList(details: details, onTop: report, onNearEnd: { client.send(.moreComments) })
+                    CommentsList(details: details, onTop: report, onNearEnd: { client.send(.moreComments) },
+                                 onToggle: { client.send(.toggleComment($0)) })
                 }
             }
             .id("\(client.state?.current?.videoID ?? "")\(tab)")

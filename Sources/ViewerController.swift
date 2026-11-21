@@ -91,6 +91,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var scanWasPlaying = false
     var atLiveHead = false
     private var commentsNext: String?
+    private var replyTokens: [String: String] = [:]
+    private var replyLoading = Set<String>()
     private var commentsLoading = false
     private var needsDetails: Bool { watching || richView }
     private var candidateFor: UUID?
@@ -186,6 +188,60 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       function skipButton(){
         var b = document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button,.ytp-ad-skip-button-container button');
         return b && b.offsetParent ? b : null }
+      // One page of comments or of the replies to one comment, through the call the page makes itself. YouTube changes
+      // the shape of this answer now and then, so both known shapes are read.
+      function ytPage(tok, done, fail){
+        var cfg = function(k){ try { return ytcfg.get(k) } catch(e) { return null } };
+        var text = function(x){ return x ? (x.simpleText || (x.runs || []).map(function(r){ return r.text }).join('')) : '' };
+        var key = cfg('INNERTUBE_API_KEY');
+        fetch('/youtubei/v1/next?prettyPrint=false' + (key ? '&key=' + key : ''), {
+          method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({context: cfg('INNERTUBE_CONTEXT'), continuation: tok})
+        }).then(function(r){ return r.json() }).then(function(j){
+          var ents = {};
+          var muts = ((j.frameworkUpdates || {}).entityBatchUpdate || {}).mutations || [];
+          muts.forEach(function(m){ var p = m.payload && m.payload.commentEntityPayload; if (p) ents[m.entityKey || p.key] = p });
+          var replyTok = function(t){
+            try { return t.replies.commentRepliesRenderer.contents[0].continuationItemRenderer.continuationEndpoint.continuationCommand.token } catch(e) { return '' }
+          };
+          var fromVM = function(vm, rt, i){
+            var v = vm.commentViewModel || vm, p = ents[v.commentKey];
+            if (!p) return null;
+            var pr = p.properties || {}, tb = p.toolbar || {};
+            return {id: pr.commentId || v.commentId || String(i), a: (p.author || {}).displayName || '', t: (pr.content || {}).content || '',
+                    l: tb.likeCountNotliked || tb.likeCountLiked || '', w: pr.publishedTime || '', r: tb.replyCount || '', rt: rt};
+          };
+          var fromCR = function(cr, rt, i){
+            return {id: cr.commentId || String(i), a: text(cr.authorText), t: text(cr.contentText), l: text(cr.voteCount),
+                    w: text(cr.publishedTimeText), r: cr.replyCount ? String(cr.replyCount) : '', rt: rt};
+          };
+          var one = function(it, i){
+            var t = it.commentThreadRenderer;
+            if (t) {
+              if (t.commentViewModel) return fromVM(t.commentViewModel, replyTok(t), i);
+              if (t.comment && t.comment.commentRenderer) return fromCR(t.comment.commentRenderer, replyTok(t), i);
+              return null;
+            }
+            if (it.commentViewModel) return fromVM(it.commentViewModel, '', i);
+            if (it.commentRenderer) return fromCR(it.commentRenderer, '', i);
+            return null;
+          };
+          var items = [], next = null;
+          (j.onResponseReceivedEndpoints || j.onResponseReceivedActions || []).forEach(function(e){
+            var c = e.reloadContinuationItemsCommand || e.appendContinuationItemsAction || {};
+            (c.continuationItems || []).forEach(function(it){
+              var x = one(it, items.length);
+              if (x) items.push(x);
+              var ci = it.continuationItemRenderer;
+              if (ci) {
+                var ep = ci.continuationEndpoint || (((ci.button || {}).buttonRenderer || {}).command) || {};
+                if (ep.continuationCommand) next = ep.continuationCommand.token;
+              }
+            });
+          });
+          done(items, next, muts.length);
+        }).catch(fail);
+      }
       window.__tr = {
         play: function(){ want = true; var v = vid(); if (v) v.play() },
         pause: function(){ want = false; var v = vid(); if (v) v.pause() },
@@ -246,8 +302,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }
             return null;
           };
-          var cfg = function(k){ try { return ytcfg.get(k) } catch(e) { return null } };
-          var text = function(x){ return x ? (x.simpleText || (x.runs || []).map(function(r){ return r.text }).join('')) : '' };
           try {
             var tok = token;
             if (!tok) {
@@ -257,45 +311,20 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
               tok = holder && holder.continuationCommand.token;
             }
             if (!tok) { log('no continuation token'); return fail('none') }
-            var key = cfg('INNERTUBE_API_KEY');
-            fetch('/youtubei/v1/next?prettyPrint=false' + (key ? '&key=' + key : ''), {
-              method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({context: cfg('INNERTUBE_CONTEXT'), continuation: tok})
-            }).then(function(r){ return r.json() }).then(function(j){
-              var ents = {};
-              var muts = ((j.frameworkUpdates || {}).entityBatchUpdate || {}).mutations || [];
-              muts.forEach(function(m){ var p = m.payload && m.payload.commentEntityPayload; if (p) ents[m.entityKey || p.key] = p });
-              var eps = j.onResponseReceivedEndpoints || j.onResponseReceivedActions || [];
-              var items = [], next = null;
-              eps.forEach(function(e){
-                var c = e.reloadContinuationItemsCommand || e.appendContinuationItemsAction || {};
-                (c.continuationItems || []).forEach(function(it){
-                  var t = it.commentThreadRenderer;
-                  if (t) {
-                    var v = t.commentViewModel && (t.commentViewModel.commentViewModel || t.commentViewModel);
-                    var p = v && ents[v.commentKey];
-                    if (p) {
-                      var pr = p.properties || {}, tb = p.toolbar || {};
-                      items.push({id: pr.commentId || v.commentId || String(items.length), a: (p.author || {}).displayName || '',
-                                  t: (pr.content || {}).content || '', l: tb.likeCountNotliked || tb.likeCountLiked || '',
-                                  w: pr.publishedTime || '', r: tb.replyCount || ''});
-                    } else if (t.comment && t.comment.commentRenderer) {
-                      var cr = t.comment.commentRenderer;
-                      items.push({id: cr.commentId || String(items.length), a: text(cr.authorText), t: text(cr.contentText),
-                                  l: text(cr.voteCount), w: text(cr.publishedTimeText), r: ''});
-                    }
-                  }
-                  var ci = it.continuationItemRenderer;
-                  if (ci) {
-                    var ep = ci.continuationEndpoint || (((ci.button || {}).buttonRenderer || {}).command) || {};
-                    if (ep.continuationCommand) next = ep.continuationCommand.token;
-                  }
-                });
-              });
-              log(items.length + ' comments, next ' + !!next + ', mutations ' + muts.length);
+            ytPage(tok, function(items, next, muts){
+              log(items.length + ' comments, next ' + !!next + ', mutations ' + muts);
               post({t:'comments', items:items, next:next, status: items.length || token ? 'ok' : 'none'});
-            }).catch(function(e){ log('fetch failed ' + e); fail('error') });
+            }, function(e){ log('fetch failed ' + e); fail('error') });
           } catch(e) { log('error ' + e); fail('error') }
+        },
+        replies: function(cid, token){
+          var fail = function(e){ post({t:'log', m:'replies failed ' + e}); post({t:'replies', cid:cid, items:[], next:null}) };
+          try {
+            ytPage(token, function(items, next, muts){
+              post({t:'log', m:'replies ' + items.length + ', next ' + !!next + ', mutations ' + muts});
+              post({t:'replies', cid:cid, items:items, next:next});
+            }, fail);
+          } catch(e) { fail(e) }
         },
         scan: function(r){ sr = r; var v = vid(); if (v) v.playbackRate = r || wr },
         scanMute: function(on){
@@ -697,6 +726,23 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             seekHoldUntil = Date().addingTimeInterval(1.5)
             js("__tr.goLive()")
             return nil
+        case .toggleComment(let id):
+            guard needsDetails, var d = currentDetails(), let i = d.comments.firstIndex(where: { $0.id == id }) else { return nil }
+            if let j = d.expanded.firstIndex(of: id) {
+                d.expanded.remove(at: j)
+            } else {
+                d.expanded.append(id)
+                if d.comments[i].replyList == nil {
+                    if let tok = replyTokens[id], !replyLoading.contains(id) {
+                        replyLoading.insert(id)
+                        js("__tr.replies(\(Self.jsString(id)), \(Self.jsString(tok)))")
+                    } else if replyTokens[id] == nil {
+                        d.comments[i].replyList = []
+                    }
+                }
+            }
+            publish(d)
+            return nil
         case .richTab(let i):
             guard richView else { return nil }
             richTab = min(max(i, 0), 1)
@@ -821,6 +867,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         details = nil
         commentsNext = nil
         commentsLoading = false
+        replyTokens = [:]
+        replyLoading = []
         richScroll = 0
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
@@ -940,6 +988,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         guard let id = current?.videoID else { return nil }
         if let d = details, d.videoID == id { return d }
         return VideoDetails(videoID: id)
+    }
+
+    private static func comment(_ c: [String: Any]) -> VideoComment? {
+        guard let id = c["id"] as? String, let text = c["t"] as? String, !text.isEmpty else { return nil }
+        func s(_ k: String) -> String? { (c[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        return VideoComment(id: id, author: String((c["a"] as? String ?? "").prefix(100)), text: String(text.prefix(2000)),
+                            likes: s("l"), age: s("w"), replies: s("r"))
     }
 
     private func publish(_ d: VideoDetails) {
@@ -1114,17 +1169,23 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case "comments":
             commentsLoading = false
             guard needsDetails, var d = currentDetails() else { break }
+            let items = b["items"] as? [[String: Any]] ?? []
             let have = Set(d.comments.map(\.id))
-            let fresh = (b["items"] as? [[String: Any]] ?? []).compactMap { c -> VideoComment? in
-                guard let id = c["id"] as? String, !have.contains(id), let text = c["t"] as? String, !text.isEmpty else { return nil }
-                func s(_ k: String) -> String? { (c[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
-                return VideoComment(id: id, author: String((c["a"] as? String ?? "").prefix(100)), text: String(text.prefix(2000)),
-                                    likes: s("l"), age: s("w"), replies: s("r"))
+            let fresh = items.compactMap { c -> VideoComment? in
+                guard let id = c["id"] as? String, !have.contains(id) else { return nil }
+                if let rt = c["rt"] as? String, !rt.isEmpty { replyTokens[id] = rt }
+                return Self.comment(c)
             }
             d.comments = Array((d.comments + fresh).prefix(Self.maxComments))
             commentsNext = d.comments.count >= Self.maxComments ? nil : b["next"] as? String
             d.moreComments = commentsNext != nil
             d.commentsStatus = b["status"] as? String ?? "error"
+            publish(d)
+        case "replies":
+            guard let cid = b["cid"] as? String else { break }
+            replyLoading.remove(cid)
+            guard var d = currentDetails(), let i = d.comments.firstIndex(where: { $0.id == cid }) else { break }
+            d.comments[i].replyList = (b["items"] as? [[String: Any]] ?? []).compactMap { Self.comment($0) }
             publish(d)
         case "next":
             if awaitingNext { upNext(b["id"] as? String) } else { prefetched(b["id"] as? String) }

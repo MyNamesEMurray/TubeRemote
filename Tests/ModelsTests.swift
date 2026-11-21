@@ -156,6 +156,14 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(after - before, 16, accuracy: 1.5, "past the cap it covers the cap's speed per second")
     }
 
+    func testLinkifiedMakesTimesAndAddressesTappable() {
+        let a = linkified("2:39:41 BRB and 04:28 intro, see https://example.com/x")
+        var links: [String] = []
+        for run in a.runs { if let l = run.link { links.append(l.absoluteString) } }
+        XCTAssertEqual(links, ["tubeseek://9581", "tubeseek://268", "https://example.com/x"])
+        XCTAssertTrue(linkified("no links here").runs.allSatisfy { $0.link == nil })
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")

@@ -163,6 +163,8 @@ struct VideoComment: Codable, Equatable, Identifiable {
     var likes: String?
     var age: String?
     var replies: String?
+    /// Loaded when the comment is opened; nil until then.
+    var replyList: [VideoComment]?
 }
 
 /// The description and comments of the playing video. Sent on their own, only when they change, to remotes that
@@ -174,6 +176,8 @@ struct VideoDetails: Codable, Equatable {
     /// nil while loading, "ok", "none" (off or not found) or "error".
     var commentsStatus: String?
     var moreComments = false
+    /// Ids of the comments that are open, so every screen shows the same ones.
+    var expanded: [String] = []
     /// YouTube's storyboard description: where the small preview frames for seeking are.
     var storyboard: String?
 }
@@ -226,6 +230,8 @@ enum Command: Codable {
     /// The remote has its Details tab open (or closed): the viewer reads the description and comments for it.
     case watchDetails(Bool)
     case moreComments
+    /// Open or close one comment's replies.
+    case toggleComment(String)
     case richTab(Int)
     case goLive
     /// Hold to scan: -1 backwards, 1 forwards, 0 stop. Sent again while held; the viewer stops by itself if it stops hearing.
