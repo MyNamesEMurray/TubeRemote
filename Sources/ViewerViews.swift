@@ -16,6 +16,14 @@ struct ViewerView: View {
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
+    @ViewBuilder private var sidePanel: some View {
+        if viewer.richView { RichPanel() } else { QueueSidebar(onClose: closePanel) }
+    }
+
+    private func closePanel() {
+        if viewer.richView { viewer.handle(.setRichView(false), from: nil) } else { showQueue = false }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -26,7 +34,7 @@ struct ViewerView: View {
                     Hosted(view: viewer.webView)
                         .scaleEffect(open ? max(geo.size.width - panel, 1) / max(geo.size.width, 1) : 1, anchor: .leading)
                     if open {
-                        Group { if viewer.richView { RichPanel() } else { QueueSidebar(onClose: { showQueue = false }) } }
+                        SwipeAway(onClose: closePanel) { sidePanel }
                             .frame(width: panel)
                             .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5) }
                             .transition(.move(edge: .trailing))
@@ -39,7 +47,7 @@ struct ViewerView: View {
         }
         .overlay(alignment: .trailing) {
             if (showQueue || viewer.richView) && hSize == .compact {
-                Group { if viewer.richView { RichPanel() } else { QueueSidebar(onClose: { showQueue = false }) } }
+                SwipeAway(onClose: closePanel) { sidePanel }
                     .frame(width: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: .black.opacity(0.4), radius: 16)
@@ -455,6 +463,39 @@ struct IdleView: View {
 }
 
 /// The description or comments beside the video. The remote opens it, picks the tab and scrolls it.
+struct SwipeAway<Content: View>: View {
+    let onClose: () -> Void
+    @ViewBuilder let content: Content
+    @State private var drag: CGFloat = 0
+
+    var body: some View {
+        content
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.55))
+                    .frame(width: 5, height: 44)
+                    .padding(.leading, 6)
+                    .frame(width: 30, height: 120)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 4)
+                            .onChanged { drag = max(0, $0.translation.width) }
+                            .onEnded { v in
+                                if v.translation.width > 80 || v.predictedEndTranslation.width > 200 {
+                                    Haptics.tap()
+                                    withAnimation(.easeOut(duration: 0.2)) { drag = 600 }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onClose() }
+                                } else {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { drag = 0 }
+                                }
+                            }
+                    )
+                    .accessibilityHidden(true)
+            }
+            .offset(x: drag)
+    }
+}
+
 struct PanelClose: View {
     let action: () -> Void
 
