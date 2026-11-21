@@ -242,14 +242,8 @@ struct ViewerControls: View {
         .accessibilityLabel(label)
     }
 
-    private func option(_ text: String, _ symbol: String) -> some View {
-        Label(text, systemImage: symbol)
-            .font(.subheadline.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 36)
-            .background(.white.opacity(0.18), in: Capsule())
-            .frame(minHeight: 44)
+    private func option(_ text: String, _ symbol: String, selected: Bool = false) -> some View {
+        Pill(selected: selected, onDark: true) { Label(text, systemImage: symbol) }
     }
 
     private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
@@ -284,7 +278,7 @@ struct ViewerControls: View {
             switch viewer.captionsStatus {
             case "none": option("No captions", "captions.bubble").opacity(0.5)
             case "searching": option("Finding captions…", "captions.bubble")
-            default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+            default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble", selected: viewer.captions)
             }
         }
         .disabled(viewer.captionsStatus == "none")

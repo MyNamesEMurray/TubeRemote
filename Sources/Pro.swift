@@ -199,24 +199,19 @@ struct SleepTimerMenu: View, Equatable {
     static func == (a: SleepTimerMenu, b: SleepTimerMenu) -> Bool { a.endsAt == b.endsAt && a.onDark == b.onDark && a.unlocked == b.unlocked }
 
     private var label: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "moon.zzz.fill")
-            if let endsAt {
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    Text("Sleep in " + clock(max(endsAt.timeIntervalSince(ctx.date), 0))).monospacedDigit()
+        Pill(selected: endsAt != nil, onDark: onDark) {
+            HStack(spacing: 6) {
+                Image(systemName: "moon.zzz.fill")
+                if let endsAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                        Text("Sleep in " + clock(max(endsAt.timeIntervalSince(ctx.date), 0))).monospacedDigit()
+                    }
+                } else {
+                    Text("Sleep timer")
                 }
-            } else {
-                Text("Sleep timer")
+                if !isPro { GatedBadge() }
             }
-            if !isPro { GatedBadge() }
         }
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(onDark ? Color.white : Color.primary)
-        .lineLimit(1)
-        .padding(.horizontal, 14)
-        .frame(minHeight: 36)
-        .background(onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
-        .frame(minHeight: 44)
     }
 
     var body: some View {
@@ -258,18 +253,13 @@ struct AutoplayButton: View {
             Haptics.tap()
             if isPro { set(!on) } else { showPaywall = true }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "infinity")
-                Text("Autoplay")
-                if !isPro { GatedBadge() }
+            Pill(selected: lit, onDark: onDark) {
+                HStack(spacing: 6) {
+                    Image(systemName: "infinity")
+                    Text("Autoplay")
+                    if !isPro { GatedBadge() }
+                }
             }
-            .font(.subheadline.weight(lit ? .semibold : .medium))
-            .foregroundStyle(lit || onDark ? Color.white : Color.primary)
-            .lineLimit(1)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 36)
-            .background(lit ? Color.accentColor : onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
-            .frame(minHeight: 44)
         }
         .accessibilityLabel(on ? "Autoplay on" : "Autoplay off")
         .sheet(isPresented: $showPaywall) { PaywallView() }
