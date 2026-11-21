@@ -231,11 +231,20 @@ struct ViewerView: View {
 struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
+    @StateObject private var storyboard = Storyboard()
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
     let menuOpened: () -> Void
     @State private var scrub: Double?
+
+    private func loadStoryboard() {
+        if let d = viewer.details, d.videoID == viewer.current?.videoID {
+            storyboard.load(spec: d.storyboard, videoID: d.videoID, duration: viewer.duration)
+        } else {
+            storyboard.reset()
+        }
+    }
 
     private func skipButton(forward: Bool) -> some View {
         let n = settings.skipSeconds
@@ -376,7 +385,8 @@ struct ViewerControls: View {
                         maxValue: viewer.duration,
                         onScrub: { scrub = $0; touched() },
                         onEnd: commitSeek,
-                        onCancel: { scrub = nil })
+                        onCancel: { scrub = nil },
+                        preview: { storyboard.frame(at: $0) })
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {
@@ -404,6 +414,9 @@ struct ViewerControls: View {
             options
         }
         .foregroundStyle(.white)
+        .onAppear { loadStoryboard() }
+        .onChange(of: viewer.details?.storyboard) { _ in loadStoryboard() }
+        .onChange(of: viewer.current?.videoID) { _ in loadStoryboard() }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .frame(maxWidth: 720)

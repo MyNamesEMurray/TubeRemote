@@ -124,6 +124,17 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(back, d)
     }
 
+    func testStoryboardSpecIsReadAndAFrameIsAskedFor() async {
+        let spec = "https://i.ytimg.com/sb/abc/storyboard3_L$L/$N.jpg?sqp=x|48#27#100#10#10#0#default#rs$aa|160#90#100#10#10#10000#M$M#rs$bb"
+        await MainActor.run {
+            let s = Storyboard()
+            s.load(spec: spec, videoID: "abc", duration: 1000)
+            XCTAssertNil(s.frame(at: 25), "the sheet has not arrived yet")
+            s.load(spec: nil, videoID: "abc", duration: 1000)
+            XCTAssertNil(s.frame(at: 25))
+        }
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")
