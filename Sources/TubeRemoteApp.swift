@@ -251,84 +251,60 @@ struct SettingsView: View {
                     }
                     Button("Restore Purchases") { Task { await pro.restore() } }
                 }
-                Section {
-                    if model.mode == .viewer {
-                        QualityRow(value: settings.preferredQuality, enabled: true,
-                                   set: { model.viewer.handle(.setPreferredQuality($0), from: nil) }, showPaywall: $showPaywall)
-                    } else if let c = remote.active {
-                        RemoteQualityRow(client: c, showPaywall: $showPaywall)
-                    } else {
-                        Text("Choose a viewer to set the quality it starts videos at.").foregroundStyle(.secondary)
-                    }
-                    if model.mode == .remote {
-                        if pro.has(remote.active?.state) {
-                            Toggle("Keep the queue on this device", isOn: $settings.saveQueue)
-                        } else {
-                            Button { showPaywall = true } label: {
-                                HStack {
-                                    Text("Keep the queue on this device").foregroundStyle(.primary)
-                                    GatedBadge()
-                                    Spacer()
-                                }
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Playback")
-                } footer: {
-                    Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here. A viewer with nothing queued then offers to resume it when you connect.")
-                }
-                Section {
-                    Picker("Skip buttons", selection: $settings.skipSeconds) {
-                        ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
-                    }
-                    Toggle("Haptic feedback", isOn: $settings.haptics)
-                } footer: {
-                    Text("How far the back and forward buttons jump, and a double tap on the left or right of the video on a viewer. Touch and hold either button to scan.")
-                }
-                if model.mode == .viewer {
-                    Section {
-                        Toggle("Let the screen lock when the sleep timer ends", isOn: $settings.lockOnSleep)
-                        Toggle("Hide the status bar", isOn: $settings.hideStatusBar)
-                    } footer: {
-                        Text("iOS has no way for an app to lock the screen. The viewer keeps the screen awake while it plays. When the timer ends it stops doing that, and the device locks after its Auto-Lock time. If Auto-Lock is set to Never, the screen stays on.")
-                    }
-                }
-                Section {
+                Section("This Device") {
                     TextField("Device name", text: $settings.deviceName)
                         .onSubmit { model.viewer.rename() }
-                } header: {
-                    Text("This Device")
-                } footer: {
-                    Text("Shown to other devices on your network.")
-                }
-                Section {
-                    Picker("Use this device as", selection: Binding(
+                    Picker("Use as", selection: Binding(
                         get: { model.mode },
                         set: { model.mode = $0; settings.defaultMode = $0 }
                     )) {
                         ForEach(Mode.allCases) { Label($0.label, systemImage: $0.symbol).tag($0) }
                     }
                     .pickerStyle(.menu)
-                } footer: {
-                    Text("A viewer plays videos on this screen. A remote browses YouTube and sends them.")
+                }
+                Section("Playback") {
+                    if model.mode == .viewer {
+                        QualityRow(value: settings.preferredQuality, enabled: true,
+                                   set: { model.viewer.handle(.setPreferredQuality($0), from: nil) }, showPaywall: $showPaywall)
+                    } else if let c = remote.active {
+                        RemoteQualityRow(client: c, showPaywall: $showPaywall)
+                    } else {
+                        Text("Choose a viewer first").foregroundStyle(.secondary)
+                    }
+                    Picker("Skip buttons", selection: $settings.skipSeconds) {
+                        ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                    }
+                    Toggle("Mute while scanning", isOn: $settings.muteWhileScanning)
+                    if model.mode == .remote {
+                        if pro.has(remote.active?.state) {
+                            Toggle("Keep the queue", isOn: $settings.saveQueue)
+                        } else {
+                            Button { showPaywall = true } label: {
+                                HStack {
+                                    Text("Keep the queue").foregroundStyle(.primary)
+                                    GatedBadge()
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                }
+                if model.mode == .viewer {
+                    Section("Viewer") {
+                        Toggle("Let the screen lock after the sleep timer", isOn: $settings.lockOnSleep)
+                        Toggle("Hide the status bar", isOn: $settings.hideStatusBar)
+                    }
                 }
                 Section {
-                    if settings.paired.isEmpty {
-                        Text("No paired devices yet").foregroundStyle(.secondary)
-                    }
-                    ForEach(settings.paired) { Label($0.name, systemImage: "link") }
-                        .onDelete { settings.paired.remove(atOffsets: $0) }
+                    Toggle("Haptic feedback", isOn: $settings.haptics)
+                    if #available(iOS 26.0, *) { Toggle("Liquid Glass", isOn: $useGlass) }
                 } header: {
-                    Text("Paired Devices")
-                } footer: {
-                    Text("Removing a device disconnects it right away.")
+                    Text("Interface")
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)
                     LabeledContent("Build", value: build)
                     NavigationLink("Debug Log") { DebugLogView() }
-                    if #available(iOS 26.0, *) { Toggle("Liquid Glass", isOn: $useGlass) }
                 }
             }
             .navigationTitle("Settings")
@@ -336,9 +312,6 @@ struct SettingsView: View {
             .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-                ToolbarItem(placement: .cancellationAction) {
-                    if !settings.paired.isEmpty { EditButton() }
-                }
             }
             .sheet(isPresented: $showPaywall) { PaywallView() }
         }

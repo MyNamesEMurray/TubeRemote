@@ -124,21 +124,30 @@ struct ViewerView: View {
                 .accessibilityHidden(!visible)
         }
         .overlay(alignment: .topLeading) {
-            if viewer.needsUnmute {
-                Button {
-                    Haptics.tap()
-                    viewer.unmuteVideo()
-                } label: {
-                    Label("Tap to unmute", systemImage: "speaker.slash.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 44)
-                        .glassBackground(Capsule(), .ultraThinMaterial)
+            VStack(alignment: .leading, spacing: 8) {
+                if settings.hideStatusBar {
+                    ClockPill()
+                        .opacity(showControls ? 1 : 0)
+                        .offset(y: showControls ? 0 : -16)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(!showControls)
                 }
-                .padding(12)
-                .transition(.opacity)
+                if viewer.needsUnmute {
+                    Button {
+                        Haptics.tap()
+                        viewer.unmuteVideo()
+                    } label: {
+                        Label("Tap to unmute", systemImage: "speaker.slash.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 44)
+                            .glassBackground(Capsule(), .ultraThinMaterial)
+                    }
+                    .transition(.opacity)
+                }
             }
+            .padding(12)
         }
         // The page reports taps on the video; nothing native sits on top of it to catch them.
         .onReceive(viewer.tapped) { _ in
@@ -279,7 +288,9 @@ struct ViewerControls: View {
             SkipIcon(seconds: n, forward: forward, size: 26).frame(width: 56, height: 56).contentShape(Rectangle())
         }
         .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
-        .modifier(HoldToScan(direction: forward ? 1 : -1) { touched(); viewer.handle(.scan($0), from: nil) })
+        .modifier(HoldToScan(direction: forward ? 1 : -1,
+                             send: { touched(); viewer.handle(.scan($0, mute: settings.muteWhileScanning), from: nil) },
+                             end: { touched(); viewer.handle(.scanEnd($0), from: nil) }))
     }
 
     private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
@@ -538,6 +549,48 @@ struct SwipeAway<Content: View>: View {
     }
 }
 
+struct ClockPill: View {
+    @State private var level: Float = -1
+    @State private var charging = false
+
+    private var symbol: String {
+        if charging { return "battery.100.bolt" }
+        switch level {
+        case ..<0.13: return "battery.0"
+        case ..<0.38: return "battery.25"
+        case ..<0.63: return "battery.50"
+        case ..<0.88: return "battery.75"
+        default: return "battery.100"
+        }
+    }
+
+    private func refresh() {
+        let d = UIDevice.current
+        level = d.batteryLevel
+        charging = d.batteryState == .charging || d.batteryState == .full
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(Date.now, style: .time)
+            if level >= 0 {
+                Label("\(Int((level * 100).rounded()))%", systemImage: symbol)
+            }
+        }
+        .font(.subheadline.weight(.semibold).monospacedDigit())
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 36)
+        .glassBackground(Capsule(), .ultraThinMaterial)
+        .onAppear {
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in refresh() }
+    }
+}
+
 struct PanelClose: View {
     let action: () -> Void
 
@@ -570,7 +623,8 @@ struct RichPanel: View {
             .padding(.leading, 16)
             Group {
                 if viewer.richTab == 1 {
-                    CommentsList(details: viewer.details, follow: viewer.richScroll)
+                    CommentsList(details: viewer.details, follow: viewer.richScroll,
+                                 onToggle: { viewer.handle(.toggleComment($0), from: nil) })
                 } else if let info = viewer.details?.info {
                     DescriptionLines(info: info, follow: viewer.richScroll)
                 } else {

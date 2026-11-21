@@ -163,6 +163,8 @@ struct VideoComment: Codable, Equatable, Identifiable {
     var likes: String?
     var age: String?
     var replies: String?
+    /// Loaded when the comment is opened; nil until then.
+    var replyList: [VideoComment]?
 }
 
 /// The description and comments of the playing video. Sent on their own, only when they change, to remotes that
@@ -174,8 +176,35 @@ struct VideoDetails: Codable, Equatable {
     /// nil while loading, "ok", "none" (off or not found) or "error".
     var commentsStatus: String?
     var moreComments = false
+    /// Ids of the comments that are open, so every screen shows the same ones.
+    var expanded: [String] = []
     /// YouTube's storyboard description: where the small preview frames for seeking are.
     var storyboard: String?
+}
+
+/// How fast holding a skip button scans: 4 times normal speed, rising by half every 3 seconds up to a cap that grows with the
+/// length of the video. The viewer and the remote must agree on it, so it lives here.
+enum ScanRamp {
+    static let base = 4.0
+    static let growth = 1.5
+    static let period = 3.0
+
+    static func cap(duration: Double) -> Double {
+        min(max(16 * (max(duration, 0) / 10_800).squareRoot(), base), 32)
+    }
+
+    static func speed(at t: Double, cap: Double) -> Double {
+        min(base * pow(growth, max(t, 0) / period), cap)
+    }
+
+    /// Seconds of video covered by holding for `t` seconds.
+    static func distance(held t: Double, cap: Double) -> Double {
+        let t = max(t, 0)
+        let k = log(growth) / period
+        let atCap = max(log(max(cap, base) / base) / k, 0)
+        if t <= atCap { return base / k * (exp(k * t) - 1) }
+        return base / k * (max(cap, base) / base - 1) + max(cap, base) * (t - atCap)
+    }
 }
 
 enum Command: Codable {
@@ -201,10 +230,14 @@ enum Command: Codable {
     /// The remote has its Details tab open (or closed): the viewer reads the description and comments for it.
     case watchDetails(Bool)
     case moreComments
+    /// Open or close one comment's replies.
+    case toggleComment(String)
     case richTab(Int)
     case goLive
     /// Hold to scan: -1 backwards, 1 forwards, 0 stop. Sent again while held; the viewer stops by itself if it stops hearing.
-    case scan(Int)
+    case scan(Int, mute: Bool)
+    /// The hold ended after this many seconds; the viewer puts playback where that much scanning leaves it.
+    case scanEnd(Double)
     /// The first description line the remote has in view; the viewer scrolls to it.
     case richScroll(Int)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.

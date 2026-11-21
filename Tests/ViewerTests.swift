@@ -80,8 +80,9 @@ final class ViewerTests: XCTestCase {
     func testScanStopsAndTheSkipSettingStaysInRange() {
         let v = makeViewer()
         v.handle(.play(item("aaaaaaaaaaa")), from: nil)
-        v.handle(.scan(-1), from: nil)
-        v.handle(.scan(0), from: nil)
+        v.handle(.scan(-1, mute: true), from: nil)
+        v.handle(.scanEnd(1), from: nil)
+        XCTAssertEqual(v.position, 0, "scanning back from the start stays at the start")
         XCTAssertEqual(v.current?.videoID, "aaaaaaaaaaa")
         XCTAssertTrue((5...30).contains(AppSettings().skipSeconds))
     }

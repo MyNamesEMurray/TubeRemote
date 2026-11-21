@@ -46,7 +46,7 @@ struct RemoteView: View {
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let c = remote.active {
-                        RemoteBar(client: c, canSend: browser.videoID != nil, hasPlaylist: browser.playlistID != nil,
+                        RemoteBar(client: c, canSend: browser.videoID != nil, pageVideoID: browser.videoID, hasPlaylist: browser.playlistID != nil,
                                   sending: sending, open: { showNow = true }, send: { send($0, to: c) }, play: { playTapped() },
                                   sendPlaylist: { sendPlaylist($0, reversed: $1, to: c) }, here: { browser.play() })
                     } else if browser.videoID != nil {
@@ -258,6 +258,7 @@ struct RemoteBar: View {
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     let canSend: Bool
+    let pageVideoID: String?
     let hasPlaylist: Bool
     let sending: Bool
     let open: () -> Void
@@ -305,27 +306,41 @@ struct RemoteBar: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .frame(minHeight: 44)
+                } else if canSend && (pageVideoID != cur?.videoID || client.needsPairing) {
+                    PlayMenu(target: client.key, title: client.title, pairing: client.needsPairing,
+                             active: client.connected || client.needsPairing, sending: sending, play: play, here: here)
+                        .equatable()
                 } else if cur != nil {
-                    Button {
-                        Haptics.tap()
-                        client.send(playing ? .pause : .resume)
-                    } label: {
-                        Image(systemName: playing ? "pause.fill" : "play.fill").font(.title2).frame(width: 44, height: 44)
+                    let icon = Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.accentColor, in: Circle())
+                        .frame(width: 44, height: 44)
+                    if canSend {
+                        Menu {
+                            Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
+                        } label: { icon } primaryAction: {
+                            Haptics.tap()
+                            client.send(playing ? .pause : .resume)
+                        }
+                        .accessibilityLabel(playing ? "Pause" : "Play")
+                        .accessibilityHint("Touch and hold to play it on this device instead")
+                    } else {
+                        Button {
+                            Haptics.tap()
+                            client.send(playing ? .pause : .resume)
+                        } label: { icon }
+                            .accessibilityLabel(playing ? "Pause" : "Play")
                     }
-                    .accessibilityLabel(playing ? "Pause" : "Play")
                 }
                 if hasPlaylist {
                     PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), send: sendPlaylist)
                         .equatable()
                 }
-                if canSend {
-                    PlayMenu(target: client.key, title: client.title, pairing: client.needsPairing,
-                             active: client.connected || client.needsPairing, sending: sending, play: play, here: here)
+                if canSend && !client.needsPairing {
+                    QueueMenu(target: client.key, title: client.title, active: client.connected, sending: sending, send: send)
                         .equatable()
-                    if !client.needsPairing {
-                        QueueMenu(target: client.key, title: client.title, active: client.connected, sending: sending, send: send)
-                            .equatable()
-                    }
                 }
             }
             .foregroundStyle(.primary)
@@ -536,7 +551,13 @@ struct QueueMenu: View, Equatable {
 
 struct DevicePicker: View {
     @EnvironmentObject var remote: RemoteController
+    @EnvironmentObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @State private var forgetting: PairedDevice?
+
+    private var away: [PairedDevice] {
+        settings.paired.filter { p in !remote.devices.contains { $0.key == p.key } }
+    }
 
     var body: some View {
         NavigationStack {
@@ -577,9 +598,22 @@ struct DevicePicker: View {
                             c.beginPair()
                             dismiss()
                         })
+                        .swipeActions {
+                            if let p = settings.paired(c.key) { Button("Forget", role: .destructive) { forgetting = p } }
+                        }
                     }
                 } footer: {
                     Text("Open the app on another device and switch it to Viewer mode.")
+                }
+                if !away.isEmpty {
+                    Section("Not found") {
+                        ForEach(away) { p in
+                            Label(p.name, systemImage: "tv")
+                                .foregroundStyle(.secondary)
+                                .frame(minHeight: 44)
+                                .swipeActions { Button("Forget", role: .destructive) { forgetting = p } }
+                        }
+                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -588,6 +622,16 @@ struct DevicePicker: View {
             .pairingPrompt()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .confirmationDialog(
+                "Forget \(forgetting?.name ?? "this device")?",
+                isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+                titleVisibility: .visible,
+                presenting: forgetting
+            ) { d in
+                Button("Forget", role: .destructive) { settings.paired.removeAll { $0.key == d.key } }
+            } message: { _ in
+                Text("It must pair again to reconnect.")
             }
         }
     }
@@ -1029,7 +1073,7 @@ struct ControlsPane: View {
         }
         .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
         .accessibilityHint("Touch and hold to scan")
-        .modifier(HoldToScan(direction: forward ? 1 : -1) { client.send(.scan($0)) })
+        .modifier(HoldToScan(direction: forward ? 1 : -1, send: { client.send(.scan($0, mute: settings.muteWhileScanning)) }, end: { client.send(.scanEnd($0)) }))
     }
 
     private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -1103,12 +1147,13 @@ struct DetailsPane: View {
             Group {
                 if tab == 0 {
                     if let info = details?.info {
-                        DescriptionLines(info: info, onTop: report)
+                        DescriptionLines(info: info, onTop: report, onSeek: { client.send(.seek($0)) })
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
-                    CommentsList(details: details, onTop: report, onNearEnd: { client.send(.moreComments) })
+                    CommentsList(details: details, onTop: report, onNearEnd: { client.send(.moreComments) },
+                                 onToggle: { client.send(.toggleComment($0)) })
                 }
             }
             .id("\(client.state?.current?.videoID ?? "")\(tab)")

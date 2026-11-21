@@ -104,7 +104,7 @@ struct SkipIcon: View {
             .overlay(
                 Text("\(seconds)")
                     .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
-                    .offset(y: size * 0.04)
+                    .offset(y: size * 0.065)
             )
     }
 }
@@ -112,8 +112,10 @@ struct SkipIcon: View {
 struct HoldToScan: ViewModifier {
     let direction: Int
     let send: (Int) -> Void
+    let end: (Double) -> Void
     @GestureState private var holding = false
     @State private var timer: Timer?
+    @State private var pressedAt = Date()
     private static var endedAt = Date.distantPast
 
     static var justScanned: Bool { Date().timeIntervalSince(endedAt) < 0.4 }
@@ -132,11 +134,12 @@ struct HoldToScan: ViewModifier {
                 timer = nil
                 if on {
                     Haptics.pop()
+                    pressedAt = Date()
                     send(direction)
                     timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in send(direction) }
                 } else {
                     Self.endedAt = Date()
-                    send(0)
+                    end(Date().timeIntervalSince(pressedAt))
                 }
             }
     }
@@ -184,7 +187,8 @@ struct ScrubBar: View {
                 Capsule().fill(Color.accentColor).frame(width: w * frac, height: 4)
                 Circle()
                     .fill(Color.white)
-                    .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                    .overlay(Circle().stroke(Color.black.opacity(0.18), lineWidth: 0.75))
                     .frame(width: knob, height: knob)
                     .offset(x: w * frac - knob / 2)
             }
@@ -360,11 +364,34 @@ struct FollowScroll<Header: View, Row: View>: View {
     }
 }
 
+/// A description line with its web addresses and times made tappable; a time is a link to `tubeseek://<seconds>`.
+func linkified(_ line: String) -> AttributedString {
+    var out = AttributedString(line)
+    let whole = NSRange(location: 0, length: (line as NSString).length)
+    if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+        for m in detector.matches(in: line, range: whole) {
+            if let url = m.url, let r = Range(m.range, in: out) { out[r].link = url }
+        }
+    }
+    if let re = try? NSRegularExpression(pattern: "(?<![\\d:])(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})(?![\\d:])") {
+        for m in re.matches(in: line, range: whole) {
+            func part(_ i: Int) -> Int {
+                let r = m.range(at: i)
+                return r.location == NSNotFound ? 0 : Int((line as NSString).substring(with: r)) ?? 0
+            }
+            let seconds = part(1) * 3600 + part(2) * 60 + part(3)
+            if let r = Range(m.range, in: out), out[r].link == nil { out[r].link = URL(string: "tubeseek://\(seconds)") }
+        }
+    }
+    return out
+}
+
 /// A video's title, facts and description.
 struct DescriptionLines: View {
     let info: VideoInfo
     var follow: Int?
     var onTop: ((Int) -> Void)?
+    var onSeek: ((Double) -> Void)?
 
     var body: some View {
         let lines = info.lines
@@ -376,15 +403,28 @@ struct DescriptionLines: View {
             }
             .padding(.bottom, 8)
         }, row: { i in
-            Text(lines[i].isEmpty ? " " : lines[i])
+            Text(lines[i].isEmpty ? AttributedString(" ") : linkified(lines[i]))
                 .font(.callout)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .environment(\.openURL, OpenURLAction { url in
+                    guard let onSeek else { return .discarded }
+                    if url.scheme == "tubeseek", let s = Double(url.host ?? "") {
+                        onSeek(s)
+                        return .handled
+                    }
+                    return .systemAction
+                })
         })
     }
 }
 
 struct CommentRow: View {
     let comment: VideoComment
+    var expanded = false
+    var isReply = false
+    var onToggle: (() -> Void)?
+
+    private var hasReplies: Bool { !isReply && comment.replies != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -395,12 +435,28 @@ struct CommentRow: View {
             Text(comment.text).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 12) {
                 if let likes = comment.likes { Label(likes, systemImage: "hand.thumbsup").labelStyle(.titleAndIcon) }
-                if let replies = comment.replies { Label(replies, systemImage: "arrowshape.turn.up.left") }
+                if hasReplies, let n = comment.replies {
+                    Label("\(n) \(n == "1" ? "reply" : "replies")", systemImage: expanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(Color.accentColor)
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            if expanded && hasReplies {
+                if let list = comment.replyList {
+                    ForEach(list) { r in
+                        CommentRow(comment: r, isReply: true)
+                            .padding(.leading, 14)
+                            .overlay(alignment: .leading) { Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: 2) }
+                    }
+                } else {
+                    ProgressView().padding(.leading, 14).padding(.vertical, 4)
+                }
+            }
         }
         .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture { if hasReplies { onToggle?() } }
     }
 }
 
@@ -410,12 +466,14 @@ struct CommentsList: View {
     var follow: Int?
     var onTop: ((Int) -> Void)?
     var onNearEnd: (() -> Void)?
+    var onToggle: ((String) -> Void)?
 
     var body: some View {
         if let d = details, !d.comments.isEmpty {
             FollowScroll(count: d.comments.count, follow: follow, onTop: onTop, onNearEnd: onNearEnd, header: { EmptyView() }, row: { i in
                 VStack(alignment: .leading, spacing: 0) {
-                    CommentRow(comment: d.comments[i])
+                    CommentRow(comment: d.comments[i], expanded: d.expanded.contains(d.comments[i].id),
+                               onToggle: { onToggle?(d.comments[i].id) })
                     Divider()
                 }
             })
@@ -494,11 +552,12 @@ struct QueueList: View {
                                     .tint(.accentColor)
                                 }
                         } header: {
-                            Label("Autoplay", systemImage: "infinity")
+                            Label("Autoplay", systemImage: "infinity").padding(.vertical, 4)
                         }
                     }
                 }
                 .listStyle(.plain)
+                .environment(\.defaultMinListHeaderHeight, 0)
                 .environment(\.editMode, $editMode)
             }
         }

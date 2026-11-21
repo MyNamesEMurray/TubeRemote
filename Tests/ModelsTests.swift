@@ -143,6 +143,27 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(h.isEmpty)
     }
 
+    func testScanRampSpeedCapAndDistance() {
+        XCTAssertEqual(ScanRamp.speed(at: 0, cap: 16), 4, accuracy: 0.001)
+        XCTAssertEqual(ScanRamp.speed(at: 3, cap: 16), 6, accuracy: 0.001)
+        XCTAssertEqual(ScanRamp.speed(at: 100, cap: 16), 16)
+        XCTAssertEqual(ScanRamp.cap(duration: 10_800), 16, accuracy: 0.001)
+        XCTAssertEqual(ScanRamp.cap(duration: 600), 4)
+        XCTAssertEqual(ScanRamp.cap(duration: 100_000), 32)
+        XCTAssertEqual(ScanRamp.distance(held: 2, cap: 4), 8, accuracy: 0.001, "no ramp at the minimum cap")
+        XCTAssertEqual(ScanRamp.distance(held: 3, cap: 16), 14.79, accuracy: 0.05)
+        let before = ScanRamp.distance(held: 10, cap: 16), after = ScanRamp.distance(held: 11, cap: 16)
+        XCTAssertEqual(after - before, 16, accuracy: 1.5, "past the cap it covers the cap's speed per second")
+    }
+
+    func testLinkifiedMakesTimesAndAddressesTappable() {
+        let a = linkified("2:39:41 BRB and 04:28 intro, see https://example.com/x")
+        var links: [String] = []
+        for run in a.runs { if let l = run.link { links.append(l.absoluteString) } }
+        XCTAssertEqual(links, ["tubeseek://9581", "tubeseek://268", "https://example.com/x"])
+        XCTAssertTrue(linkified("no links here").runs.allSatisfy { $0.link == nil })
+    }
+
     func testClock() {
         XCTAssertEqual(clock(0), "0:00")
         XCTAssertEqual(clock(65), "1:05")
