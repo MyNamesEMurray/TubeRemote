@@ -279,7 +279,9 @@ struct ViewerControls: View {
             SkipIcon(seconds: n, forward: forward, size: 26).frame(width: 56, height: 56).contentShape(Rectangle())
         }
         .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
-        .modifier(HoldToScan(direction: forward ? 1 : -1) { touched(); viewer.handle(.scan($0), from: nil) })
+        .modifier(HoldToScan(direction: forward ? 1 : -1,
+                             send: { touched(); viewer.handle(.scan($0), from: nil) },
+                             end: { touched(); viewer.handle(.scanEnd($0), from: nil) }))
     }
 
     private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {

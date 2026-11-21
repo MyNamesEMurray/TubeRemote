@@ -112,8 +112,10 @@ struct SkipIcon: View {
 struct HoldToScan: ViewModifier {
     let direction: Int
     let send: (Int) -> Void
+    let end: (Double) -> Void
     @GestureState private var holding = false
     @State private var timer: Timer?
+    @State private var pressedAt = Date()
     private static var endedAt = Date.distantPast
 
     static var justScanned: Bool { Date().timeIntervalSince(endedAt) < 0.4 }
@@ -132,11 +134,12 @@ struct HoldToScan: ViewModifier {
                 timer = nil
                 if on {
                     Haptics.pop()
+                    pressedAt = Date()
                     send(direction)
                     timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in send(direction) }
                 } else {
                     Self.endedAt = Date()
-                    send(0)
+                    end(Date().timeIntervalSince(pressedAt))
                 }
             }
     }

@@ -1058,7 +1058,7 @@ struct ControlsPane: View {
         }
         .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
         .accessibilityHint("Touch and hold to scan")
-        .modifier(HoldToScan(direction: forward ? 1 : -1) { client.send(.scan($0)) })
+        .modifier(HoldToScan(direction: forward ? 1 : -1, send: { client.send(.scan($0)) }, end: { client.send(.scanEnd($0)) }))
     }
 
     private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {

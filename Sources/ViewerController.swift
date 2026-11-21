@@ -81,6 +81,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var live = false
     private var liveReloaded = false
     private var scanDir = 0
+    private var scanStart = 0.0
     private var scanTimer: Timer?
     private var scanSeen = Date.distantPast
     private var scanWasPlaying = false
@@ -675,6 +676,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 if scanDir != dir { startScan(dir) }
             }
             return nil
+        case .scanEnd(let held):
+            guard scanDir != 0 else { return nil }
+            let expected = scanStart + Double(scanDir) * 4 * min(max(held.isFinite ? held : 0, 0), 60)
+            stopScan()
+            seek(max(0, duration > 0 ? min(expected, duration) : expected))
+            return nil
         case .goLive:
             guard live else { return nil }
             seekHoldUntil = Date().addingTimeInterval(1.5)
@@ -955,6 +962,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         stopScan(resume: false)
         scanWasPlaying = was
         scanDir = dir
+        scanStart = position
         if dir > 0 { js("__tr.scan(4)") } else { js("__tr.pause()") }
         scanTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.scanStep() }
     }
