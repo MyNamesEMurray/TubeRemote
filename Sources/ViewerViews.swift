@@ -19,8 +19,6 @@ struct ViewerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            // The page keeps its full size and is scaled down beside the panel. Resizing the web view on every frame of
-            // the slide made the video re-lay out and judder; a transform only moves a finished picture.
             GeometryReader { geo in
                 let panel: CGFloat = viewer.richView ? 380 : 340
                 let open = hSize == .regular && (viewer.richView || showQueue)
