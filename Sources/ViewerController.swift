@@ -82,6 +82,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var liveReloaded = false
     private var scanDir = 0
     private var scanStart = 0.0
+    private var scanStartedAt = Date()
+    private var scanTick = Date()
+    private var scanCap = ScanRamp.base
     private var scanTimer: Timer?
     private var scanSeen = Date.distantPast
     private var scanWasPlaying = false
@@ -116,6 +119,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     // It fills the screen with the player, starts it with sound, and reports time and state.
     static let maxQueue = 500
     static let maxComments = 200
+    static let maxScanRate = 8.0
 
     private static let bridge = """
     (function(){
@@ -678,7 +682,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return nil
         case .scanEnd(let held):
             guard scanDir != 0 else { return nil }
-            let expected = scanStart + Double(scanDir) * 4 * min(max(held.isFinite ? held : 0, 0), 60)
+            let expected = scanStart + Double(scanDir) * ScanRamp.distance(held: min(max(held.isFinite ? held : 0, 0), 120), cap: scanCap)
             stopScan()
             seek(max(0, duration > 0 ? min(expected, duration) : expected))
             return nil
@@ -963,13 +967,25 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         scanWasPlaying = was
         scanDir = dir
         scanStart = position
-        if dir > 0 { js("__tr.scan(4)") } else { js("__tr.pause()") }
+        scanStartedAt = Date()
+        scanTick = scanStartedAt
+        scanCap = ScanRamp.cap(duration: duration)
+        if dir > 0 { js("__tr.scan(\(ScanRamp.base))") } else { js("__tr.pause()") }
         scanTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.scanStep() }
     }
 
     private func scanStep() {
         if Date().timeIntervalSince(scanSeen) > 1.5 || (scanDir < 0 && position <= 1) { return stopScan() }
-        if scanDir < 0 { seek(max(position - 2, 0)) }
+        let now = Date()
+        let speed = ScanRamp.speed(at: now.timeIntervalSince(scanStartedAt), cap: scanCap)
+        let dt = now.timeIntervalSince(scanTick)
+        scanTick = now
+        if scanDir > 0 {
+            js("__tr.scan(\(min(speed, Self.maxScanRate)))")
+            if speed > Self.maxScanRate { seek(position + (speed - Self.maxScanRate) * dt) }
+        } else {
+            seek(max(position - speed * dt, 0))
+        }
         broadcast()
     }
 
