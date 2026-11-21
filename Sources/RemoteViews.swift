@@ -1011,49 +1011,83 @@ struct ControlsPane: View {
     }
 }
 
-/// Rich video view, Pro: the description beside the video on the viewer, scrolled from here.
+/// The video's description and comments. Reading them here is free; showing them on the viewer, scrolled from here,
+/// is the Pro rich video view.
 struct DetailsPane: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
+    @State private var tab = 0
+    @State private var top = 0
+
+    private var richOn: Bool { client.state?.richView == true }
+    private var details: VideoDetails? {
+        client.details.flatMap { $0.videoID == client.state?.current?.videoID ? $0 : nil }
+    }
+
+    private func toggle() {
+        Haptics.tap()
+        guard pro.has(client.state) else { return showPaywall = true }
+        if richOn {
+            client.send(.setRichView(false))
+        } else {
+            client.send(.setRichView(true))
+            client.send(.richTab(tab))
+            client.send(.richScroll(top))
+        }
+    }
+
+    private func report(_ i: Int) {
+        top = i
+        if richOn { client.send(.richScroll(i)) }
+    }
 
     var body: some View {
-        Group {
-            if client.state?.richView == true {
-                VStack(spacing: 0) {
-                    HStack {
-                        Label("Showing on \(client.title)", systemImage: "rectangle.righthalf.inset.filled")
-                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                        Spacer()
-                        Button("Hide") { Haptics.tap(); client.send(.setRichView(false)) }
-                            .frame(minHeight: 44)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Picker("Show", selection: $tab) {
+                    Text("Description").tag(0)
+                    Text("Comments").tag(1)
+                }
+                .pickerStyle(.segmented)
+                Button(action: toggle) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "rectangle.righthalf.inset.filled")
+                        Text(richOn ? "On viewer" : "Show on viewer")
+                        if !pro.has(client.state) { GatedBadge() }
                     }
-                    .padding(.horizontal)
-                    if let info = client.state?.info {
-                        DescriptionLines(info: info, onTop: { client.send(.richScroll($0)) }).id(info.videoID)
+                    .font(.subheadline.weight(richOn ? .semibold : .medium))
+                    .foregroundStyle(richOn ? Color.white : Color.primary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 36)
+                    .background(richOn ? Color.accentColor : Color(.secondarySystemFill), in: Capsule())
+                    .frame(minHeight: 44)
+                }
+                .accessibilityLabel(richOn ? "Stop showing on the viewer" : "Show on the viewer")
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            Group {
+                if tab == 0 {
+                    if let info = details?.info {
+                        DescriptionLines(info: info, onTop: report)
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                }
-            } else {
-                VStack(spacing: 8) {
-                    EmptyState(symbol: "text.alignleft", title: "Rich video view",
-                               message: "Show this video's description beside it on the viewer, and scroll it from here.")
-                    Button {
-                        Haptics.tap()
-                        if pro.has(client.state) { client.send(.setRichView(true)) } else { showPaywall = true }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Label("Show on viewer", systemImage: "rectangle.righthalf.inset.filled")
-                            if !pro.has(client.state) { GatedBadge() }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    .padding(.bottom, 24)
+                } else {
+                    CommentsList(details: details, onTop: report, onNearEnd: { client.send(.moreComments) })
                 }
             }
+            .id("\(client.state?.current?.videoID ?? "")\(tab)")
+        }
+        .onAppear { client.send(.watchDetails(true)) }
+        .onDisappear { client.send(.watchDetails(false)) }
+        .onChange(of: client.connected) { if $0 { client.send(.watchDetails(true)) } }
+        .onChange(of: tab) { t in
+            top = 0
+            if richOn { client.send(.richTab(t)) }
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
     }

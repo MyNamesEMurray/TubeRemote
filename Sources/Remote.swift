@@ -8,6 +8,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     let key: String
     @Published var name: String
     @Published var state: ViewerState?
+    @Published var details: VideoDetails?
     @Published var connected = false
     @Published var detail = ""
     @Published var needsPairing = false
@@ -139,6 +140,8 @@ final class RemoteClient: ObservableObject, Identifiable {
                 busy = false
                 detail = ""
                 keeper?.observe(st, previous: previous, key: key)
+            case .details(let d)?:
+                details = d
             case .goodbye?:
                 Log.add("disconnected by \(tag)")
                 released = true
@@ -148,6 +151,8 @@ final class RemoteClient: ObservableObject, Identifiable {
             }
         case .state:
             Log.add("ignored unencrypted state")
+        case .details:
+            Log.add("ignored unencrypted details")
         case .goodbye:
             // Only the signed-in channel may tell a remote to stay away; anything on the network can send this.
             Log.add("ignored unsigned goodbye")

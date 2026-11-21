@@ -16,19 +16,29 @@ struct ViewerView: View {
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
+    @ViewBuilder private var sidePanel: some View {
+        if viewer.richView { RichPanel() } else { QueueSidebar(onClose: closePanel) }
+    }
+
+    private func closePanel() {
+        if viewer.richView { viewer.handle(.setRichView(false), from: nil) } else { showQueue = false }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            HStack(spacing: 0) {
-                Hosted(view: viewer.webView)
-                if viewer.richView && hSize == .regular {
-                    Divider()
-                    RichPanel().frame(width: 380)
-                        .transition(.move(edge: .trailing))
-                } else if showQueue && hSize == .regular {
-                    Divider()
-                    QueueSidebar().frame(width: 340)
-                        .transition(.move(edge: .trailing))
+            GeometryReader { geo in
+                let panel: CGFloat = viewer.richView ? 380 : 340
+                let open = hSize == .regular && (viewer.richView || showQueue)
+                ZStack(alignment: .trailing) {
+                    Hosted(view: viewer.webView)
+                        .scaleEffect(open ? max(geo.size.width - panel, 1) / max(geo.size.width, 1) : 1, anchor: .leading)
+                    if open {
+                        SwipeAway(onClose: closePanel) { sidePanel }
+                            .frame(width: panel)
+                            .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5) }
+                            .transition(.move(edge: .trailing))
+                    }
                 }
             }
             if viewer.current == nil { IdleView { showPair = true } }
@@ -37,7 +47,7 @@ struct ViewerView: View {
         }
         .overlay(alignment: .trailing) {
             if (showQueue || viewer.richView) && hSize == .compact {
-                Group { if viewer.richView { RichPanel() } else { QueueSidebar() } }
+                SwipeAway(onClose: closePanel) { sidePanel }
                     .frame(width: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: .black.opacity(0.4), radius: 16)
@@ -452,17 +462,79 @@ struct IdleView: View {
     }
 }
 
-/// The description beside the video. The remote opens it and scrolls it.
+/// The description or comments beside the video. The remote opens it, picks the tab and scrolls it.
+struct SwipeAway<Content: View>: View {
+    let onClose: () -> Void
+    @ViewBuilder let content: Content
+    @State private var drag: CGFloat = 0
+
+    var body: some View {
+        content
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.55))
+                    .frame(width: 5, height: 44)
+                    .padding(.leading, 6)
+                    .frame(width: 30, height: 120)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 4)
+                            .onChanged { drag = max(0, $0.translation.width) }
+                            .onEnded { v in
+                                if v.translation.width > 80 || v.predictedEndTranslation.width > 200 {
+                                    Haptics.tap()
+                                    withAnimation(.easeOut(duration: 0.2)) { drag = 600 }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onClose() }
+                                } else {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { drag = 0 }
+                                }
+                            }
+                    )
+                    .accessibilityHidden(true)
+            }
+            .offset(x: drag)
+    }
+}
+
+struct PanelClose: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptics.tap()
+            action()
+        } label: {
+            Image(systemName: "xmark.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+        }
+        .accessibilityLabel("Hide")
+    }
+}
+
 struct RichPanel: View {
     @EnvironmentObject var viewer: ViewerController
 
     var body: some View {
-        Group {
-            if let info = viewer.info {
-                DescriptionLines(info: info, follow: viewer.richScroll).id(info.videoID)
-            } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            HStack {
+                Text(viewer.richTab == 1 ? "Comments" : "Description").font(.headline)
+                Spacer()
+                PanelClose { viewer.handle(.setRichView(false), from: nil) }
             }
+            .padding(.leading, 16)
+            Group {
+                if viewer.richTab == 1 {
+                    CommentsList(details: viewer.details, follow: viewer.richScroll)
+                } else if let info = viewer.details?.info {
+                    DescriptionLines(info: info, follow: viewer.richScroll)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         }
         .background(.regularMaterial)
     }
@@ -470,16 +542,21 @@ struct RichPanel: View {
 
 struct QueueSidebar: View {
     @EnvironmentObject var viewer: ViewerController
+    var onClose: () -> Void = {}
     @State private var tab = 0
 
     var body: some View {
         VStack(spacing: 8) {
-            Picker("List", selection: $tab) {
-                Text("Up next").tag(0)
-                Text("History").tag(1)
+            HStack(spacing: 4) {
+                Picker("List", selection: $tab) {
+                    Text("Up next").tag(0)
+                    Text("History").tag(1)
+                }
+                .pickerStyle(.segmented)
+                PanelClose(action: onClose)
             }
-            .pickerStyle(.segmented)
-            .padding([.horizontal, .top])
+            .padding(.leading)
+            .padding(.top, 4)
             if tab == 0 {
                 QueueList(
                     items: viewer.queue,

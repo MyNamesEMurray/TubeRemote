@@ -61,14 +61,27 @@ struct VideoRow: View {
     }
 }
 
-/// A video's title, facts and description, for the rich view. The viewer follows `follow`; the remote reports the first
-/// line it has in view through `onTop`.
-struct DescriptionLines: View {
-    let info: VideoInfo
+/// A list the viewer scrolls to `follow` and the remote reports the first visible row of through `onTop`, so the
+/// two screens can show the same part of it. `onNearEnd` fires when the last rows come into view.
+struct FollowScroll<Header: View, Row: View>: View {
+    let count: Int
     var follow: Int?
     var onTop: ((Int) -> Void)?
+    var onNearEnd: (() -> Void)?
+    let header: Header
+    let row: (Int) -> Row
     @State private var visible = Set<Int>()
     @State private var reportWork: DispatchWorkItem?
+
+    init(count: Int, follow: Int? = nil, onTop: ((Int) -> Void)? = nil, onNearEnd: (() -> Void)? = nil,
+         @ViewBuilder header: () -> Header, @ViewBuilder row: @escaping (Int) -> Row) {
+        self.count = count
+        self.follow = follow
+        self.onTop = onTop
+        self.onNearEnd = onNearEnd
+        self.header = header()
+        self.row = row
+    }
 
     private func report() {
         guard let onTop else { return }
@@ -82,20 +95,15 @@ struct DescriptionLines: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(info.title).font(.headline)
-                        Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
-                        if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
-                    }
-                    .padding(.bottom, 8)
-                    .id(-1)
-                    let lines = info.lines
-                    ForEach(lines.indices, id: \.self) { i in
-                        Text(lines[i].isEmpty ? " " : lines[i])
-                            .font(.callout)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    header.id(-1)
+                    ForEach(0..<count, id: \.self) { i in
+                        row(i)
                             .id(i)
-                            .onAppear { visible.insert(i); report() }
+                            .onAppear {
+                                visible.insert(i)
+                                report()
+                                if i >= count - 3 { onNearEnd?() }
+                            }
                             .onDisappear { visible.remove(i); report() }
                     }
                 }
@@ -105,6 +113,75 @@ struct DescriptionLines: View {
                 guard let f else { return }
                 withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(f == 0 ? -1 : f, anchor: .top) }
             }
+        }
+    }
+}
+
+/// A video's title, facts and description.
+struct DescriptionLines: View {
+    let info: VideoInfo
+    var follow: Int?
+    var onTop: ((Int) -> Void)?
+
+    var body: some View {
+        let lines = info.lines
+        FollowScroll(count: lines.count, follow: follow, onTop: onTop, header: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(info.title).font(.headline)
+                Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
+                if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
+            }
+            .padding(.bottom, 8)
+        }, row: { i in
+            Text(lines[i].isEmpty ? " " : lines[i])
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        })
+    }
+}
+
+struct CommentRow: View {
+    let comment: VideoComment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(comment.author).font(.caption.weight(.semibold)).lineLimit(1)
+                if let age = comment.age { Text(age).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            Text(comment.text).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 12) {
+                if let likes = comment.likes { Label(likes, systemImage: "hand.thumbsup").labelStyle(.titleAndIcon) }
+                if let replies = comment.replies { Label(replies, systemImage: "arrowshape.turn.up.left") }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+/// A video's comments, with what to show while there are none.
+struct CommentsList: View {
+    let details: VideoDetails?
+    var follow: Int?
+    var onTop: ((Int) -> Void)?
+    var onNearEnd: (() -> Void)?
+
+    var body: some View {
+        if let d = details, !d.comments.isEmpty {
+            FollowScroll(count: d.comments.count, follow: follow, onTop: onTop, onNearEnd: onNearEnd, header: { EmptyView() }, row: { i in
+                VStack(alignment: .leading, spacing: 0) {
+                    CommentRow(comment: d.comments[i])
+                    Divider()
+                }
+            })
+        } else if details?.commentsStatus == "none" {
+            EmptyState(symbol: "bubble.left", title: "No comments", message: "Comments are off for this video, or none were found.")
+        } else if details?.commentsStatus == "error" {
+            EmptyState(symbol: "exclamationmark.bubble", title: "Couldn't load comments", message: "YouTube did not answer in a form this app reads.")
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

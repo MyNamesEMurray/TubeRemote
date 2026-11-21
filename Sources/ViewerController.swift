@@ -72,9 +72,15 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var awaitingNext = false
     @Published private(set) var autoplayNext: VideoItem?
     @Published private(set) var richView = false
-    @Published private(set) var info: VideoInfo?
+    @Published private(set) var richTab = 0
     @Published private(set) var richScroll = 0
+    /// The description and comments of the playing video, read from the page while a remote looks at them.
+    @Published private(set) var details: VideoDetails?
+    private var watching = false
     private var infoTries = 0
+    private var commentsNext: String?
+    private var commentsLoading = false
+    private var needsDetails: Bool { watching || richView }
     private var candidateFor: UUID?
     private var skipExtra: [String] = []
     private var autoplayStreak = 0
@@ -101,6 +107,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     // sign-in, so Premium applies and videos that forbid embedding still play.
     // It fills the screen with the player, starts it with sound, and reports time and state.
     static let maxQueue = 500
+    static let maxComments = 200
 
     private static let bridge = """
     (function(){
@@ -208,6 +215,74 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             else v.requestPictureInPicture();
           } catch(e) {}
           if (!was) setTimeout(function(){ if (!on()) post({t:'nopip'}) }, 1500);
+        },
+        // The first page of the video's comments, or the page after `token`, through the same call the page makes
+        // itself. YouTube changes this answer's shape from time to time, so both known shapes are read and what
+        // came back is logged.
+        comments: function(token){
+          var log = function(m){ post({t:'log', m:'comments ' + m}) };
+          var fail = function(s){ post({t:'comments', items:[], next:null, status:s}) };
+          var walk = function(o, fn){
+            var st = [o], n = 0;
+            while (st.length && n++ < 300000) {
+              var x = st.pop();
+              if (x && typeof x === 'object') {
+                if (fn(x)) return x;
+                for (var k in x) st.push(x[k]);
+              }
+            }
+            return null;
+          };
+          var cfg = function(k){ try { return ytcfg.get(k) } catch(e) { return null } };
+          var text = function(x){ return x ? (x.simpleText || (x.runs || []).map(function(r){ return r.text }).join('')) : '' };
+          try {
+            var tok = token;
+            if (!tok) {
+              var panel = walk(window.ytInitialData, function(x){
+                return x.panelIdentifier === 'engagement-panel-comments-section' || x.sectionIdentifier === 'comment-item-section' });
+              var holder = panel && walk(panel, function(x){ return x.continuationCommand && x.continuationCommand.token });
+              tok = holder && holder.continuationCommand.token;
+            }
+            if (!tok) { log('no continuation token'); return fail('none') }
+            var key = cfg('INNERTUBE_API_KEY');
+            fetch('/youtubei/v1/next?prettyPrint=false' + (key ? '&key=' + key : ''), {
+              method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({context: cfg('INNERTUBE_CONTEXT'), continuation: tok})
+            }).then(function(r){ return r.json() }).then(function(j){
+              var ents = {};
+              var muts = ((j.frameworkUpdates || {}).entityBatchUpdate || {}).mutations || [];
+              muts.forEach(function(m){ var p = m.payload && m.payload.commentEntityPayload; if (p) ents[m.entityKey || p.key] = p });
+              var eps = j.onResponseReceivedEndpoints || j.onResponseReceivedActions || [];
+              var items = [], next = null;
+              eps.forEach(function(e){
+                var c = e.reloadContinuationItemsCommand || e.appendContinuationItemsAction || {};
+                (c.continuationItems || []).forEach(function(it){
+                  var t = it.commentThreadRenderer;
+                  if (t) {
+                    var v = t.commentViewModel && (t.commentViewModel.commentViewModel || t.commentViewModel);
+                    var p = v && ents[v.commentKey];
+                    if (p) {
+                      var pr = p.properties || {}, tb = p.toolbar || {};
+                      items.push({id: pr.commentId || v.commentId || String(items.length), a: (p.author || {}).displayName || '',
+                                  t: (pr.content || {}).content || '', l: tb.likeCountNotliked || tb.likeCountLiked || '',
+                                  w: pr.publishedTime || '', r: tb.replyCount || ''});
+                    } else if (t.comment && t.comment.commentRenderer) {
+                      var cr = t.comment.commentRenderer;
+                      items.push({id: cr.commentId || String(items.length), a: text(cr.authorText), t: text(cr.contentText),
+                                  l: text(cr.voteCount), w: text(cr.publishedTimeText), r: ''});
+                    }
+                  }
+                  var ci = it.continuationItemRenderer;
+                  if (ci) {
+                    var ep = ci.continuationEndpoint || (((ci.button || {}).buttonRenderer || {}).command) || {};
+                    if (ep.continuationCommand) next = ep.continuationCommand.token;
+                  }
+                });
+              });
+              log(items.length + ' comments, next ' + !!next + ', mutations ' + muts.length);
+              post({t:'comments', items:items, next:next, status: items.length || token ? 'ok' : 'none'});
+            }).catch(function(e){ log('fetch failed ' + e); fail('error') });
+          } catch(e) { log('error ' + e); fail('error') }
         },
         // The page's own facts about the video, for the rich view.
         info: function(){
@@ -343,6 +418,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         UIApplication.shared.isIdleTimerDisabled = true
         server.onCommand = { [weak self] cmd, who in self?.handle(cmd, from: who) }
         server.snapshot = { [weak self] in self?.snapshot() }
+        server.currentDetails = { [weak self] in self?.details }
         server.paired = { [weak self] in self?.settings.paired($0) }
         server.onPair = { [weak self] m, id, reply in self?.pairing.receive(m, from: id, send: reply) }
         server.onPeers = { [weak self] in
@@ -552,13 +628,27 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .setRichView(let on):
             guard on == false || current != nil else { return nil }
             richView = on
-            info = nil
+            richTab = 0
             richScroll = 0
-            if on { infoTries = 0; js("__tr.info()") }
+            if on { ensureDetails() }
             return nil
         case .richScroll(let i):
             guard richView else { return nil }
             richScroll = min(max(i, 0), 5000)
+            return nil
+        case .richTab(let i):
+            guard richView else { return nil }
+            richTab = min(max(i, 0), 1)
+            richScroll = 0
+            return nil
+        case .watchDetails(let on):
+            watching = on
+            if on { ensureDetails() }
+            return nil
+        case .moreComments:
+            guard needsDetails, !commentsLoading, let tok = commentsNext else { return nil }
+            commentsLoading = true
+            js("__tr.comments(\(Self.jsString(tok)))")
             return nil
         case .autoplayAnother:
             guard let n = autoplayNext else { return nil }
@@ -662,7 +752,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         autoplayNext = nil
         candidateFor = nil
         skipExtra = []
-        info = nil
+        details = nil
+        commentsNext = nil
+        commentsLoading = false
         richScroll = 0
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
@@ -714,7 +806,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     private func goIdle() {
         richView = false
-        info = nil
+        details = nil
         awaitingNext = false
         autoplayNext = nil
         candidateFor = nil
@@ -773,6 +865,37 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         }
     }
 
+    private static func jsString(_ s: String) -> String {
+        (try? JSONSerialization.data(withJSONObject: s, options: .fragmentsAllowed)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+    }
+
+    private func currentDetails() -> VideoDetails? {
+        guard let id = current?.videoID else { return nil }
+        if let d = details, d.videoID == id { return d }
+        return VideoDetails(videoID: id)
+    }
+
+    private func publish(_ d: VideoDetails) {
+        details = d
+        server.broadcastDetails(d)
+    }
+
+    /// Reads the description and comments of the playing video from its page.
+    private func loadDetails() {
+        guard let d = currentDetails() else { return }
+        infoTries = 0
+        commentsNext = nil
+        commentsLoading = true
+        details = d
+        js("__tr.info()")
+        js("__tr.comments(null)")
+    }
+
+    private func ensureDetails() {
+        guard let id = current?.videoID, !loading else { return }
+        if details?.videoID != id { loadDetails() } else if let d = details { server.broadcastDetails(d) }
+    }
+
     private func previous() {
         guard position <= 3, !history.isEmpty else { return seek(0) }
         let h = history.removeFirst()
@@ -825,7 +948,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             // A pause that arrived while the page was still loading must hold once it starts.
             if !isPlaying { js("__tr.pause()") }
             pushSettings()
-            if richView { infoTries = 0; js("__tr.info()") }
+            if needsDetails { loadDetails() }
         case "tap":
             tapped.send()
         case "perr":
@@ -853,7 +976,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
         case "info":
-            guard richView else { break }
+            guard needsDetails else { break }
             let id = b["id"] as? String ?? ""
             let title = b["title"] as? String ?? ""
             if id != "", id != current?.videoID { break }
@@ -863,10 +986,26 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.js("__tr.info()") }
                 break
             }
-            info = VideoInfo(videoID: current?.videoID ?? id, title: title, channel: b["channel"] as? String ?? "",
-                             views: Int(b["views"] as? String ?? ""), published: b["date"] as? String,
-                             description: String((b["desc"] as? String ?? "").prefix(5000)))
-            broadcast()
+            guard var d = currentDetails() else { break }
+            d.info = VideoInfo(videoID: d.videoID, title: title, channel: b["channel"] as? String ?? "",
+                               views: Int(b["views"] as? String ?? ""), published: b["date"] as? String,
+                               description: String((b["desc"] as? String ?? "").prefix(5000)))
+            publish(d)
+        case "comments":
+            commentsLoading = false
+            guard needsDetails, var d = currentDetails() else { break }
+            let have = Set(d.comments.map(\.id))
+            let fresh = (b["items"] as? [[String: Any]] ?? []).compactMap { c -> VideoComment? in
+                guard let id = c["id"] as? String, !have.contains(id), let text = c["t"] as? String, !text.isEmpty else { return nil }
+                func s(_ k: String) -> String? { (c[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+                return VideoComment(id: id, author: String((c["a"] as? String ?? "").prefix(100)), text: String(text.prefix(2000)),
+                                    likes: s("l"), age: s("w"), replies: s("r"))
+            }
+            d.comments = Array((d.comments + fresh).prefix(Self.maxComments))
+            commentsNext = d.comments.count >= Self.maxComments ? nil : b["next"] as? String
+            d.moreComments = commentsNext != nil
+            d.commentsStatus = b["status"] as? String ?? "error"
+            publish(d)
         case "next":
             if awaitingNext { upNext(b["id"] as? String) } else { prefetched(b["id"] as? String) }
         case _ where loading:
@@ -957,7 +1096,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
                     autoplay: settings.autoplay, autoplayNext: autoplayNext,
-                    richView: richView, info: richView ? info : nil)
+                    richView: richView, richTab: richTab)
     }
 
     private func broadcast() {

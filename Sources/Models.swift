@@ -123,8 +123,8 @@ struct ViewerState: Codable, Equatable {
     var autoplayNext: VideoItem?
     /// Pro, rich video view: the viewer is showing the video's description. Nil on a viewer that cannot.
     var richView: Bool?
-    /// What the rich view shows, sent only while it is open.
-    var info: VideoInfo?
+    /// 0 the description, 1 the comments.
+    var richTab: Int?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -153,6 +153,26 @@ struct VideoInfo: Codable, Equatable {
     }
 }
 
+struct VideoComment: Codable, Equatable, Identifiable {
+    var id: String
+    var author: String
+    var text: String
+    var likes: String?
+    var age: String?
+    var replies: String?
+}
+
+/// The description and comments of the playing video. Sent on their own, only when they change, to remotes that
+/// have the Details tab open (the viewer reads them from the page).
+struct VideoDetails: Codable, Equatable {
+    var videoID: String
+    var info: VideoInfo?
+    var comments: [VideoComment] = []
+    /// nil while loading, "ok", "none" (off or not found) or "error".
+    var commentsStatus: String?
+    var moreComments = false
+}
+
 enum Command: Codable {
     case play(VideoItem), playNext(VideoItem), enqueue(VideoItem)
     case pause, resume
@@ -173,6 +193,10 @@ enum Command: Codable {
     case autoplayAnother
     /// Show or hide the description beside the video on the viewer.
     case setRichView(Bool)
+    /// The remote has its Details tab open (or closed): the viewer reads the description and comments for it.
+    case watchDetails(Bool)
+    case moreComments
+    case richTab(Int)
     /// The first description line the remote has in view; the viewer scrolls to it.
     case richScroll(Int)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.
@@ -218,6 +242,8 @@ enum ServerMessage: Codable {
     case sealed(Data)
     /// The person at the viewer disconnected this remote; it should not reconnect by itself.
     case goodbye
+    /// The description and comments of the playing video. Older remotes cannot decode this and ignore it.
+    case details(VideoDetails)
     /// The viewer already serves another remote and nothing connected has Pro. The remote should not retry by itself.
     case busy
 }

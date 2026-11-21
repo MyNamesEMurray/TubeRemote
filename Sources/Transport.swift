@@ -131,6 +131,7 @@ final class ViewerServer {
 
     var onCommand: ((Command, String) -> Void)?
     var snapshot: (() -> ViewerState?)?
+    var currentDetails: (() -> VideoDetails?)?
     var paired: ((String) -> PairedDevice?)?
     var onPair: ((PairMessage, ObjectIdentifier, @escaping (PairMessage) -> Void) -> Void)?
     var onPeers: (() -> Void)?
@@ -274,6 +275,10 @@ final class ViewerServer {
         }
     }
 
+    func broadcastDetails(_ d: VideoDetails) {
+        for (id, p) in conns where p.authed { sendSealed(.details(d), to: id) }
+    }
+
     func send(_ m: ServerMessage, to id: ObjectIdentifier) {
         if let c = conns[id]?.conn { Transport.send(m, on: c) }
     }
@@ -398,6 +403,7 @@ final class ViewerServer {
             conns[id]?.nonce = nil
             Log.add("authenticated \(Log.who(p.key))")
             if let s = snapshot?() { sendSealed(.state(s), to: id) }
+            if let d = currentDetails?() { sendSealed(.details(d), to: id) }
             onPeers?()
         case .ping:
             break
