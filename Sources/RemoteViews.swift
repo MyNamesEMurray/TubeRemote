@@ -1053,7 +1053,7 @@ struct DetailsPane: View {
                 Button(action: toggle) {
                     HStack(spacing: 6) {
                         Image(systemName: "rectangle.righthalf.inset.filled")
-                        Text(richOn ? "On viewer" : "Show on viewer")
+                        Text("Show on viewer")
                         if !pro.has(client.state) { GatedBadge() }
                     }
                     .font(.subheadline.weight(richOn ? .semibold : .medium))
