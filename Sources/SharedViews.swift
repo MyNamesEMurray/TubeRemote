@@ -61,14 +61,23 @@ struct VideoRow: View {
     }
 }
 
-extension View {
-    @ViewBuilder
-    func glassBackground<S: Shape>(_ shape: S, _ material: Material) -> some View {
-        if #available(iOS 26.0, *) {
-            glassEffect(.regular, in: shape)
+struct GlassBackground<S: Shape>: ViewModifier {
+    let shape: S
+    let material: Material
+    @AppStorage("useGlass") private var useGlass = true
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *), useGlass {
+            content.glassEffect(.regular, in: shape)
         } else {
-            background(material, in: shape)
+            content.background(material, in: shape)
         }
+    }
+}
+
+extension View {
+    func glassBackground<S: Shape>(_ shape: S, _ material: Material) -> some View {
+        modifier(GlassBackground(shape: shape, material: material))
     }
 }
 
