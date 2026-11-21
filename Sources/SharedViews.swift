@@ -552,11 +552,12 @@ struct QueueList: View {
                                     .tint(.accentColor)
                                 }
                         } header: {
-                            Label("Autoplay", systemImage: "infinity")
+                            Label("Autoplay", systemImage: "infinity").padding(.vertical, 4)
                         }
                     }
                 }
                 .listStyle(.plain)
+                .environment(\.defaultMinListHeaderHeight, 0)
                 .environment(\.editMode, $editMode)
             }
         }
