@@ -230,11 +230,26 @@ struct ViewerView: View {
 /// Playback controls on the viewer itself, shown by tapping the video.
 struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
+    @EnvironmentObject var settings: AppSettings
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
     let menuOpened: () -> Void
     @State private var scrub: Double?
+
+    private func skipButton(forward: Bool) -> some View {
+        let n = settings.skipSeconds
+        return Button {
+            guard !HoldToScan.justScanned else { return }
+            Haptics.tap()
+            touched()
+            viewer.handle(.skip(forward ? Double(n) : Double(-n)), from: nil)
+        } label: {
+            SkipIcon(seconds: n, forward: forward, size: 26).frame(width: 56, height: 56).contentShape(Rectangle())
+        }
+        .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
+        .modifier(HoldToScan(direction: forward ? 1 : -1) { touched(); viewer.handle(.scan($0), from: nil) })
+    }
 
     private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
         Button {
@@ -372,10 +387,10 @@ struct ViewerControls: View {
             }
             HStack(spacing: 16) {
                 button("backward.end.fill", "Previous", .previous)
-                button("gobackward.10", "Back 10 seconds", .skip(-10))
+                skipButton(forward: false)
                 button(viewer.isPlaying ? "pause.fill" : "play.fill", viewer.isPlaying ? "Pause" : "Play",
                        viewer.isPlaying ? .pause : .resume, size: 40)
-                button("goforward.10", "Forward 10 seconds", .skip(10))
+                skipButton(forward: true)
                 button("forward.end.fill", "Next", .next)
                 Button {
                     Haptics.tap()

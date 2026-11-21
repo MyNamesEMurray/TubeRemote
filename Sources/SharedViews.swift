@@ -61,6 +61,55 @@ struct VideoRow: View {
     }
 }
 
+struct SkipIcon: View {
+    let seconds: Int
+    let forward: Bool
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: forward ? "goforward" : "gobackward")
+            .font(.system(size: size))
+            .overlay(
+                Text("\(seconds)")
+                    .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
+                    .offset(y: size * 0.04)
+            )
+    }
+}
+
+struct HoldToScan: ViewModifier {
+    let direction: Int
+    let send: (Int) -> Void
+    @GestureState private var holding = false
+    @State private var timer: Timer?
+    private static var endedAt = Date.distantPast
+
+    static var justScanned: Bool { Date().timeIntervalSince(endedAt) < 0.4 }
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.35)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .updating($holding) { value, state, _ in
+                        if case .second(true, _) = value { state = true }
+                    }
+            )
+            .onChange(of: holding) { on in
+                timer?.invalidate()
+                timer = nil
+                if on {
+                    Haptics.pop()
+                    send(direction)
+                    timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in send(direction) }
+                } else {
+                    Self.endedAt = Date()
+                    send(0)
+                }
+            }
+    }
+}
+
 struct ScrubBar: View {
     let value: Double
     let maxValue: Double

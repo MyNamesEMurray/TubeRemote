@@ -77,6 +77,15 @@ final class ViewerTests: XCTestCase {
         XCTAssertEqual(VideoInfo(videoID: "x", title: "t", channel: "c", views: nil, published: nil, description: "").stats, "")
     }
 
+    func testScanStopsAndTheSkipSettingStaysInRange() {
+        let v = makeViewer()
+        v.handle(.play(item("aaaaaaaaaaa")), from: nil)
+        v.handle(.scan(-1), from: nil)
+        v.handle(.scan(0), from: nil)
+        XCTAssertEqual(v.current?.videoID, "aaaaaaaaaaa")
+        XCTAssertTrue((5...30).contains(AppSettings().skipSeconds))
+    }
+
     func testQueueAdvanceAndPrevious() {
         let v = makeViewer()
         v.handle(.enqueue(item("aaaaaaaaaaa")), from: nil)

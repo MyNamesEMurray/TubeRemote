@@ -777,6 +777,7 @@ struct NowPlayingContent: View {
 
 struct ControlsPane: View {
     @ObservedObject var client: RemoteClient
+    @EnvironmentObject var settings: AppSettings
     var open: (VideoItem) -> Void = { _ in }
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
@@ -844,11 +845,11 @@ struct ControlsPane: View {
                     }
                     HStack(spacing: 0) {
                         transport("backward.end.fill", "Previous track", size: 28) { client.send(.previous) }
-                        transport("gobackward.10", "Back 10 seconds", size: 28) { jump(-10, from: pos, of: s.duration) }
+                        skipButton(forward: false, s, pos)
                         transport(s.isPlaying ? "pause.fill" : "play.fill", s.isPlaying ? "Pause" : "Play", size: 44) {
                             client.send(s.isPlaying ? .pause : .resume)
                         }
-                        transport("goforward.10", "Forward 10 seconds", size: 28) { jump(10, from: pos, of: s.duration) }
+                        skipButton(forward: true, s, pos)
                         transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
                     }
                     if s.adSkippable == true {
@@ -1000,6 +1001,22 @@ struct ControlsPane: View {
         guard Date().timeIntervalSince(volSent) > 0.1 else { return }
         volSent = Date()
         client.send(.setVolume(v))
+    }
+
+    private func skipButton(forward: Bool, _ s: ViewerState, _ pos: Double) -> some View {
+        let n = settings.skipSeconds
+        return Button {
+            guard !HoldToScan.justScanned else { return }
+            jump(forward ? Double(n) : Double(-n), from: pos, of: s.duration)
+        } label: {
+            SkipIcon(seconds: n, forward: forward, size: 28)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
+        .accessibilityHint("Touch and hold to scan")
+        .modifier(HoldToScan(direction: forward ? 1 : -1) { client.send(.scan($0)) })
     }
 
     private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {
