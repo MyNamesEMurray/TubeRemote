@@ -308,6 +308,9 @@ struct BrowserNav: View {
                 Image(systemName: "house").frame(width: 36, height: 44)
             }
             .accessibilityLabel("YouTube home")
+            .contextMenu {
+                Button { browser.webView.reload() } label: { Label("Reload page", systemImage: "arrow.clockwise") }
+            }
             if browser.canGoBack {
                 Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left").frame(width: 36, height: 44) }
                     .accessibilityLabel("Back")
