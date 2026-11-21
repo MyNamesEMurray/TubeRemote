@@ -176,7 +176,7 @@ struct PairingPrompt: ViewModifier {
                     }
                     .padding(24)
                     .frame(maxWidth: 340)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .glassBackground(RoundedRectangle(cornerRadius: 20, style: .continuous), .regularMaterial)
                     .padding()
                 }
                 .accessibilityAddTraits(.isModal)

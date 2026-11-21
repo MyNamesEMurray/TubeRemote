@@ -61,6 +61,17 @@ struct VideoRow: View {
     }
 }
 
+extension View {
+    @ViewBuilder
+    func glassBackground<S: Shape>(_ shape: S, _ material: Material) -> some View {
+        if #available(iOS 26.0, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(material, in: shape)
+        }
+    }
+}
+
 struct SkipIcon: View {
     let seconds: Int
     let forward: Bool

@@ -23,7 +23,7 @@ struct RemoteView: View {
                         Text(note)
                             .font(.subheadline.weight(.medium))
                             .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(.regularMaterial, in: Capsule())
+                            .glassBackground(Capsule(), .regularMaterial)
                             .padding(8)
                             .transition(.opacity)
                     } else if !seenTip { tip }
@@ -86,7 +86,7 @@ struct RemoteView: View {
             .accessibilityLabel("Dismiss tip")
         }
         .padding(.leading, 16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassBackground(RoundedRectangle(cornerRadius: 16, style: .continuous), .regularMaterial)
         .padding(8)
     }
 
@@ -176,7 +176,7 @@ struct ConnectionChip: View {
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 12)
                     .frame(minHeight: 32)
-                    .background(.thinMaterial, in: Capsule())
+                    .glassBackground(Capsule(), .thinMaterial)
             }
             .buttonStyle(.plain)
             .frame(minHeight: 44)
@@ -211,7 +211,7 @@ struct ChipInner: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
-            .background(.thinMaterial, in: Capsule())
+            .glassBackground(Capsule(), .thinMaterial)
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)
@@ -713,7 +713,7 @@ struct NowPlayingContent: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
+                    .glassBackground(Capsule(), .regularMaterial)
                     .padding(.top, 4)
                     .transition(.opacity)
                 }

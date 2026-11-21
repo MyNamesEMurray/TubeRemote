@@ -69,7 +69,7 @@ struct ViewerView: View {
                 .frame(maxWidth: 420, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .glassBackground(RoundedRectangle(cornerRadius: 16, style: .continuous), .ultraThinMaterial)
                 .padding(16)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .allowsHitTesting(false)
@@ -82,7 +82,7 @@ struct ViewerView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .glassBackground(Capsule(), .ultraThinMaterial)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -114,7 +114,7 @@ struct ViewerView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 44)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .glassBackground(Capsule(), .ultraThinMaterial)
                 }
                 .padding(12)
                 .transition(.opacity)
@@ -197,7 +197,7 @@ struct ViewerView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(.ultraThinMaterial, in: Circle())
+                .glassBackground(Circle(), .ultraThinMaterial)
                 .contentShape(Circle())
         }
         .accessibilityLabel(label)
@@ -224,7 +224,7 @@ struct ViewerView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(width: 240)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .glassBackground(RoundedRectangle(cornerRadius: 16, style: .continuous), .ultraThinMaterial)
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
             }
         }
@@ -425,7 +425,7 @@ struct ViewerControls: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .frame(maxWidth: 720)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .glassBackground(RoundedRectangle(cornerRadius: 22, style: .continuous), .ultraThinMaterial)
         .padding(16)
     }
 }
