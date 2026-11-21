@@ -104,7 +104,7 @@ struct SkipIcon: View {
             .overlay(
                 Text("\(seconds)")
                     .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
-                    .offset(y: size * 0.04)
+                    .offset(y: size * 0.165)
             )
     }
 }
