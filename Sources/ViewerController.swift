@@ -1170,7 +1170,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 duration = d
                 if current?.duration != d { current?.duration = d }
             }
-            if let r = b["rate"] as? Double, r != speed { speed = r }
+            if scanTimer == nil, let r = b["rate"] as? Double, r != speed { speed = r }
             live = b["live"] as? Bool ?? false
             atLiveHead = b["head"] as? Bool ?? false
             if let c = b["cc"] as? Bool, c != captions { captions = c }
