@@ -561,7 +561,7 @@ struct RichPanel: View {
             }
             .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         }
-        .background(.regularMaterial)
+        .modifier(PanelBackground())
     }
 }
 
@@ -604,7 +604,7 @@ struct QueueSidebar: View {
                     onClear: { viewer.handle(.clearHistory, from: nil) })
             }
         }
-        .background(.regularMaterial)
+        .modifier(PanelBackground())
     }
 }
 
