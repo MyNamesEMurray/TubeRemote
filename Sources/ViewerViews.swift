@@ -362,14 +362,18 @@ struct ViewerControls: View {
                 HStack(spacing: 12) {
                     Text(clock(pos))
                     Slider(
-                        value: Binding(get: { pos }, set: { scrub = $0; touched(); scheduleSeek() }),
+                        value: Binding(get: { viewer.live && viewer.atLiveHead ? viewer.duration : pos }, set: { scrub = $0; touched(); scheduleSeek() }),
                         in: 0...max(viewer.duration, 1)
                     ) { editing in
                         if !editing { commitSeek() }
                     }
                     .accessibilityLabel("Playback position")
                     .accessibilityValue("\(clock(pos)) of \(clock(viewer.duration))")
-                    Text(clock(viewer.duration))
+                    if viewer.live {
+                        LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
+                    } else {
+                        Text("-" + clock(max(viewer.duration - pos, 0)))
+                    }
                 }
                 .font(.caption.monospacedDigit())
             }

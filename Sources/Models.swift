@@ -125,6 +125,9 @@ struct ViewerState: Codable, Equatable {
     var richView: Bool?
     /// 0 the description, 1 the comments.
     var richTab: Int?
+    /// The video is a live stream, and whether the player is at its live edge.
+    var live: Bool?
+    var liveHead: Bool?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -197,6 +200,7 @@ enum Command: Codable {
     case watchDetails(Bool)
     case moreComments
     case richTab(Int)
+    case goLive
     /// The first description line the remote has in view; the viewer scrolls to it.
     case richScroll(Int)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.

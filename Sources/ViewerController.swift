@@ -78,6 +78,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published private(set) var details: VideoDetails?
     private var watching = false
     private var infoTries = 0
+    var live = false
+    var atLiveHead = false
     private var commentsNext: String?
     private var commentsLoading = false
     private var needsDetails: Bool { watching || richView }
@@ -284,6 +286,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }).catch(function(e){ log('fetch failed ' + e); fail('error') });
           } catch(e) { log('error ' + e); fail('error') }
         },
+        goLive: function(){
+          try { mp().seekToLiveHead(); return } catch(e) {}
+          var b = document.querySelector('.ytp-live-badge'); if (b) b.click();
+        },
         // The page's own facts about the video, for the rich view.
         info: function(){
           var r = window.ytInitialPlayerResponse || {}, d = r.videoDetails || {}, m = {};
@@ -370,8 +376,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
               try { var t = target(); if (t && p.getPlaybackQuality() !== t && tq++ < 20) p.setPlaybackQualityRange(t, t) } catch(e) {}
             }
             try { q = p.getPlaybackQuality(); qs = p.getAvailableQualityLevels() } catch(e) {}
+            var lv = false, hd = false;
+            try { var vd = p.getVideoData(); lv = !!(vd && (vd.isLive || vd.isLowLatencyLiveStream)) } catch(e) {}
+            try { var ps = p.getProgressState(); hd = !!(ps && ps.isAtLiveHead) } catch(e) {}
             post({t:'time', pos:v.currentTime, dur:v.duration, rate:v.playbackRate, cc:cc(), q:q, qs:qs,
-                  paused:v.paused, muted:v.muted});
+                  paused:v.paused, muted:v.muted, live:lv, head:hd});
           }
         }
         if (!alive && !failed && ticks > 40) { failed = true; post({t:'error'}) }
@@ -637,6 +646,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             guard richView else { return nil }
             richScroll = min(max(i, 0), 5000)
             return nil
+        case .goLive:
+            guard live else { return nil }
+            seekHoldUntil = Date().addingTimeInterval(1.5)
+            js("__tr.goLive()")
+            return nil
         case .richTab(let i):
             guard richView else { return nil }
             richTab = min(max(i, 0), 1)
@@ -749,6 +763,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func start(_ item: VideoItem, pushPrevious: Bool = true, auto: Bool = false) {
         server.videoChanged()
         autoplayStreak = auto ? autoplayStreak + 1 : 0
+        live = false
+        atLiveHead = false
         awaitingNext = false
         autoplayNext = nil
         candidateFor = nil
@@ -1028,6 +1044,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 if current?.duration != d { current?.duration = d }
             }
             if let r = b["rate"] as? Double, r != speed { speed = r }
+            live = b["live"] as? Bool ?? false
+            atLiveHead = b["head"] as? Bool ?? false
             // Published values are only set when they change, so a steady player causes no redraw.
             if let c = b["cc"] as? Bool, c != captions { captions = c }
             // YouTube starts the first video of a session muted, and it can stall while starting. Judge by the
@@ -1097,7 +1115,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
                     autoplay: settings.autoplay, autoplayNext: autoplayNext,
-                    richView: richView, richTab: richTab)
+                    richView: richView, richTab: richTab, live: live, liveHead: atLiveHead)
     }
 
     private func broadcast() {
