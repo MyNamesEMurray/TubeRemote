@@ -34,6 +34,7 @@ struct ViewerView: View {
         stage
             .environment(\.colorScheme, .dark)
             .preferredColorScheme(showBrowse || showPair || showSettings ? nil : .dark)
+            .statusBarHidden(settings.hideStatusBar)
             .sheet(isPresented: $showBrowse) { LocalBrowse() }
             .sheet(isPresented: $showPair) { PairSheet() }
             .pairingPrompt()
