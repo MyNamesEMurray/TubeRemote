@@ -16,6 +16,10 @@ struct ViewerView: View {
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
+    private var sideWidth: CGFloat {
+        hSize == .regular && (viewer.richView || showQueue) ? (viewer.richView ? 380 : 340) : 0
+    }
+
     @ViewBuilder private var sidePanel: some View {
         if viewer.richView { RichPanel() } else { QueueSidebar(onClose: closePanel) }
     }
@@ -93,6 +97,8 @@ struct ViewerView: View {
             // Shown with the overlay, and while the menu or queue is open. Hidden, it also lets taps through.
             let visible = showMenu || showControls || showQueue || viewer.current == nil
             menu
+                .padding(.trailing, sideWidth)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sideWidth)
                 .opacity(visible ? 1 : 0)
                 .allowsHitTesting(visible)
                 .accessibilityHidden(!visible)
@@ -224,12 +230,26 @@ struct ViewerView: View {
 /// Playback controls on the viewer itself, shown by tapping the video.
 struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
+    @EnvironmentObject var settings: AppSettings
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
     let menuOpened: () -> Void
     @State private var scrub: Double?
-    @State private var seekWork: DispatchWorkItem?
+
+    private func skipButton(forward: Bool) -> some View {
+        let n = settings.skipSeconds
+        return Button {
+            guard !HoldToScan.justScanned else { return }
+            Haptics.tap()
+            touched()
+            viewer.handle(.skip(forward ? Double(n) : Double(-n)), from: nil)
+        } label: {
+            SkipIcon(seconds: n, forward: forward, size: 26).frame(width: 56, height: 56).contentShape(Rectangle())
+        }
+        .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
+        .modifier(HoldToScan(direction: forward ? 1 : -1) { touched(); viewer.handle(.scan($0), from: nil) })
+    }
 
     private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
         Button {
@@ -331,20 +351,10 @@ struct ViewerControls: View {
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in menuOpened() })
     }
 
-    /// Sends where the slider was left. The end of the drag normally triggers it; a timer backs that up, because the
-    /// row is redrawn twice a second and iOS does not always report the end of a drag that was interrupted by that.
     private func commitSeek() {
-        seekWork?.cancel()
         guard let v = scrub else { return }
         scrub = nil
         viewer.handle(.seek(v), from: nil)
-    }
-
-    private func scheduleSeek() {
-        seekWork?.cancel()
-        let w = DispatchWorkItem { commitSeek() }
-        seekWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
     }
 
     var body: some View {
@@ -364,8 +374,9 @@ struct ViewerControls: View {
                     ScrubBar(
                         value: scrub ?? (viewer.live && viewer.atLiveHead ? viewer.duration : viewer.position),
                         maxValue: viewer.duration,
-                        onScrub: { scrub = $0; touched(); scheduleSeek() },
-                        onEnd: commitSeek)
+                        onScrub: { scrub = $0; touched() },
+                        onEnd: commitSeek,
+                        onCancel: { scrub = nil })
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {
@@ -376,10 +387,10 @@ struct ViewerControls: View {
             }
             HStack(spacing: 16) {
                 button("backward.end.fill", "Previous", .previous)
-                button("gobackward.10", "Back 10 seconds", .skip(-10))
+                skipButton(forward: false)
                 button(viewer.isPlaying ? "pause.fill" : "play.fill", viewer.isPlaying ? "Pause" : "Play",
                        viewer.isPlaying ? .pause : .resume, size: 40)
-                button("goforward.10", "Forward 10 seconds", .skip(10))
+                skipButton(forward: true)
                 button("forward.end.fill", "Next", .next)
                 Button {
                     Haptics.tap()

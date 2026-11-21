@@ -777,6 +777,7 @@ struct NowPlayingContent: View {
 
 struct ControlsPane: View {
     @ObservedObject var client: RemoteClient
+    @EnvironmentObject var settings: AppSettings
     var open: (VideoItem) -> Void = { _ in }
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
@@ -784,7 +785,6 @@ struct ControlsPane: View {
     @State private var scrubbing = false
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
-    @State private var seekWork: DispatchWorkItem?
     @State private var held: (value: Double, until: Date)?
 
     var body: some View {
@@ -826,8 +826,9 @@ struct ControlsPane: View {
                         ScrubBar(
                             value: scrub ?? (s.live == true && s.liveHead == true ? s.duration : pos),
                             maxValue: s.duration,
-                            onScrub: { scrub = $0; scheduleSeek() },
+                            onScrub: { scrub = $0 },
                             onEnd: commitSeek,
+                            onCancel: { scrub = nil },
                             onActive: { scrubbing = $0 })
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
                         HStack {
@@ -844,11 +845,11 @@ struct ControlsPane: View {
                     }
                     HStack(spacing: 0) {
                         transport("backward.end.fill", "Previous track", size: 28) { client.send(.previous) }
-                        transport("gobackward.10", "Back 10 seconds", size: 28) { jump(-10, from: pos, of: s.duration) }
+                        skipButton(forward: false, s, pos)
                         transport(s.isPlaying ? "pause.fill" : "play.fill", s.isPlaying ? "Pause" : "Play", size: 44) {
                             client.send(s.isPlaying ? .pause : .resume)
                         }
-                        transport("goforward.10", "Forward 10 seconds", size: 28) { jump(10, from: pos, of: s.duration) }
+                        skipButton(forward: true, s, pos)
                         transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
                     }
                     if s.adSkippable == true {
@@ -925,10 +926,7 @@ struct ControlsPane: View {
         Haptics.tap()
     }
 
-    /// Sends the position the slider was left at. Normally the end of the drag triggers it; a timer backs that up, because
-    /// when the drag is cancelled (the view is rebuilt, the sheet takes the touch) iOS does not always report the end.
     private func commitSeek() {
-        seekWork?.cancel()
         guard let v = scrub else { return }
         scrub = nil
         held = (v, Date().addingTimeInterval(1.5))
@@ -936,13 +934,6 @@ struct ControlsPane: View {
         Log.add("seek to \(Int(v)) s")
         client.send(.seek(v))
         Haptics.tap()
-    }
-
-    private func scheduleSeek() {
-        seekWork?.cancel()
-        let w = DispatchWorkItem { commitSeek() }
-        seekWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
     }
 
     private static let speeds = playbackSpeeds
@@ -1010,6 +1001,22 @@ struct ControlsPane: View {
         guard Date().timeIntervalSince(volSent) > 0.1 else { return }
         volSent = Date()
         client.send(.setVolume(v))
+    }
+
+    private func skipButton(forward: Bool, _ s: ViewerState, _ pos: Double) -> some View {
+        let n = settings.skipSeconds
+        return Button {
+            guard !HoldToScan.justScanned else { return }
+            jump(forward ? Double(n) : Double(-n), from: pos, of: s.duration)
+        } label: {
+            SkipIcon(seconds: n, forward: forward, size: 28)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
+        .accessibilityHint("Touch and hold to scan")
+        .modifier(HoldToScan(direction: forward ? 1 : -1) { client.send(.scan($0)) })
     }
 
     private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {

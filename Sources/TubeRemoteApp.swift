@@ -277,6 +277,14 @@ struct SettingsView: View {
                 } footer: {
                     Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here. A viewer with nothing queued then offers to resume it when you connect.")
                 }
+                Section {
+                    Picker("Skip buttons", selection: $settings.skipSeconds) {
+                        ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
+                    }
+                    Toggle("Haptic feedback", isOn: $settings.haptics)
+                } footer: {
+                    Text("How far the back and forward buttons jump, and a double tap on the left or right of the video on a viewer. Touch and hold either button to scan.")
+                }
                 if model.mode == .viewer {
                     Section {
                         Toggle("Let the screen lock when the sleep timer ends", isOn: $settings.lockOnSleep)

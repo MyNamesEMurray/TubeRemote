@@ -61,25 +61,90 @@ struct VideoRow: View {
     }
 }
 
+struct SkipIcon: View {
+    let seconds: Int
+    let forward: Bool
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: forward ? "goforward" : "gobackward")
+            .font(.system(size: size))
+            .overlay(
+                Text("\(seconds)")
+                    .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
+                    .offset(y: size * 0.04)
+            )
+    }
+}
+
+struct HoldToScan: ViewModifier {
+    let direction: Int
+    let send: (Int) -> Void
+    @GestureState private var holding = false
+    @State private var timer: Timer?
+    private static var endedAt = Date.distantPast
+
+    static var justScanned: Bool { Date().timeIntervalSince(endedAt) < 0.4 }
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.35)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .updating($holding) { value, state, _ in
+                        if case .second(true, _) = value { state = true }
+                    }
+            )
+            .onChange(of: holding) { on in
+                timer?.invalidate()
+                timer = nil
+                if on {
+                    Haptics.pop()
+                    send(direction)
+                    timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in send(direction) }
+                } else {
+                    Self.endedAt = Date()
+                    send(0)
+                }
+            }
+    }
+}
+
 struct ScrubBar: View {
     let value: Double
     let maxValue: Double
     let onScrub: (Double) -> Void
     let onEnd: () -> Void
+    let onCancel: () -> Void
     var onActive: (Bool) -> Void = { _ in }
     @State private var active = false
     @State private var current = 0.0
+    @State private var startValue = 0.0
     @State private var lastX = 0.0
     @State private var startY = 0.0
     @State private var tier = 0
+    @GestureState private var touching = false
 
-    private static let tiers: [(label: String, factor: Double)] = [("", 1), ("Half speed", 0.5), ("Quarter speed", 0.25), ("Fine", 0.1)]
+    private static let tiers: [(label: String, factor: Double)] = [
+        ("", 1), ("Half speed", 0.5), ("Quarter speed", 0.25), ("Fine", 0.1), ("Release to cancel", 0),
+    ]
+    private static let cancelTier = 4
+
+    private func finish() {
+        guard active else { return }
+        let cancelled = tier == Self.cancelTier
+        active = false
+        tier = 0
+        onActive(false)
+        if cancelled { onCancel() } else { onEnd() }
+    }
 
     var body: some View {
         GeometryReader { geo in
             let w = max(geo.size.width, 1)
             let top = max(maxValue, 1)
-            let frac = min(max((active ? current : value) / top, 0), 1)
+            let shown = active ? (tier == Self.cancelTier ? startValue : current) : value
+            let frac = min(max(shown / top, 0), 1)
             let knob: CGFloat = active ? 24 : 16
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.3)).frame(height: 4)
@@ -99,41 +164,40 @@ struct ScrubBar: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.7), in: Capsule())
+                        .background(tier == Self.cancelTier ? Color.red : Color.black.opacity(0.7), in: Capsule())
                         .offset(y: -22)
                         .allowsHitTesting(false)
                 }
             }
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($touching) { _, state, _ in state = true }
                     .onChanged { v in
                         let x = min(max(v.location.x, 0), w)
                         if !active {
                             active = true
                             onActive(true)
+                            startValue = value
                             current = abs(x - w * min(max(value / top, 0), 1)) > 28 ? x / w * top : value
                             lastX = x
                             startY = v.location.y
                             tier = 0
                         } else {
                             let dy = abs(v.location.y - startY)
-                            let t = dy < 50 ? 0 : dy < 110 ? 1 : dy < 180 ? 2 : 3
+                            let t = dy < 50 ? 0 : dy < 110 ? 1 : dy < 180 ? 2 : dy < 260 ? 3 : Self.cancelTier
                             if t != tier {
+                                let entering = t == Self.cancelTier
                                 tier = t
-                                Haptics.tap()
+                                if entering { Haptics.pop() } else { Haptics.tap() }
                             }
                             current = min(max(current + (x - lastX) * (top / w) * Self.tiers[tier].factor, 0), top)
                             lastX = x
                         }
-                        onScrub(current)
+                        if tier != Self.cancelTier { onScrub(current) }
                     }
-                    .onEnded { _ in
-                        active = false
-                        tier = 0
-                        onActive(false)
-                        onEnd()
-                    }
+                    .onEnded { _ in finish() }
             )
+            .onChange(of: touching) { if !$0 { finish() } }
         }
         .frame(height: 44)
         .accessibilityElement()

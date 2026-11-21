@@ -80,6 +80,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var infoTries = 0
     var live = false
     private var liveReloaded = false
+    private var scanDir = 0
+    private var scanTimer: Timer?
+    private var scanSeen = Date.distantPast
+    private var scanWasPlaying = false
     var atLiveHead = false
     private var commentsNext: String?
     private var commentsLoading = false
@@ -117,7 +121,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, wc = null, wq = null, tc = 0, tq = 0, errored = false;
+      var wr = 1, sr = 0, wc = null, wq = null, tc = 0, tq = 0, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -287,6 +291,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }).catch(function(e){ log('fetch failed ' + e); fail('error') });
           } catch(e) { log('error ' + e); fail('error') }
         },
+        scan: function(r){ sr = r; var v = vid(); if (v) v.playbackRate = r || wr },
         goLive: function(){
           try { mp().seekToLiveHead(); return } catch(e) {}
           var b = document.querySelector('.ytp-live-badge'); if (b) b.click();
@@ -344,15 +349,26 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       }, true);
       // YouTube's player pauses or resumes on any tap. Keep taps away from it and show our own controls
       // instead. During an advert taps go through untouched, so Skip Ad still works.
-      var lastTap = 0;
+      var lastTouch = 0, lastTapAt = 0, tapTimer = null;
+      var tapped = function(e){
+        var t = (e.changedTouches && e.changedTouches[0]) || e;
+        var side = t.clientX < innerWidth / 2 ? -1 : 1;
+        var now = Date.now();
+        if (tapTimer && now - lastTapAt < 350) {
+          clearTimeout(tapTimer); tapTimer = null; lastTapAt = 0;
+          post({t:'dtap', side:side});
+          return;
+        }
+        lastTapAt = now;
+        tapTimer = setTimeout(function(){ tapTimer = null; post({t:'tap'}) }, 320);
+      };
       ['touchstart','touchend','pointerdown','pointerup','mousedown','mouseup','click','dblclick'].forEach(function(n){
         document.addEventListener(n, function(e){
-          // Only real finger taps. This script's own clicks (unmute, Skip Ad) must reach YouTube
-          // and must not count as taps.
           if (!e.isTrusted || ad()) return;
           e.stopImmediatePropagation();
           if (n === 'touchend' && e.cancelable) e.preventDefault();
-          if ((n === 'touchend' || n === 'click') && Date.now() - lastTap > 400) { lastTap = Date.now(); post({t:'tap'}) }
+          if (n === 'touchend') { lastTouch = Date.now(); tapped(e) }
+          else if (n === 'click' && Date.now() - lastTouch > 500) tapped(e);
         }, {capture: true, passive: false});
       });
       setInterval(function(){
@@ -371,7 +387,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           if (!ad()) {
             var p = mp(), q = null, qs = [];
             if (started) {
-              if (v.playbackRate !== wr) v.playbackRate = wr;
+              if (v.playbackRate !== (sr || wr)) v.playbackRate = sr || wr;
               // Twelve seconds of trying; after that the video has no captions to show.
               if (wc !== null && cc() !== wc && tc < 24) { setCC(wc, tc === 0); tc++; if (tc === 24 && wc) post({t:'nocc'}) }
               try { var t = target(); if (t && p.getPlaybackQuality() !== t && tq++ < 20) p.setPlaybackQualityRange(t, t) } catch(e) {}
@@ -484,6 +500,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         guard running else { return }
         running = false
         Log.add("viewer stop")
+        stopScan(resume: false)
         server.stop()
         sleepEndsAt = nil
         sleepAtEnd = false
@@ -647,6 +664,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             guard richView else { return nil }
             richScroll = min(max(i, 0), 5000)
             return nil
+        case .scan(let d):
+            guard current != nil else { return nil }
+            if d == 0 {
+                stopScan()
+            } else {
+                scanSeen = Date()
+                let dir = d > 0 ? 1 : -1
+                if scanDir != dir { startScan(dir) }
+            }
+            return nil
         case .goLive:
             guard live else { return nil }
             seekHoldUntil = Date().addingTimeInterval(1.5)
@@ -767,6 +794,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         live = false
         atLiveHead = false
         liveReloaded = false
+        stopScan(resume: false)
+        scanDir = 0
         awaitingNext = false
         autoplayNext = nil
         candidateFor = nil
@@ -824,6 +853,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     }
 
     private func goIdle() {
+        stopScan(resume: false)
         richView = false
         details = nil
         awaitingNext = false
@@ -915,6 +945,30 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         if details?.videoID != id { loadDetails() } else if let d = details { server.broadcastDetails(d) }
     }
 
+    private func startScan(_ dir: Int) {
+        let was = scanDir != 0 ? scanWasPlaying : wantPlaying
+        stopScan(resume: false)
+        scanWasPlaying = was
+        scanDir = dir
+        if dir > 0 { js("__tr.scan(4)") } else { js("__tr.pause()") }
+        scanTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.scanStep() }
+    }
+
+    private func scanStep() {
+        if Date().timeIntervalSince(scanSeen) > 1.5 || (scanDir < 0 && position <= 1) { return stopScan() }
+        if scanDir < 0 { seek(max(position - 2, 0)) }
+        broadcast()
+    }
+
+    private func stopScan(resume: Bool = true) {
+        scanTimer?.invalidate()
+        scanTimer = nil
+        guard scanDir != 0 else { return }
+        if scanDir > 0 { js("__tr.scan(0)") } else if resume, scanWasPlaying { js("__tr.play()") }
+        scanDir = 0
+        if resume { broadcast() }
+    }
+
     private func previous() {
         guard position <= 3, !history.isEmpty else { return seek(0) }
         let h = history.removeFirst()
@@ -970,6 +1024,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             if needsDetails { loadDetails() }
         case "tap":
             tapped.send()
+        case "dtap":
+            let side = b["side"] as? Int ?? 0
+            guard side != 0, current != nil else { break }
+            let n = settings.skipSeconds
+            seek(position + Double(side * n))
+            flash(side > 0 ? "+\(n) s" : "-\(n) s")
+            broadcast()
         case "perr":
             guard let id = current?.videoID else { break }
             if b["forced"] as? Bool == true {
@@ -1066,7 +1127,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(max(Int(position) - 10, 0))s")!))
                 break
             }
-            if wantPlaying, notMoving, now.timeIntervalSince(startedAt) < 25, now.timeIntervalSince(lastKick) > 1.2 {
+            if wantPlaying, scanDir == 0, notMoving, now.timeIntervalSince(startedAt) < 25, now.timeIntervalSince(lastKick) > 1.2 {
                 lastKick = now
                 Log.add("not moving at \(lastPos) paused=\(b["paused"] ?? "?") muted=\(b["muted"] ?? "?"), attempt \(kickCount % 3)")
                 js("__tr.kick(\(kickCount % 3))")
@@ -1094,6 +1155,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 isPlaying = true
                 if firstPlay == nil { firstPlay = Date() }
             case 2:
+                if scanDir != 0 { break }
                 // A pause in the first seconds is the start-up stall handled above, not a real pause.
                 if wantPlaying, firstPlay.map({ Date().timeIntervalSince($0) < 8 }) ?? true { break }
                 isPlaying = false
