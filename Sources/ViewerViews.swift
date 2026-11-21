@@ -246,55 +246,76 @@ struct ViewerControls: View {
         }
     }
 
-    /// Captions and quality, the same options the remote has.
-    private var options: some View {
-        HStack(spacing: 12) {
+    private var speedPill: some View {
+        Menu {
+            ForEach(playbackSpeeds, id: \.self) { r in
+                check(rateLabel(r), r == viewer.speed) { viewer.handle(.setSpeed(r), from: nil) }
+            }
+        } label: {
+            option(rateLabel(viewer.speed), "speedometer")
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("Playback speed, \(rateLabel(viewer.speed))")
+    }
+
+    private var captionsPill: some View {
+        Button {
+            Haptics.tap()
+            touched()
+            // While searching, a tap cancels the request.
+            viewer.handle(.setCaptions(!viewer.captions && viewer.captionsStatus == nil), from: nil)
+        } label: {
+            switch viewer.captionsStatus {
+            case "none": option("No captions", "captions.bubble").opacity(0.5)
+            case "searching": option("Finding captions…", "captions.bubble")
+            default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+            }
+        }
+        .disabled(viewer.captionsStatus == "none")
+        .accessibilityLabel(viewer.captionsStatus == "none" ? "This video has no captions"
+                            : viewer.captions ? "Turn captions off" : "Turn captions on")
+    }
+
+    private var sleepPill: some View {
+        SleepTimerMenu(endsAt: viewer.sleepEndsAt, onDark: true, unlocked: viewer.sessionPro) {
+            touched()
+            viewer.handle(.setSleepTimer($0), from: nil)
+        }
+        .equatable()
+    }
+
+    private var autoplayPill: some View {
+        AutoplayButton(on: viewer.autoplay, onDark: true, unlocked: viewer.sessionPro) {
+            touched()
+            viewer.handle(.setAutoplay($0), from: nil)
+        }
+    }
+
+    @ViewBuilder private var qualityPill: some View {
+        if viewer.qualities.count > 1 {
             Menu {
-                ForEach(playbackSpeeds, id: \.self) { r in
-                    check(rateLabel(r), r == viewer.speed) { viewer.handle(.setSpeed(r), from: nil) }
+                check("Auto", viewer.autoQuality) { viewer.handle(.setQuality("auto"), from: nil) }
+                ForEach(viewer.qualities, id: \.self) { q in
+                    check(qualityLabel(q), !viewer.autoQuality && q == viewer.quality) {
+                        viewer.handle(.setQuality(q), from: nil)
+                    }
                 }
             } label: {
-                option(rateLabel(viewer.speed), "speedometer")
+                // In automatic mode say so, with the quality YouTube picked.
+                option(viewer.autoQuality ? "Auto \(qualityLabel(viewer.quality))" : qualityLabel(viewer.quality), "tv")
             }
             .menuOrder(.fixed)
-            .accessibilityLabel("Playback speed, \(rateLabel(viewer.speed))")
-            Button {
-                Haptics.tap()
-                touched()
-                // While searching, a tap cancels the request.
-                viewer.handle(.setCaptions(!viewer.captions && viewer.captionsStatus == nil), from: nil)
-            } label: {
-                switch viewer.captionsStatus {
-                case "none": option("No captions", "captions.bubble").opacity(0.5)
-                case "searching": option("Finding captions…", "captions.bubble")
-                default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
-                }
-            }
-            .disabled(viewer.captionsStatus == "none")
-            .accessibilityLabel(viewer.captionsStatus == "none" ? "This video has no captions"
-                                : viewer.captions ? "Turn captions off" : "Turn captions on")
-            SleepTimerMenu(endsAt: viewer.sleepEndsAt, onDark: true, unlocked: viewer.sessionPro) {
-                touched()
-                viewer.handle(.setSleepTimer($0), from: nil)
-            }
-            AutoplayButton(on: viewer.autoplay, onDark: true, unlocked: viewer.sessionPro) {
-                touched()
-                viewer.handle(.setAutoplay($0), from: nil)
-            }
-            if viewer.qualities.count > 1 {
-                Menu {
-                    check("Auto", viewer.autoQuality) { viewer.handle(.setQuality("auto"), from: nil) }
-                    ForEach(viewer.qualities, id: \.self) { q in
-                        check(qualityLabel(q), !viewer.autoQuality && q == viewer.quality) {
-                            viewer.handle(.setQuality(q), from: nil)
-                        }
-                    }
-                } label: {
-                    // In automatic mode say so, with the quality YouTube picked.
-                    option(viewer.autoQuality ? "Auto \(qualityLabel(viewer.quality))" : qualityLabel(viewer.quality), "tv")
-                }
-                .menuOrder(.fixed)
-                .accessibilityLabel("Quality, \(qualityLabel(viewer.quality))")
+            .accessibilityLabel("Quality, \(qualityLabel(viewer.quality))")
+        }
+    }
+
+    /// Captions, quality and the rest, the same options the remote has. On one row if they fit, else on two.
+    private var options: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { speedPill; captionsPill; sleepPill; autoplayPill; qualityPill }
+            VStack(spacing: 0) {
+                HStack(spacing: 12) { speedPill; captionsPill; sleepPill }
+                HStack(spacing: 12) { autoplayPill; qualityPill }
             }
         }
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in menuOpened() })
@@ -320,6 +341,10 @@ struct ViewerControls: View {
         VStack(spacing: 6) {
             if let c = viewer.current {
                 Text(c.title).font(.headline).lineLimit(1)
+                if viewer.autoplay, viewer.queue.isEmpty, let n = viewer.autoplayNext {
+                    Label("Up next: \(n.title)", systemImage: "infinity")
+                        .font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                }
             }
             // Position is read on a timer here instead of being published, so only this row redraws.
             TimelineView(.periodic(from: .now, by: 0.5)) { _ in
@@ -359,7 +384,7 @@ struct ViewerControls: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .frame(maxWidth: 560)
+        .frame(maxWidth: 720)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .padding(16)
     }
@@ -444,7 +469,10 @@ struct QueueSidebar: View {
                         q.move(fromOffsets: from, toOffset: to)
                         viewer.handle(.reorder(q.map(\.id)), from: nil)
                     },
-                    onClear: { viewer.handle(.clearQueue, from: nil) })
+                    onClear: { viewer.handle(.clearQueue, from: nil) },
+                    autoplayNext: viewer.autoplay ? viewer.autoplayNext : nil,
+                    onAddNext: { viewer.handle(.enqueue($0), from: nil) },
+                    onAnother: { viewer.handle(.autoplayAnother, from: nil) })
             } else {
                 HistoryList(
                     items: viewer.history,

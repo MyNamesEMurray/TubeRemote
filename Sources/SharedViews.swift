@@ -68,11 +68,15 @@ struct QueueList: View {
     let onRemove: (VideoItem) -> Void
     let onMove: (IndexSet, Int) -> Void
     let onClear: () -> Void
+    /// What autoplay will play after the queue, with a tap to queue it and a swipe to ask for another.
+    var autoplayNext: VideoItem?
+    var onAddNext: (VideoItem) -> Void = { _ in }
+    var onAnother: () -> Void = {}
     @State private var editMode: EditMode = .inactive
     @State private var confirmClear = false
 
     var body: some View {
-        if items.isEmpty {
+        if items.isEmpty && autoplayNext == nil {
             EmptyState(symbol: "list.bullet", title: "Queue is empty", message: "Videos you add will show up here.")
         } else {
             VStack(spacing: 0) {
@@ -107,6 +111,24 @@ struct QueueList: View {
                     }
                     .onDelete { offsets in offsets.map { items[$0] }.forEach(onRemove) }
                     .onMove(perform: onMove)
+                    if let n = autoplayNext {
+                        Section {
+                            Button {
+                                Haptics.tap()
+                                onAddNext(n)
+                            } label: { VideoRow(item: n).opacity(0.7) }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Adds this video to the queue")
+                                .swipeActions {
+                                    Button { Haptics.tap(); onAnother() } label: {
+                                        Label("Another", systemImage: "arrow.triangle.2.circlepath")
+                                    }
+                                    .tint(.accentColor)
+                                }
+                        } header: {
+                            Label("Autoplay next", systemImage: "infinity")
+                        }
+                    }
                 }
                 .listStyle(.plain)
                 .environment(\.editMode, $editMode)

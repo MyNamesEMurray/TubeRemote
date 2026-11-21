@@ -250,6 +250,7 @@ struct AutoplayButton: View {
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     private var isPro: Bool { pro.isPro || unlocked }
+    private var lit: Bool { on && isPro }
 
     var body: some View {
         Button {
@@ -257,16 +258,16 @@ struct AutoplayButton: View {
             if isPro { set(!on) } else { showPaywall = true }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: on ? "infinity.circle.fill" : "infinity.circle")
-                Text("Autoplay")
+                Image(systemName: "infinity")
+                Text(lit ? "Autoplay on" : "Autoplay")
                 if !isPro { GatedBadge() }
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(onDark ? Color.white : Color.primary)
+            .font(.subheadline.weight(lit ? .semibold : .medium))
+            .foregroundStyle(lit || onDark ? Color.white : Color.primary)
             .lineLimit(1)
             .padding(.horizontal, 14)
             .frame(minHeight: 36)
-            .background(onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
+            .background(lit ? Color.accentColor : onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
             .frame(minHeight: 44)
         }
         .accessibilityLabel(on ? "Autoplay on" : "Autoplay off")

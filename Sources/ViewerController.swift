@@ -70,6 +70,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// Pause when the queue runs out, whatever video that is on.
     private var sleepAtQueueEnd = false
     private var awaitingNext = false
+    @Published private(set) var autoplayNext: VideoItem?
+    private var candidateFor: UUID?
+    private var skipExtra: [String] = []
     private var autoplayStreak = 0
     static let maxAutoplay = 50
     private var adSkippable = false
@@ -530,8 +533,17 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .setAutoplay(let on):
             settings.autoplay = on
             objectWillChange.send()
-            if !on { awaitingNext = false }
+            if !on {
+                awaitingNext = false
+                autoplayNext = nil
+            }
             return on ? "Autoplay on" : "Autoplay off"
+        case .autoplayAnother:
+            guard let n = autoplayNext else { return nil }
+            skipExtra.append(n.videoID)
+            autoplayNext = nil
+            candidateFor = nil
+            return nil
         case .setSleepTimer(let s):
             sleepAtEnd = false
             sleepAtQueueEnd = false
@@ -625,6 +637,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.videoChanged()
         autoplayStreak = auto ? autoplayStreak + 1 : 0
         awaitingNext = false
+        autoplayNext = nil
+        candidateFor = nil
+        skipExtra = []
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
         let at = item.startAt.flatMap { $0.isFinite && $0 > 5 ? min($0, 86_400) : nil }
@@ -667,6 +682,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func advance() {
         if !queue.isEmpty { return start(queue.removeFirst()) }
         if !sleepAtQueueEnd, settings.autoplay, sessionPro, current != nil, autoplayStreak < Self.maxAutoplay {
+            if let n = autoplayNext { return start(n, auto: true) }
             return askUpNext()
         }
         goIdle()
@@ -674,6 +690,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     private func goIdle() {
         awaitingNext = false
+        autoplayNext = nil
+        candidateFor = nil
         if let c = current { pushHistory(c) }
         current = nil
         isPlaying = false
@@ -688,10 +706,31 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func askUpNext() {
         guard !awaitingNext else { return }
         awaitingNext = true
-        let skip = [current?.videoID].compactMap { $0 } + history.prefix(20).map(\.videoID)
+        askPage()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.upNext(nil) }
+    }
+
+    private func askPage() {
+        let skip = [current?.videoID].compactMap { $0 } + history.prefix(20).map(\.videoID) + skipExtra
         let json = (try? JSONSerialization.data(withJSONObject: skip)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         js("__tr.next(\(json))")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.upNext(nil) }
+    }
+
+    /// Looks ahead once a video is under way, so the remote can show what autoplay will play and the end of the video has no wait.
+    private func prefetchNext(for c: VideoItem) {
+        candidateFor = c.id
+        askPage()
+    }
+
+    private func prefetched(_ id: String?) {
+        guard let was = current?.id, let id else { return }
+        Task { @MainActor in
+            let item = await VideoMetadata.item(videoID: id, duration: nil)
+            guard current?.id == was, candidateFor == was, item.isValid else { return }
+            autoplayNext = item
+            Log.add("autoplay next \(id)")
+            broadcast()
+        }
     }
 
     func upNext(_ id: String?) {
@@ -787,7 +826,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
         case "next":
-            upNext(b["id"] as? String)
+            if awaitingNext { upNext(b["id"] as? String) } else { prefetched(b["id"] as? String) }
         case _ where loading:
             break
         case "ad":
@@ -798,6 +837,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             }
         case "time":
             if let p = b["pos"] as? Double, p.isFinite, Date() >= seekHoldUntil { position = p }
+            if let c = current, queue.isEmpty, settings.autoplay, sessionPro, autoplayStreak < Self.maxAutoplay,
+               candidateFor != c.id, !awaitingNext, position > 5 {
+                prefetchNext(for: c)
+            }
             if let d = b["dur"] as? Double, d.isFinite, d > 0 {
                 duration = d
                 if current?.duration != d { current?.duration = d }
@@ -871,7 +914,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     speed: speed, captions: captions, quality: quality, qualities: qualities,
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
-                    autoplay: settings.autoplay)
+                    autoplay: settings.autoplay, autoplayNext: autoplayNext)
     }
 
     private func broadcast() {
