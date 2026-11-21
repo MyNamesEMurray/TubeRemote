@@ -13,12 +13,6 @@ on:
       price:
         description: Price shown on the paywall screenshot (the in-app purchase review screenshot)
         default: $4.99
-  # A workflow that is not on the default branch cannot be started by hand, so pushing it (or the staged screens) starts it.
-  push:
-    branches-ignore: [main]
-    paths:
-      - .github/workflows/screenshots.yml
-      - Sources/ScreenshotStage.swift
 
 permissions:
   contents: write
