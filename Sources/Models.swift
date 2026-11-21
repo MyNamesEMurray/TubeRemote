@@ -174,6 +174,8 @@ struct VideoDetails: Codable, Equatable {
     /// nil while loading, "ok", "none" (off or not found) or "error".
     var commentsStatus: String?
     var moreComments = false
+    /// YouTube's storyboard description: where the small preview frames for seeking are.
+    var storyboard: String?
 }
 
 enum Command: Codable {

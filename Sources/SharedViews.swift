@@ -117,6 +117,7 @@ struct ScrubBar: View {
     let onEnd: () -> Void
     let onCancel: () -> Void
     var onActive: (Bool) -> Void = { _ in }
+    var preview: (Double) -> UIImage? = { _ in nil }
     @State private var active = false
     @State private var current = 0.0
     @State private var startValue = 0.0
@@ -167,6 +168,25 @@ struct ScrubBar: View {
                         .background(tier == Self.cancelTier ? Color.red : Color.black.opacity(0.7), in: Capsule())
                         .offset(y: -22)
                         .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if active, tier != Self.cancelTier, let image = preview(shown) {
+                    VStack(spacing: 3) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .frame(width: 160, height: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.6), lineWidth: 1))
+                        Text(clock(shown))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.7), in: Capsule())
+                    }
+                    .offset(x: min(max(w * frac - 80, 0), max(w - 160, 0)), y: -130)
+                    .allowsHitTesting(false)
                 }
             }
             .gesture(
