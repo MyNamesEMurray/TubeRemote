@@ -260,7 +260,7 @@ struct AutoplayButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "infinity")
-                Text(lit ? "Autoplay on" : "Autoplay")
+                Text("Autoplay")
                 if !isPro { GatedBadge() }
             }
             .font(.subheadline.weight(lit ? .semibold : .medium))

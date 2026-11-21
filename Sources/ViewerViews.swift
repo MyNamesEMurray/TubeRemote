@@ -476,7 +476,7 @@ struct SwipeAway<Content: View>: View {
                     .fill(Color.secondary.opacity(0.55))
                     .frame(width: 5, height: 44)
                     .padding(.leading, 6)
-                    .frame(width: 30, height: 120)
+                    .frame(width: 30, height: 120, alignment: .leading)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 4)
