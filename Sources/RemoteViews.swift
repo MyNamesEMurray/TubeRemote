@@ -1009,7 +1009,10 @@ struct RemoteQueue: View {
                 client.state?.queue = q
                 client.send(.reorder(q.map(\.id)))
             },
-            onClear: { client.send(.clearQueue) })
+            onClear: { client.send(.clearQueue) },
+            autoplayNext: client.state?.autoplay == true ? client.state?.autoplayNext : nil,
+            onAddNext: { client.send(.enqueue($0)) },
+            onAnother: { client.send(.autoplayAnother) })
     }
 }
 

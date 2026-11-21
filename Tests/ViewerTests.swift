@@ -48,6 +48,8 @@ final class ViewerTests: XCTestCase {
         v.handle(.play(item("aaaaaaaaaaa")), from: nil)
         v.handle(.next, from: nil)
         XCTAssertNil(v.current, "without autoplay the end of the queue stops playback")
+        v.handle(.autoplayAnother, from: nil)
+        XCTAssertNil(v.snapshot().autoplayNext)
     }
 
     func testQueueAdvanceAndPrevious() {
