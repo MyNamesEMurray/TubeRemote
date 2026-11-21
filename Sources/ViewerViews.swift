@@ -5,6 +5,7 @@ struct ViewerView: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
     @Binding var showSettings: Bool
+    @Environment(\.colorScheme) private var systemScheme
     @State private var viewWidth: CGFloat = 1024
     @State private var showQueue = false
     @State private var showBrowse = false
@@ -31,6 +32,15 @@ struct ViewerView: View {
     }
 
     var body: some View {
+        stage
+            .environment(\.colorScheme, .dark)
+            .statusBarHidden(systemScheme == .light)
+            .sheet(isPresented: $showBrowse) { LocalBrowse() }
+            .sheet(isPresented: $showPair) { PairSheet() }
+            .pairingPrompt()
+    }
+
+    private var stage: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             GeometryReader { geo in
@@ -140,10 +150,6 @@ struct ViewerView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.richView)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
         .onChange(of: viewer.current?.videoID) { _ in announce() }
-        .sheet(isPresented: $showBrowse) { LocalBrowse() }
-        .sheet(isPresented: $showPair) { PairSheet() }
-        .pairingPrompt()
-        .preferredColorScheme(.dark)
     }
 
     /// Shows the controls and hides them again after four quiet seconds, or `seconds`.
