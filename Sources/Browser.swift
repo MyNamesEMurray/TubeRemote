@@ -299,13 +299,19 @@ struct Hosted<V: UIView>: UIViewRepresentable {
     func updateUIView(_ uiView: V, context: Context) {}
 }
 
-struct BrowserBack: View {
+struct BrowserNav: View {
     @EnvironmentObject var browser: Browser
 
     var body: some View {
-        if browser.canGoBack {
-            Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left") }
-                .accessibilityLabel("Back")
+        HStack(spacing: 4) {
+            Button { browser.webView.load(URLRequest(url: URL(string: "https://www.youtube.com")!)) } label: {
+                Image(systemName: "house").frame(width: 36, height: 44)
+            }
+            .accessibilityLabel("YouTube home")
+            if browser.canGoBack {
+                Button { browser.webView.goBack() } label: { Image(systemName: "chevron.left").frame(width: 36, height: 44) }
+                    .accessibilityLabel("Back")
+            }
         }
     }
 }

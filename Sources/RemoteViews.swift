@@ -32,7 +32,7 @@ struct RemoteView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
+                    ToolbarItem(placement: .navigationBarLeading) { BrowserNav() }
                     ToolbarItem(placement: .principal) {
                         ConnectionChip { showPicker = true }
                     }

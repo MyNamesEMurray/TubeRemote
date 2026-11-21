@@ -632,7 +632,7 @@ struct LocalBrowse: View {
             .navigationTitle("YouTube")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
+                ToolbarItem(placement: .navigationBarLeading) { BrowserNav() }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .pairingPrompt()
