@@ -289,6 +289,7 @@ struct SettingsView: View {
                 if model.mode == .viewer {
                     Section {
                         Toggle("Let the screen lock when the sleep timer ends", isOn: $settings.lockOnSleep)
+                        Toggle("Hide the status bar", isOn: $settings.hideStatusBar)
                     } footer: {
                         Text("iOS has no way for an app to lock the screen. The viewer keeps the screen awake while it plays. When the timer ends it stops doing that, and the device locks after its Auto-Lock time. If Auto-Lock is set to Never, the screen stays on.")
                     }
