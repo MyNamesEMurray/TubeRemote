@@ -61,6 +61,54 @@ struct VideoRow: View {
     }
 }
 
+/// A video's title, facts and description, for the rich view. The viewer follows `follow`; the remote reports the first
+/// line it has in view through `onTop`.
+struct DescriptionLines: View {
+    let info: VideoInfo
+    var follow: Int?
+    var onTop: ((Int) -> Void)?
+    @State private var visible = Set<Int>()
+    @State private var reportWork: DispatchWorkItem?
+
+    private func report() {
+        guard let onTop else { return }
+        reportWork?.cancel()
+        let w = DispatchWorkItem { onTop(visible.min() ?? 0) }
+        reportWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: w)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(info.title).font(.headline)
+                        Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
+                        if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .padding(.bottom, 8)
+                    .id(-1)
+                    let lines = info.lines
+                    ForEach(lines.indices, id: \.self) { i in
+                        Text(lines[i].isEmpty ? " " : lines[i])
+                            .font(.callout)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id(i)
+                            .onAppear { visible.insert(i); report() }
+                            .onDisappear { visible.remove(i); report() }
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: follow) { f in
+                guard let f else { return }
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(f == 0 ? -1 : f, anchor: .top) }
+            }
+        }
+    }
+}
+
 /// Queue with tap-to-play, swipe-to-delete, drag reorder (in Reorder mode) and clear.
 struct QueueList: View {
     let items: [VideoItem]

@@ -21,7 +21,11 @@ struct ViewerView: View {
             Color.black.ignoresSafeArea()
             HStack(spacing: 0) {
                 Hosted(view: viewer.webView)
-                if showQueue && hSize == .regular {
+                if viewer.richView && hSize == .regular {
+                    Divider()
+                    RichPanel().frame(width: 380)
+                        .transition(.move(edge: .trailing))
+                } else if showQueue && hSize == .regular {
                     Divider()
                     QueueSidebar().frame(width: 340)
                         .transition(.move(edge: .trailing))
@@ -32,8 +36,8 @@ struct ViewerView: View {
             Hosted(view: viewer.volumeView).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false)
         }
         .overlay(alignment: .trailing) {
-            if showQueue && hSize == .compact {
-                QueueSidebar()
+            if (showQueue || viewer.richView) && hSize == .compact {
+                Group { if viewer.richView { RichPanel() } else { QueueSidebar() } }
                     .frame(width: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: .black.opacity(0.4), radius: 16)
@@ -109,6 +113,7 @@ struct ViewerView: View {
         .animation(.easeInOut(duration: 0.3), value: viewer.needsUnmute)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.toast)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showQueue)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.richView)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
         .onChange(of: viewer.current?.videoID) { _ in announce() }
         .sheet(isPresented: $showBrowse) { LocalBrowse() }
@@ -444,6 +449,22 @@ struct IdleView: View {
         }
         .foregroundStyle(.white)
         .padding(32)
+    }
+}
+
+/// The description beside the video. The remote opens it and scrolls it.
+struct RichPanel: View {
+    @EnvironmentObject var viewer: ViewerController
+
+    var body: some View {
+        Group {
+            if let info = viewer.info {
+                DescriptionLines(info: info, follow: viewer.richScroll).id(info.videoID)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(.regularMaterial)
     }
 }
 

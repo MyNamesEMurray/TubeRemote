@@ -121,8 +121,36 @@ struct ViewerState: Codable, Equatable {
     var autoplay: Bool?
     /// What autoplay will start when the queue runs out, once the viewer knows.
     var autoplayNext: VideoItem?
+    /// Pro, rich video view: the viewer is showing the video's description. Nil on a viewer that cannot.
+    var richView: Bool?
+    /// What the rich view shows, sent only while it is open.
+    var info: VideoInfo?
 
     var muted: Bool { volume < 0.01 }
+}
+
+/// What YouTube's page says about a video: shown by the rich view on the viewer and the remote.
+struct VideoInfo: Codable, Equatable {
+    var videoID: String
+    var title: String
+    var channel: String
+    var views: Int?
+    /// A date such as "2025-03-01" or a full timestamp; only the day is shown.
+    var published: String?
+    var description: String
+
+    var lines: [String] { description.components(separatedBy: "\n") }
+
+    var stats: String {
+        var parts: [String] = []
+        if let v = views { parts.append(NumberFormatter.localizedString(from: v as NSNumber, number: .decimal) + " views") }
+        if let p = published?.prefix(10) {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            if let d = f.date(from: String(p)) { parts.append(d.formatted(date: .abbreviated, time: .omitted)) }
+        }
+        return parts.joined(separator: " · ")
+    }
 }
 
 enum Command: Codable {
@@ -143,6 +171,10 @@ enum Command: Codable {
     case setAutoplay(Bool)
     /// Not that one: pick another video for autoplay.
     case autoplayAnother
+    /// Show or hide the description beside the video on the viewer.
+    case setRichView(Bool)
+    /// The first description line the remote has in view; the viewer scrolls to it.
+    case richScroll(Int)
     /// A whole playlist at once, placed in the queue the way `QueueAction` says.
     case playlist([VideoItem], QueueAction)
 }
