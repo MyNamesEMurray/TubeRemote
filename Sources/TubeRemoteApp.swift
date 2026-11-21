@@ -227,6 +227,7 @@ struct SettingsView: View {
     @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
     @State private var showPaywall = false
+    @AppStorage("useGlass") private var useGlass = true
 
     private var version: String {
         let i = Bundle.main.infoDictionary
@@ -326,6 +327,7 @@ struct SettingsView: View {
                     LabeledContent("Version", value: version)
                     LabeledContent("Build", value: build)
                     NavigationLink("Debug Log") { DebugLogView() }
+                    if #available(iOS 26.0, *) { Toggle("Liquid Glass", isOn: $useGlass) }
                 }
             }
             .navigationTitle("Settings")

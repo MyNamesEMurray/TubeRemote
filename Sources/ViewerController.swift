@@ -301,7 +301,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           var r = window.ytInitialPlayerResponse || {}, d = r.videoDetails || {}, m = {};
           try { m = r.microformat.playerMicroformatRenderer || {} } catch(e) {}
           post({t:'info', id:d.videoId || null, title:d.title || '', channel:d.author || '', views:d.viewCount || '',
-                date:m.publishDate || m.uploadDate || '', desc:d.shortDescription || ''});
+                date:m.publishDate || m.uploadDate || '', desc:d.shortDescription || '',
+                sb:((r.storyboards || {}).playerStoryboardSpecRenderer || {}).spec || ''});
         },
         // What YouTube would play next, for autoplay: its own pick if the page carries one, else the first
         // suggested video that has not been played lately. The app is told the id, or null.
@@ -929,20 +930,24 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.broadcastDetails(d)
     }
 
-    /// Reads the description and comments of the playing video from its page.
-    private func loadDetails() {
+    private func loadInfo() {
         guard let d = currentDetails() else { return }
         infoTries = 0
+        if details?.videoID != d.videoID { details = d }
+        js("__tr.info()")
+    }
+
+    private func loadComments() {
         commentsNext = nil
         commentsLoading = true
-        details = d
-        js("__tr.info()")
         js("__tr.comments(null)")
     }
 
     private func ensureDetails() {
         guard let id = current?.videoID, !loading else { return }
-        if details?.videoID != id { loadDetails() } else if let d = details { server.broadcastDetails(d) }
+        if details?.videoID != id { loadInfo() }
+        if needsDetails, details?.commentsStatus == nil, !commentsLoading { loadComments() }
+        if let d = details { server.broadcastDetails(d) }
     }
 
     private func startScan(_ dir: Int) {
@@ -1021,7 +1026,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             // A pause that arrived while the page was still loading must hold once it starts.
             if !isPlaying { js("__tr.pause()") }
             pushSettings()
-            if needsDetails { loadDetails() }
+            loadInfo()
+            if needsDetails { loadComments() }
         case "tap":
             tapped.send()
         case "dtap":
@@ -1056,7 +1062,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case "nopip":
             flash("Picture in Picture is not available. YouTube allows it with Premium.")
         case "info":
-            guard needsDetails else { break }
             let id = b["id"] as? String ?? ""
             let title = b["title"] as? String ?? ""
             if id != "", id != current?.videoID { break }
@@ -1070,6 +1075,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             d.info = VideoInfo(videoID: d.videoID, title: title, channel: b["channel"] as? String ?? "",
                                views: Int(b["views"] as? String ?? ""), published: b["date"] as? String,
                                description: String((b["desc"] as? String ?? "").prefix(5000)))
+            d.storyboard = (b["sb"] as? String).flatMap { $0.isEmpty || $0.count > 4000 ? nil : $0 }
             publish(d)
         case "comments":
             commentsLoading = false

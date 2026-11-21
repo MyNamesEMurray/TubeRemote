@@ -21,6 +21,10 @@ on:
         description: Upload to TestFlight. Turn off to only build and inspect the signed result.
         type: boolean
         default: true
+      test:
+        description: Run the unit tests first. The pull request build already ran them, so this is off by default.
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -41,6 +45,7 @@ jobs:
       - name: Generate project
         run: xcodegen generate
       - name: Test
+        if: inputs.test
         run: |
           xcodebuild test -project TubeRemote.xcodeproj -scheme TubeRemote \
             -destination "id=${{ steps.xcode.outputs.simulator }}" \

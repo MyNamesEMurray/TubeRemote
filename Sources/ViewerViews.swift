@@ -4,8 +4,9 @@ import MediaPlayer
 struct ViewerView: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
-    @Environment(\.horizontalSizeClass) private var hSize
     @Binding var showSettings: Bool
+    @Environment(\.colorScheme) private var systemScheme
+    @State private var viewWidth: CGFloat = 1024
     @State private var showQueue = false
     @State private var showBrowse = false
     @State private var showPair = false
@@ -16,12 +17,14 @@ struct ViewerView: View {
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
+    private var docked: Bool { viewWidth >= 700 }
+
     private var sideWidth: CGFloat {
-        hSize == .regular && (viewer.richView || showQueue) ? (viewer.richView ? 380 : 340) : 0
+        docked && (viewer.richView || showQueue) ? (viewer.richView ? 380 : 340) : 0
     }
 
     @ViewBuilder private var sidePanel: some View {
-        if viewer.richView { RichPanel() } else { QueueSidebar(onClose: closePanel) }
+        if viewer.richView { RichPanel(floating: !docked) } else { QueueSidebar(floating: !docked, onClose: closePanel) }
     }
 
     private func closePanel() {
@@ -29,18 +32,27 @@ struct ViewerView: View {
     }
 
     var body: some View {
+        stage
+            .environment(\.colorScheme, .dark)
+            .statusBarHidden(systemScheme == .light)
+            .sheet(isPresented: $showBrowse) { LocalBrowse() }
+            .sheet(isPresented: $showPair) { PairSheet() }
+            .pairingPrompt()
+    }
+
+    private var stage: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             GeometryReader { geo in
                 let panel: CGFloat = viewer.richView ? 380 : 340
-                let open = hSize == .regular && (viewer.richView || showQueue)
+                let open = docked && (viewer.richView || showQueue)
                 ZStack(alignment: .trailing) {
                     Hosted(view: viewer.webView)
                         .scaleEffect(open ? max(geo.size.width - panel, 1) / max(geo.size.width, 1) : 1, anchor: .leading)
                     if open {
                         SwipeAway(onClose: closePanel) { sidePanel }
                             .frame(width: panel)
-                            .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5) }
+                            .overlay(alignment: .leading) { Rectangle().fill(Color.white.opacity(0.15)).frame(width: 0.5).ignoresSafeArea(edges: .vertical) }
                             .transition(.move(edge: .trailing))
                     }
                 }
@@ -50,8 +62,13 @@ struct ViewerView: View {
             Hosted(view: viewer.volumeView).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { viewWidth = g.size.width }
+                .onChange(of: g.size.width) { viewWidth = $0 }
+        })
         .overlay(alignment: .trailing) {
-            if (showQueue || viewer.richView) && hSize == .compact {
+            if (showQueue || viewer.richView) && !docked {
                 SwipeAway(onClose: closePanel) { sidePanel }
                     .frame(width: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -69,7 +86,7 @@ struct ViewerView: View {
                 .frame(maxWidth: 420, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .glassBackground(RoundedRectangle(cornerRadius: 16, style: .continuous), .ultraThinMaterial)
                 .padding(16)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .allowsHitTesting(false)
@@ -82,7 +99,7 @@ struct ViewerView: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .glassBackground(Capsule(), .ultraThinMaterial)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -114,7 +131,7 @@ struct ViewerView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 44)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .glassBackground(Capsule(), .ultraThinMaterial)
                 }
                 .padding(12)
                 .transition(.opacity)
@@ -133,10 +150,6 @@ struct ViewerView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: viewer.richView)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: nowPlaying)
         .onChange(of: viewer.current?.videoID) { _ in announce() }
-        .sheet(isPresented: $showBrowse) { LocalBrowse() }
-        .sheet(isPresented: $showPair) { PairSheet() }
-        .pairingPrompt()
-        .preferredColorScheme(.dark)
     }
 
     /// Shows the controls and hides them again after four quiet seconds, or `seconds`.
@@ -191,17 +204,24 @@ struct ViewerView: View {
         .buttonStyle(.plain)
     }
 
+    private func menuButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .glassBackground(Circle(), .ultraThinMaterial)
+                .contentShape(Circle())
+        }
+        .accessibilityLabel(label)
+    }
+
     private var menu: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            Button(action: toggleMenu) {
-                Image(systemName: "ellipsis")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .contentShape(Circle())
+            HStack(spacing: 8) {
+                menuButton("gearshape", "Settings") { closeMenu(); showSettings = true }
+                menuButton("ellipsis", "Menu", action: toggleMenu)
             }
-            .accessibilityLabel("Menu")
             if showMenu {
                 VStack(alignment: .leading, spacing: 0) {
                     menuRow("Browse YouTube", "safari") { showBrowse = true }
@@ -210,8 +230,6 @@ struct ViewerView: View {
                     Divider()
                     menuRow(showQueue ? "Hide queue" : "Show queue", "list.bullet") { showQueue.toggle() }
                     Divider()
-                    menuRow("Settings", "gearshape") { showSettings = true }
-                    Divider()
                     menuRow("End session", "stop.circle", tint: .red) {
                         showQueue = false
                         viewer.endSession()
@@ -219,7 +237,7 @@ struct ViewerView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(width: 240)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .glassBackground(RoundedRectangle(cornerRadius: 16, style: .continuous), .ultraThinMaterial)
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing)))
             }
         }
@@ -231,11 +249,20 @@ struct ViewerView: View {
 struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
+    @StateObject private var storyboard = Storyboard()
     /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
     let menuOpened: () -> Void
     @State private var scrub: Double?
+
+    private func loadStoryboard() {
+        if let d = viewer.details, d.videoID == viewer.current?.videoID {
+            storyboard.load(spec: d.storyboard, videoID: d.videoID, duration: viewer.duration)
+        } else {
+            storyboard.reset()
+        }
+    }
 
     private func skipButton(forward: Bool) -> some View {
         let n = settings.skipSeconds
@@ -376,7 +403,8 @@ struct ViewerControls: View {
                         maxValue: viewer.duration,
                         onScrub: { scrub = $0; touched() },
                         onEnd: commitSeek,
-                        onCancel: { scrub = nil })
+                        onCancel: { scrub = nil },
+                        preview: { storyboard.frame(at: $0) })
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {
@@ -404,10 +432,13 @@ struct ViewerControls: View {
             options
         }
         .foregroundStyle(.white)
+        .onAppear { loadStoryboard() }
+        .onChange(of: viewer.details?.storyboard) { _ in loadStoryboard() }
+        .onChange(of: viewer.current?.videoID) { _ in loadStoryboard() }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .frame(maxWidth: 720)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .glassBackground(RoundedRectangle(cornerRadius: 22, style: .continuous), .ultraThinMaterial)
         .padding(16)
     }
 }
@@ -485,7 +516,7 @@ struct SwipeAway<Content: View>: View {
                     .frame(width: 30, height: 120, alignment: .leading)
                     .contentShape(Rectangle())
                     .gesture(
-                        DragGesture(minimumDistance: 4)
+                        DragGesture(minimumDistance: 4, coordinateSpace: .global)
                             .onChanged { drag = max(0, $0.translation.width) }
                             .onEnded { v in
                                 if v.translation.width > 80 || v.predictedEndTranslation.width > 200 {
@@ -523,6 +554,7 @@ struct PanelClose: View {
 
 struct RichPanel: View {
     @EnvironmentObject var viewer: ViewerController
+    var floating = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -543,12 +575,13 @@ struct RichPanel: View {
             }
             .id("\(viewer.details?.videoID ?? "")\(viewer.richTab)")
         }
-        .background(.regularMaterial)
+        .modifier(PanelBackground(floating: floating))
     }
 }
 
 struct QueueSidebar: View {
     @EnvironmentObject var viewer: ViewerController
+    var floating = false
     var onClose: () -> Void = {}
     @State private var tab = 0
 
@@ -586,7 +619,7 @@ struct QueueSidebar: View {
                     onClear: { viewer.handle(.clearHistory, from: nil) })
             }
         }
-        .background(.regularMaterial)
+        .modifier(PanelBackground(floating: floating))
     }
 }
 
@@ -619,7 +652,7 @@ struct LocalBrowse: View {
             .navigationTitle("YouTube")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
+                ToolbarItem(placement: .navigationBarLeading) { BrowserNav() }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .pairingPrompt()

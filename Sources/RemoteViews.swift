@@ -23,7 +23,7 @@ struct RemoteView: View {
                         Text(note)
                             .font(.subheadline.weight(.medium))
                             .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(.regularMaterial, in: Capsule())
+                            .glassBackground(Capsule(), .regularMaterial)
                             .padding(8)
                             .transition(.opacity)
                     } else if !seenTip { tip }
@@ -32,7 +32,7 @@ struct RemoteView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.visible, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) { BrowserBack() }
+                    ToolbarItem(placement: .navigationBarLeading) { BrowserNav() }
                     ToolbarItem(placement: .principal) {
                         ConnectionChip { showPicker = true }
                     }
@@ -86,7 +86,7 @@ struct RemoteView: View {
             .accessibilityLabel("Dismiss tip")
         }
         .padding(.leading, 16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassBackground(RoundedRectangle(cornerRadius: 16, style: .continuous), .regularMaterial)
         .padding(8)
     }
 
@@ -176,7 +176,7 @@ struct ConnectionChip: View {
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 12)
                     .frame(minHeight: 32)
-                    .background(.thinMaterial, in: Capsule())
+                    .glassBackground(Capsule(), .thinMaterial)
             }
             .buttonStyle(.plain)
             .frame(minHeight: 44)
@@ -211,7 +211,7 @@ struct ChipInner: View {
             }
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
-            .background(.thinMaterial, in: Capsule())
+            .glassBackground(Capsule(), .thinMaterial)
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)
@@ -713,7 +713,7 @@ struct NowPlayingContent: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
+                    .glassBackground(Capsule(), .regularMaterial)
                     .padding(.top, 4)
                     .transition(.opacity)
                 }
@@ -783,6 +783,7 @@ struct ControlsPane: View {
     @State private var showPaywall = false
     @State private var scrub: Double?
     @State private var scrubbing = false
+    @StateObject private var storyboard = Storyboard()
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
     @State private var held: (value: Double, until: Date)?
@@ -829,7 +830,8 @@ struct ControlsPane: View {
                             onScrub: { scrub = $0 },
                             onEnd: commitSeek,
                             onCancel: { scrub = nil },
-                            onActive: { scrubbing = $0 })
+                            onActive: { scrubbing = $0 },
+                            preview: { storyboard.frame(at: $0) })
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
                         HStack {
                             Text(clock(pos))
@@ -909,6 +911,9 @@ struct ControlsPane: View {
                 .disabled(!client.connected)
             }
             .scrollDisabled(scrubbing)
+            .onAppear { loadStoryboard() }
+            .onChange(of: client.details?.storyboard) { _ in loadStoryboard() }
+            .onChange(of: client.state?.current?.videoID) { _ in loadStoryboard() }
             .sheet(isPresented: $showPaywall) { PaywallView() }
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
@@ -1001,6 +1006,14 @@ struct ControlsPane: View {
         guard Date().timeIntervalSince(volSent) > 0.1 else { return }
         volSent = Date()
         client.send(.setVolume(v))
+    }
+
+    private func loadStoryboard() {
+        if let d = client.details, d.videoID == client.state?.current?.videoID {
+            storyboard.load(spec: d.storyboard, videoID: d.videoID, duration: client.state?.duration ?? 0)
+        } else {
+            storyboard.reset()
+        }
     }
 
     private func skipButton(forward: Bool, _ s: ViewerState, _ pos: Double) -> some View {

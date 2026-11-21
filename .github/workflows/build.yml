@@ -1,12 +1,23 @@
 name: Build
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - site/**
+      - AppStore/**
+      - "**.md"
+      - .github/workflows/pages.yml
+      - .github/workflows/screenshots.yml
+      - .github/workflows/upload-screenshots.yml
   workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
+    if: github.event.pull_request.draft != true
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4

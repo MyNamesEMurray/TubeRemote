@@ -9,6 +9,7 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var name: String
     @Published var state: ViewerState?
     @Published var details: VideoDetails?
+    private var lists: (queue: [VideoItem], history: [VideoItem]) = ([], [])
     @Published var connected = false
     @Published var detail = ""
     @Published var needsPairing = false
@@ -131,7 +132,11 @@ final class RemoteClient: ObservableObject, Identifiable {
                 return drop()
             }
             switch try? JSONDecoder().decode(ServerMessage.self, from: body) {
-            case .state(let st)?:
+            case .lists(let q, let h)?:
+                lists = (q, h)
+            case .state(var st)?:
+                st.queue = lists.queue
+                st.history = lists.history
                 if !connected { Log.add("first state from \(tag)") }
                 let previous = connected ? state : nil
                 state = st
@@ -153,6 +158,8 @@ final class RemoteClient: ObservableObject, Identifiable {
             Log.add("ignored unencrypted state")
         case .details:
             Log.add("ignored unencrypted details")
+        case .lists:
+            Log.add("ignored unencrypted lists")
         case .goodbye:
             // Only the signed-in channel may tell a remote to stay away; anything on the network can send this.
             Log.add("ignored unsigned goodbye")
