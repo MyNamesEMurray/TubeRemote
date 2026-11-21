@@ -311,18 +311,28 @@ struct RemoteBar: View {
                              active: client.connected || client.needsPairing, sending: sending, play: play, here: here)
                         .equatable()
                 } else if cur != nil {
-                    Button {
-                        Haptics.tap()
-                        client.send(playing ? .pause : .resume)
-                    } label: {
-                        Image(systemName: playing ? "pause.fill" : "play.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.accentColor, in: Circle())
-                            .frame(width: 44, height: 44)
+                    let icon = Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.accentColor, in: Circle())
+                        .frame(width: 44, height: 44)
+                    if canSend {
+                        Menu {
+                            Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
+                        } label: { icon } primaryAction: {
+                            Haptics.tap()
+                            client.send(playing ? .pause : .resume)
+                        }
+                        .accessibilityLabel(playing ? "Pause" : "Play")
+                        .accessibilityHint("Touch and hold to play it on this device instead")
+                    } else {
+                        Button {
+                            Haptics.tap()
+                            client.send(playing ? .pause : .resume)
+                        } label: { icon }
+                            .accessibilityLabel(playing ? "Pause" : "Play")
                     }
-                    .accessibilityLabel(playing ? "Pause" : "Play")
                 }
                 if hasPlaylist {
                     PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), send: sendPlaylist)
