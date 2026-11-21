@@ -44,6 +44,7 @@ struct ViewerView: View {
             if viewer.current == nil { IdleView { showPair = true } }
             // Off-screen volume slider; the only way to set system volume from an app.
             Hosted(view: viewer.volumeView).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .overlay(alignment: .trailing) {
             if (showQueue || viewer.richView) && hSize == .compact {
