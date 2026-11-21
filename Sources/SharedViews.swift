@@ -68,7 +68,7 @@ struct Pill<Content: View>: View {
 
     var body: some View {
         content
-            .font(.subheadline.weight(selected ? .semibold : .medium))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(selected || onDark ? Color.white : Color.primary)
             .lineLimit(1)
             .padding(.horizontal, 14)
@@ -268,7 +268,7 @@ struct QueueList: View {
                                     .tint(.accentColor)
                                 }
                         } header: {
-                            Label("Autoplay next", systemImage: "infinity")
+                            Label("Autoplay", systemImage: "infinity")
                         }
                     }
                 }

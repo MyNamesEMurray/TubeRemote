@@ -8,7 +8,6 @@ struct SharedConfig: Codable {
     var deviceName: String
     var paired: [PairedDevice]
     var lastViewer: String?
-    var queueAction: QueueAction
     var pro: Bool
 
     static let group = "group.com.exaltedpixels.TubeRemote"

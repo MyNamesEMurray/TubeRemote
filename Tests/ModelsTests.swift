@@ -42,10 +42,9 @@ final class ModelsTests: XCTestCase {
     func testSharedConfigRoundTrip() throws {
         let c = SharedConfig(deviceKey: "ABCD1234", deviceName: "Phone",
                              paired: [PairedDevice(key: "WXYZ9876", name: "iPad", secret: Data([1, 2, 3]))],
-                             lastViewer: "WXYZ9876", queueAction: .playNext, pro: true)
+                             lastViewer: "WXYZ9876", pro: true)
         let again = try JSONDecoder().decode(SharedConfig.self, from: JSONEncoder().encode(c))
         XCTAssertEqual(again.paired.first?.secret, Data([1, 2, 3]))
-        XCTAssertEqual(again.queueAction, .playNext)
         XCTAssertTrue(again.pro)
     }
 

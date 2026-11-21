@@ -620,6 +620,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         case .setAutoplay(let on):
             settings.autoplay = on
             objectWillChange.send()
+            candidateFor = nil
             if !on {
                 awaitingNext = false
                 autoplayNext = nil
