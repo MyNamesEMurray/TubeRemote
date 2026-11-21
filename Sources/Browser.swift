@@ -2,21 +2,16 @@ import Combine
 import SwiftUI
 import WebKit
 
-/// The embedded YouTube site. Tracks which video page is open.
 final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKScriptMessageHandler, WKNavigationDelegate {
     let webView: WKWebView
     @Published var videoID: String?
-    /// The playlist the open page belongs to, if it is one this app can read.
     @Published var playlistID: String?
     @Published var canGoBack = false
-    /// Fires when the person taps the play cover over the page's own player.
     let playTapped = PassthroughSubject<Void, Never>()
     private var obs: [NSKeyValueObservation] = []
-    /// Text of the play cover, such as "Play on iPad" or "Pair with iPad". Empty when no viewer is selected.
     var target = "" { didSet { if target != oldValue { pushTarget() } } }
     private var loaded = false
     private var restored = false
-    /// nil until the cookie restore starts; callers queued while it runs.
     private var waiting: [() -> Void]?
 
     // The viewer plays the video, so local playback is blocked unless "Play here" allows it.
@@ -76,7 +71,6 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         ]
     }
 
-    /// Loads YouTube the first time a browsing screen appears, so a viewer that never browses never loads it.
     func ensureLoaded() {
         guard !loaded else { return }
         loaded = true
@@ -85,7 +79,6 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         }
     }
 
-    /// Puts the saved sign-in cookies back, once, then runs `done`. The viewer's player shares this cookie store.
     func restoreCookies(_ done: @escaping () -> Void) {
         if let w = waiting {
             if w.isEmpty && restored { done() } else { waiting?.append(done) }
@@ -112,7 +105,6 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         webView.evaluateJavaScript("window.__trTarget=\(text)")
     }
 
-    /// A fresh page forgets the viewer name, so tell it again.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { pushTarget() }
 
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
@@ -246,7 +238,6 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         let truncated: Bool?
     }
 
-    /// The videos in a playlist, and whether there were more than could be read; nil if the page could not be read.
     @MainActor
     func playlistItems(_ listID: String) async -> (items: [VideoItem], truncated: Bool)? {
         let result = try? await webView.callAsyncJavaScript(Self.playlistScript, arguments: ["listId": listID], in: nil, contentWorld: .page)
@@ -275,7 +266,6 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
 }
 
 extension UIColor {
-    /// YouTube's page background: near-black in dark mode, white in light mode.
     static let youTubePage = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 15 / 255, alpha: 1) : .white }
 }
 
@@ -292,7 +282,6 @@ enum WebIdentity {
     }
 }
 
-/// Puts an existing UIKit view (a web view, the system volume slider) into SwiftUI.
 struct Hosted<V: UIView>: UIViewRepresentable {
     let view: V
     func makeUIView(context: Context) -> V { view }

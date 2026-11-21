@@ -117,7 +117,6 @@ struct RemoteView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if note == text { note = nil } }
     }
 
-    /// Reads the open playlist from the page and sends all of it to the viewer in one message.
     private func sendPlaylist(_ action: QueueAction, reversed: Bool, to c: RemoteClient) {
         guard pro.has(c.state) else { showPaywall = true; return }
         if c.needsPairing {
@@ -149,11 +148,9 @@ struct RemoteView: View {
         }
     }
 
-    /// The person tapped play on the page's own player: play that video on the viewer straight away.
     private func playTapped() {
         guard let c = remote.active else { showPicker = true; return }
         if c.connected, let id = browser.videoID, c.state?.current?.videoID == id {
-            // Already loaded on the viewer: resume instead of starting over.
             c.send(.resume)
             Haptics.tap()
         } else {
@@ -217,13 +214,11 @@ struct ChipInner: View {
         .frame(minHeight: 44)
         .accessibilityLabel("\(client.title), \(client.needsPairing ? "not paired" : client.connected ? "connected" : "connecting")")
         .accessibilityHint("Opens the viewer list")
-        // The play cover on the YouTube page names the viewer.
         .onAppear { browser.target = coverLabel }
         .onChange(of: coverLabel) { browser.target = $0 }
     }
 }
 
-/// Send bar for browsing on the viewer itself.
 struct ActionBar: View {
     let target: String
     let enabled: Bool
@@ -252,7 +247,6 @@ struct ActionBar: View {
     }
 }
 
-/// One bottom bar: what the viewer is playing, play/pause, and the Send button when a video page is open.
 struct RemoteBar: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var pro: ProStore
@@ -360,7 +354,6 @@ struct RemoteBar: View {
     }
 }
 
-/// Offered when the viewer has nothing queued or playing and this remote still holds a saved queue.
 struct ResumeQueueBar: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var settings: AppSettings
@@ -410,7 +403,6 @@ struct ResumeQueueBar: View {
     }
 }
 
-/// The saved queue as it would play, before any of it is sent.
 struct SavedQueueSheet: View {
     let saved: SavedQueue
     let title: String
@@ -513,7 +505,6 @@ struct PlayMenu: View, Equatable {
     }
 }
 
-/// Tap adds the open video to the end of the queue; touch and hold chooses play next or the end.
 struct QueueMenu: View, Equatable {
     let target: String
     let title: String
@@ -713,7 +704,6 @@ struct NowPlayingContent: View {
 
     @ObservedObject var client: RemoteClient
     let dismiss: () -> Void
-    /// Opens the video's own YouTube page in the browser.
     let openPage: (VideoItem) -> Void
     @State private var panel: Panel
     @State private var showPicker = false
@@ -788,7 +778,6 @@ struct NowPlayingContent: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done", action: dismiss) }
-                // The toolbar button shows only its icon, so name the viewer under the title.
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         Text("Now Playing").font(.headline)
@@ -806,7 +795,6 @@ struct NowPlayingContent: View {
             .pairingPrompt()
         }
         .background(alignment: .topLeading) { Hosted(view: keys.view).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false) }
-        // While this screen is open the phone's volume buttons set the viewer's volume.
         .onAppear {
             keys.start { step in
                 guard client.connected, let now = client.state?.volume else { return }
@@ -859,7 +847,6 @@ struct ControlsPane: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityHint("Opens the video's page to read its description and comments")
                     if s.duration <= 0, s.position > 5 {
-                        // A live stream has no length to scrub through.
                         Text("LIVE")
                             .font(.caption.bold())
                             .foregroundStyle(.white)
@@ -932,7 +919,6 @@ struct ControlsPane: View {
                         .accessibilityLabel(s.muted ? "Unmute" : "Mute")
                         Slider(
                             value: Binding(get: { vol ?? s.volume }, set: { setVolume($0) }),
-                            // Sixteen steps, the same as the hardware volume buttons.
                             in: 0...1, step: 0.0625
                         ) { editing in
                             if !editing, let v = vol {
@@ -964,8 +950,6 @@ struct ControlsPane: View {
         }
     }
 
-    /// Jumps to an exact time worked out here from what the slider shows, so quick taps add up and the viewer is not
-    /// left to add to a position it may report late.
     private func jump(_ by: Double, from pos: Double, of duration: Double) {
         let t = max(0, duration > 0 ? min(pos + by, duration) : pos + by)
         held = (t, Date().addingTimeInterval(1.5))
@@ -1002,7 +986,6 @@ struct ControlsPane: View {
         }
     }
 
-    /// Speed, captions and quality on the viewer.
     private func playbackOptions(_ s: ViewerState, speed: Double) -> some View {
         HStack(spacing: 10) {
             Menu {
@@ -1014,7 +997,6 @@ struct ControlsPane: View {
             .accessibilityLabel("Playback speed, \(rate(speed))")
             Button {
                 Haptics.tap()
-                // While searching, a tap cancels the request.
                 client.send(.setCaptions(s.captions != true && s.captionsStatus == nil))
             } label: {
                 switch s.captionsStatus {
@@ -1034,7 +1016,6 @@ struct ControlsPane: View {
                         check(qualityLabel(q), !auto && q == s.quality) { client.send(.setQuality(q)) }
                     }
                 } label: {
-                    // In automatic mode say so, with the quality YouTube picked.
                     option(s.autoQuality != false ? "Auto \(qualityLabel(s.quality))" : qualityLabel(s.quality), "tv")
                 }
                 .menuOrder(.fixed)
@@ -1091,8 +1072,6 @@ struct ControlsPane: View {
     }
 }
 
-/// The video's description and comments. Reading them here is free; showing them on the viewer, scrolled from here,
-/// is the Pro rich video view.
 struct DetailsPane: View {
     @ObservedObject var client: RemoteClient
     @EnvironmentObject var pro: ProStore

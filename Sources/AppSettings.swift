@@ -7,11 +7,9 @@ final class AppSettings: ObservableObject {
     @Published var defaultMode: Mode {
         didSet { UserDefaults.standard.set(defaultMode.rawValue, forKey: "defaultMode") }
     }
-    /// Used by the viewer. A remote changes it by sending a command.
     @Published var preferredQuality: String {
         didSet { UserDefaults.standard.set(preferredQuality, forKey: "preferredQuality") }
     }
-    /// Pro. The remote keeps the last queue it saw, whichever viewer it came from, and puts it on an empty viewer.
     @Published var saveQueue: Bool {
         didSet {
             UserDefaults.standard.set(saveQueue, forKey: "saveQueue")
@@ -21,11 +19,9 @@ final class AppSettings: ObservableObject {
     @Published var savedQueue: SavedQueue {
         didSet { Store.write("queue.json", try? JSONEncoder().encode(savedQueue)) }
     }
-    /// Viewer: when the sleep timer ends, stop holding the screen awake so the device can lock by itself.
     @Published var lockOnSleep: Bool {
         didSet { UserDefaults.standard.set(lockOnSleep, forKey: "lockOnSleep") }
     }
-    /// Viewer, Pro: start what YouTube suggests when the queue runs out. A remote changes it by sending a command.
     @Published var autoplay: Bool {
         didSet { UserDefaults.standard.set(autoplay, forKey: "autoplay") }
     }
@@ -47,7 +43,6 @@ final class AppSettings: ObservableObject {
     @Published var paired: [PairedDevice] {
         didSet { Store.write("paired.json", try? JSONEncoder().encode(paired), backup: false) }
     }
-    /// Stable per-install id, used to recognise a viewer even after it is renamed.
     let deviceKey: String
 
     func paired(_ key: String) -> PairedDevice? { paired.first { $0.key == key } }
@@ -62,7 +57,6 @@ final class AppSettings: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "lastViewer") }
     }
 
-    /// Never empty.
     var name: String {
         let t = deviceName.trimmingCharacters(in: .whitespaces)
         return t.isEmpty ? UIDevice.current.model : t
@@ -96,7 +90,6 @@ final class AppSettings: ObservableObject {
 }
 
 extension AppSettings {
-    /// Gives the share extension what it needs to reach a viewer. Written whenever the app comes or goes.
     func mirrorForShare(pro: Bool) {
         let ok = SharedConfig(deviceKey: deviceKey, deviceName: name, paired: paired, lastViewer: lastViewerKey,
                               pro: pro).write()

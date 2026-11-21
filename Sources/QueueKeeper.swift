@@ -1,8 +1,5 @@
 import Foundation
 
-/// Keeps the queue on the remote, so it survives closing the app and is not tied to one viewer. What the selected viewer
-/// reports is saved: the playing video and where it had got to, and the queue. A viewer with nothing queued or playing
-/// leaves the saved queue alone, and the remote offers to resume it (`ResumeQueueBar`).
 final class QueueKeeper {
     private let settings: AppSettings
 

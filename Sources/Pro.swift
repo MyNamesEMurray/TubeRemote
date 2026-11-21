@@ -169,7 +169,6 @@ struct PaywallView: View {
     }
 }
 
-/// Small "Pro" tag shown next to a feature the person has not unlocked.
 struct GatedBadge: View {
     var body: some View {
         Label("Pro", systemImage: "lock.fill")
@@ -185,7 +184,6 @@ extension ProStore {
     func has(_ viewer: ViewerState?) -> Bool { isPro || viewer?.sessionPro == true }
 }
 
-/// Sleep timer menu. The viewer holds the timer; `endsAt` is when it will pause, if one is running.
 struct SleepTimerMenu: View, Equatable {
     let endsAt: Date?
     var onDark = false
@@ -237,7 +235,6 @@ struct SleepTimerMenu: View, Equatable {
     }
 }
 
-/// Pro: switches autoplay on or off. The viewer holds the setting.
 struct AutoplayButton: View {
     let on: Bool
     var onDark = false
@@ -266,7 +263,6 @@ struct AutoplayButton: View {
     }
 }
 
-/// Hours and minutes for a sleep timer of any length up to twelve hours.
 struct CustomSleepSheet: View {
     let set: (Double?) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -298,7 +294,6 @@ struct CustomSleepSheet: View {
     }
 }
 
-/// The picker for the viewer's preferred quality. The viewer keeps the value; the remote only sends it.
 struct QualityRow: View {
     let value: String
     let enabled: Bool
@@ -327,7 +322,6 @@ struct QualityRow: View {
     }
 }
 
-/// Reads the connected viewer's value live, so the picker follows it.
 struct RemoteQualityRow: View {
     @ObservedObject var client: RemoteClient
     @Binding var showPaywall: Bool

@@ -4,7 +4,6 @@ import WebKit
 import AVFoundation
 import MediaPlayer
 
-/// Owns the queue, history and player. Remotes only send commands; this is the single source of truth.
 final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler {
     @Published var current: VideoItem?
     @Published var isPlaying = false
@@ -13,7 +12,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var position = 0.0
     var duration = 0.0
     @Published var queue: [VideoItem] = []
-    /// Kept on this device between launches.
     @Published var history: [VideoItem] = [] {
         didSet { Store.write("history.json", try? JSONEncoder().encode(history)) }
     }
@@ -21,9 +19,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published var pending: [PendingPeer] = []
     @Published var connected: [PendingPeer] = []
     @Published var volume: Float = AVAudioSession.sharedInstance().outputVolume
-    /// iOS refused Local Network access, so no remote can find this viewer.
     @Published var denied = false
-    /// Fires when the person taps the video, to show or hide the on-screen controls.
     let tapped = PassthroughSubject<Void, Never>()
 
     let webView: WKWebView
@@ -34,7 +30,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private let pairing: Pairing
     private let browser: Browser
     private let server = ViewerServer()
-    /// Pro on this device or on a connected remote unlocks Pro features on the viewer.
     var sessionPro: Bool { ProStore.shared.isPro || server.anyRemotePro }
     private var timer: Timer?
     private var toastWork: DispatchWorkItem?
@@ -45,36 +40,27 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var wasPlaying = false
     /// True from asking for a video until its page reports in; the outgoing page's last events are ignored.
     private var loading = false
-    // What the remote asked for; re-applied on every new video.
     private var wantSpeed = 1.0
     @Published private(set) var wantCaptions: Bool?
-    /// The video has no captions to show.
     @Published private(set) var captionsNone = false
-    /// "searching" while captions are wanted but not showing yet, "none" when the video has none, else nil.
     var captionsStatus: String? {
         if captionsNone { return "none" }
         return wantCaptions == true && !captions ? "searching" : nil
     }
     private var wantQuality: String?
-    // What the player reports back.
     @Published private(set) var speed = 1.0
-    // Published so the viewer's own overlay shows them; remotes get the same values in the snapshot.
     @Published private(set) var captions = false
     @Published private(set) var quality: String?
     @Published private(set) var qualities: [String] = []
-    /// No quality is forced; `quality` is then whatever YouTube picked.
     @Published private(set) var autoQuality = true
-    /// When the sleep timer will pause playback. Only set when it changes, so the screen is not redrawn each second.
     @Published private(set) var sleepEndsAt: Date?
     private var sleepAtEnd = false
-    /// Pause when the queue runs out, whatever video that is on.
     private var sleepAtQueueEnd = false
     private var awaitingNext = false
     @Published private(set) var autoplayNext: VideoItem?
     @Published private(set) var richView = false
     @Published private(set) var richTab = 0
     @Published private(set) var richScroll = 0
-    /// The description and comments of the playing video, read from the page while a remote looks at them.
     @Published private(set) var details: VideoDetails?
     private var watching = false
     private var infoTries = 0
@@ -100,9 +86,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var autoplayStreak = 0
     static let maxAutoplay = 50
     private var adSkippable = false
-    /// What was last asked for, as opposed to `isPlaying`, which is what the page reports.
     private var wantPlaying = false
-    /// When the current video first reported playing; nil until it has.
     private var firstPlay: Date?
     private var lastKick = Date.distantPast
     // Start-up nudging watches the playback position, which is the one thing that cannot be wrong.
@@ -113,13 +97,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     /// Just after a seek the page may still report the old time; it is not passed on until then.
     private var seekHoldUntil = Date.distantPast
     private var unmuteTries = 0
-    /// The video is still muted after the automatic attempts, so the overlay offers a button.
     @Published private(set) var needsUnmute = false
     private var pairedObs: AnyCancellable?
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
     // sign-in, so Premium applies and videos that forbid embedding still play.
-    // It fills the screen with the player, starts it with sound, and reports time and state.
     static let maxQueue = 500
     static let maxComments = 200
     static let maxScanRate = 8.0
@@ -161,7 +143,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         '.ytp-unmute{display:none!important}' +
         '#player-container-id,#player{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;transform:none!important;z-index:2147483647!important;background:#000!important}' +
         '#movie_player{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;background:#000!important}' +
-        // YouTube sizes captions for a small phone player; scale them to the screen instead.
         '#movie_player .ytp-caption-segment{font-size:clamp(15px,2.4vw,30px)!important;line-height:1.35!important}' +
         // YouTube's own wrapper around the video has no height, so size both it and the video explicitly.
         '#movie_player .html5-video-container{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}' +
@@ -188,8 +169,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       function skipButton(){
         var b = document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button,.ytp-ad-skip-button-container button');
         return b && b.offsetParent ? b : null }
-      // One page of comments or of the replies to one comment, through the call the page makes itself. YouTube changes
-      // the shape of this answer now and then, so both known shapes are read.
       function ytPage(tok, done, fail){
         var cfg = function(k){ try { return ytcfg.get(k) } catch(e) { return null } };
         var text = function(x){ return x ? (x.simpleText || (x.runs || []).map(function(r){ return r.text }).join('')) : '' };
@@ -336,7 +315,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           try { mp().seekToLiveHead(); return } catch(e) {}
           var b = document.querySelector('.ytp-live-badge'); if (b) b.click();
         },
-        // The page's own facts about the video, for the rich view.
         info: function(){
           var r = window.ytInitialPlayerResponse || {}, d = r.videoDetails || {}, m = {};
           try { m = r.microformat.playerMicroformatRenderer || {} } catch(e) {}
@@ -344,8 +322,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 date:m.publishDate || m.uploadDate || '', desc:d.shortDescription || '',
                 sb:((r.storyboards || {}).playerStoryboardSpecRenderer || {}).spec || ''});
         },
-        // What YouTube would play next, for autoplay: its own pick if the page carries one, else the first
-        // suggested video that has not been played lately. The app is told the id, or null.
         next: function(skip){
           var ok = function(x){ return typeof x === 'string' && x.length === 11 && skip.indexOf(x) < 0 };
           var id = null;
@@ -368,7 +344,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           post({t:'next', id:id});
         },
         set: function(o){
-          // Back to automatic: lift the limit and forget the choice YouTube saved for later videos.
           if (!o.q && wq) {
             try { localStorage.removeItem('yt-player-quality') } catch(e) {}
             try { mp().setPlaybackQualityRange('auto','auto') } catch(e) {}
@@ -498,7 +473,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.notify = { [weak self] in self?.flash($0) }
         server.hasVideo = { [weak self] in self?.current != nil }
         pairing.onPaired = { [weak self] d in self?.server.challenge(key: d.key) }
-        // Removing a device in Settings disconnects it at once.
         pairedObs = settings.$paired.dropFirst().sink { [weak self] list in self?.server.keep(Set(list.map(\.key))) }
         server.start(name: settings.name, key: settings.deviceKey)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -564,8 +538,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     func disconnect(_ p: PendingPeer) { server.disconnect(p.id) }
 
-    /// Ends the session in one step: stops playback, empties the queue and disconnects every remote, which
-    /// leaves the viewer on its ready screen. Pairings and history stay.
     func endSession() {
         Log.add("session ended")
         sleepEndsAt = nil
@@ -587,17 +559,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         pairing.begin(peer: p.id) { [weak self] in self?.server.send(.pair($0), to: p.id) }
     }
 
-    /// Moves the video into, or back out of, a floating Picture in Picture window.
     func togglePictureInPicture() { js("__tr.pip()") }
 
-    /// Re-advertise under a new device name.
     func rename() {
         if running { server.rename(name: settings.name, key: settings.deviceKey) }
     }
 
     // MARK: Commands
 
-    /// `who` is the remote's name, or nil for local use (no toast).
     func handle(_ cmd: Command, from who: String?) {
         if let verb = apply(cmd), let who { flash("\(verb) from \(who)") }
         // The queue is sent to every remote each second, and a message over 1 MiB is dropped, so it has a limit.
@@ -826,7 +795,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Playback
 
-    /// When the queue should run out: what is left of this video and the lengths the queued ones are known to have.
     private func queueEndEstimate() -> Date {
         Date().addingTimeInterval(max(duration - position, 0) + queue.compactMap(\.duration).reduce(0, +))
     }
@@ -894,7 +862,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         loading = true
         adSkippable = false
         captionsNone = false
-        // A quality picked by hand lasts for one video; the next starts at the preferred quality.
         wantQuality = settings.preferredQuality == "auto" ? nil : settings.preferredQuality
         autoQuality = wantQuality == nil
         // Saved sign-in cookies must be back in place before the page loads, or it loads signed out.
@@ -908,7 +875,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         if current == nil { advance() }
     }
 
-    /// Next in queue, or stop and go idle when the queue is empty.
     private func advance() {
         if !queue.isEmpty { return start(queue.removeFirst()) }
         if !sleepAtQueueEnd, settings.autoplay, sessionPro, current != nil, autoplayStreak < Self.maxAutoplay {
@@ -934,8 +900,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         if sleepAtQueueEnd { sleepFire() }
     }
 
-    /// Autoplay: the page names what YouTube suggests, skipping this video and the last twenty. If it names nothing
-    /// within four seconds, an older video from the history is played instead.
     private func askUpNext() {
         guard !awaitingNext else { return }
         awaitingNext = true
@@ -949,7 +913,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         js("__tr.next(\(json))")
     }
 
-    /// Looks ahead once a video is under way, so the remote can show what autoplay will play and the end of the video has no wait.
     private func prefetchNext(for c: VideoItem) {
         candidateFor = c.id
         askPage()
@@ -1210,7 +1173,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             if let r = b["rate"] as? Double, r != speed { speed = r }
             live = b["live"] as? Bool ?? false
             atLiveHead = b["head"] as? Bool ?? false
-            // Published values are only set when they change, so a steady player causes no redraw.
             if let c = b["cc"] as? Bool, c != captions { captions = c }
             // YouTube starts the first video of a session muted, and it can stall while starting. Judge by the
             // playback position: if it has not moved for over a second in the first 25 seconds, try the next
