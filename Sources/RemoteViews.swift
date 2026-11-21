@@ -741,7 +741,7 @@ struct NowPlayingContent: View {
             .sheet(isPresented: $showPicker) { DevicePicker() }
             .pairingPrompt()
         }
-        .background(Hosted(view: keys.view).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false))
+        .background(alignment: .topLeading) { Hosted(view: keys.view).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false) }
         // While this screen is open the phone's volume buttons set the viewer's volume.
         .onAppear {
             keys.start { step in
@@ -927,14 +927,8 @@ struct ControlsPane: View {
 
     private func rate(_ r: Double) -> String { rateLabel(r) }
 
-    private func option(_ text: String, _ symbol: String) -> some View {
-        Label(text, systemImage: symbol)
-            .font(.subheadline.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 36)
-            .background(Color(.secondarySystemFill), in: Capsule())
-            .frame(minHeight: 44)
+    private func option(_ text: String, _ symbol: String, selected: Bool = false) -> some View {
+        Pill(selected: selected) { Label(text, systemImage: symbol) }
     }
 
     private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
@@ -964,7 +958,7 @@ struct ControlsPane: View {
                 switch s.captionsStatus {
                 case "none": option("No captions", "captions.bubble").opacity(0.5)
                 case "searching": option("Finding captions…", "captions.bubble")
-                default: option("Captions", s.captions == true ? "captions.bubble.fill" : "captions.bubble")
+                default: option("Captions", s.captions == true ? "captions.bubble.fill" : "captions.bubble", selected: s.captions == true)
                 }
             }
             .disabled(s.captionsStatus == "none")
@@ -1051,19 +1045,14 @@ struct DetailsPane: View {
                 }
                 .pickerStyle(.segmented)
                 Button(action: toggle) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "rectangle.righthalf.inset.filled")
-                        Text(richOn ? "On viewer" : "Show on viewer")
-                        if !pro.has(client.state) { GatedBadge() }
+                    Pill(selected: richOn) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "rectangle.righthalf.inset.filled")
+                            Text("Show on viewer")
+                            if !pro.has(client.state) { GatedBadge() }
+                        }
                     }
-                    .font(.subheadline.weight(richOn ? .semibold : .medium))
-                    .foregroundStyle(richOn ? Color.white : Color.primary)
-                    .lineLimit(1)
                     .fixedSize()
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: 36)
-                    .background(richOn ? Color.accentColor : Color(.secondarySystemFill), in: Capsule())
-                    .frame(minHeight: 44)
                 }
                 .accessibilityLabel(richOn ? "Stop showing on the viewer" : "Show on the viewer")
             }

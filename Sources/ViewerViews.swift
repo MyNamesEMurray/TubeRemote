@@ -44,6 +44,7 @@ struct ViewerView: View {
             if viewer.current == nil { IdleView { showPair = true } }
             // Off-screen volume slider; the only way to set system volume from an app.
             Hosted(view: viewer.volumeView).frame(width: 10, height: 10).clipped().opacity(0.01).allowsHitTesting(false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .overlay(alignment: .trailing) {
             if (showQueue || viewer.richView) && hSize == .compact {
@@ -241,14 +242,8 @@ struct ViewerControls: View {
         .accessibilityLabel(label)
     }
 
-    private func option(_ text: String, _ symbol: String) -> some View {
-        Label(text, systemImage: symbol)
-            .font(.subheadline.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 36)
-            .background(.white.opacity(0.18), in: Capsule())
-            .frame(minHeight: 44)
+    private func option(_ text: String, _ symbol: String, selected: Bool = false) -> some View {
+        Pill(selected: selected, onDark: true) { Label(text, systemImage: symbol) }
     }
 
     private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
@@ -283,7 +278,7 @@ struct ViewerControls: View {
             switch viewer.captionsStatus {
             case "none": option("No captions", "captions.bubble").opacity(0.5)
             case "searching": option("Finding captions…", "captions.bubble")
-            default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble")
+            default: option("Captions", viewer.captions ? "captions.bubble.fill" : "captions.bubble", selected: viewer.captions)
             }
         }
         .disabled(viewer.captionsStatus == "none")
@@ -475,7 +470,7 @@ struct SwipeAway<Content: View>: View {
                     .fill(Color.secondary.opacity(0.55))
                     .frame(width: 5, height: 44)
                     .padding(.leading, 6)
-                    .frame(width: 30, height: 120)
+                    .frame(width: 30, height: 120, alignment: .leading)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 4)

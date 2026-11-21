@@ -61,6 +61,23 @@ struct VideoRow: View {
     }
 }
 
+struct Pill<Content: View>: View {
+    var selected = false
+    var onDark = false
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .font(.subheadline.weight(selected ? .semibold : .medium))
+            .foregroundStyle(selected || onDark ? Color.white : Color.primary)
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(selected ? Color.accentColor : onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
+            .frame(minHeight: 44)
+    }
+}
+
 /// A list the viewer scrolls to `follow` and the remote reports the first visible row of through `onTop`, so the
 /// two screens can show the same part of it. `onNearEnd` fires when the last rows come into view.
 struct FollowScroll<Header: View, Row: View>: View {
