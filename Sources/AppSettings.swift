@@ -29,6 +29,9 @@ final class AppSettings: ObservableObject {
     @Published var autoplay: Bool {
         didSet { UserDefaults.standard.set(autoplay, forKey: "autoplay") }
     }
+    @Published var haptics: Bool {
+        didSet { UserDefaults.standard.set(haptics, forKey: "haptics") }
+    }
     @Published var hasOnboarded: Bool {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }
     }
@@ -67,6 +70,7 @@ final class AppSettings: ObservableObject {
             ?? SavedQueue(queue: stored.flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? [])
         lockOnSleep = d.object(forKey: "lockOnSleep") as? Bool ?? true
         autoplay = d.bool(forKey: "autoplay")
+        haptics = d.object(forKey: "haptics") as? Bool ?? true
         hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {

@@ -784,7 +784,6 @@ struct ControlsPane: View {
     @State private var scrubbing = false
     @State private var vol: Float?
     @State private var volSent = Date.distantPast
-    @State private var seekWork: DispatchWorkItem?
     @State private var held: (value: Double, until: Date)?
 
     var body: some View {
@@ -826,8 +825,9 @@ struct ControlsPane: View {
                         ScrubBar(
                             value: scrub ?? (s.live == true && s.liveHead == true ? s.duration : pos),
                             maxValue: s.duration,
-                            onScrub: { scrub = $0; scheduleSeek() },
+                            onScrub: { scrub = $0 },
                             onEnd: commitSeek,
+                            onCancel: { scrub = nil },
                             onActive: { scrubbing = $0 })
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
                         HStack {
@@ -925,10 +925,7 @@ struct ControlsPane: View {
         Haptics.tap()
     }
 
-    /// Sends the position the slider was left at. Normally the end of the drag triggers it; a timer backs that up, because
-    /// when the drag is cancelled (the view is rebuilt, the sheet takes the touch) iOS does not always report the end.
     private func commitSeek() {
-        seekWork?.cancel()
         guard let v = scrub else { return }
         scrub = nil
         held = (v, Date().addingTimeInterval(1.5))
@@ -936,13 +933,6 @@ struct ControlsPane: View {
         Log.add("seek to \(Int(v)) s")
         client.send(.seek(v))
         Haptics.tap()
-    }
-
-    private func scheduleSeek() {
-        seekWork?.cancel()
-        let w = DispatchWorkItem { commitSeek() }
-        seekWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
     }
 
     private static let speeds = playbackSpeeds

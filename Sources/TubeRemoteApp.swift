@@ -277,6 +277,9 @@ struct SettingsView: View {
                 } footer: {
                     Text("The quality the viewer starts every video at. Highest available picks the best the video offers, up to 4K. Auto lets YouTube choose. Keeping the queue saves it here. A viewer with nothing queued then offers to resume it when you connect.")
                 }
+                Section {
+                    Toggle("Haptic feedback", isOn: $settings.haptics)
+                }
                 if model.mode == .viewer {
                     Section {
                         Toggle("Let the screen lock when the sleep timer ends", isOn: $settings.lockOnSleep)

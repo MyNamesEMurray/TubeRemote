@@ -16,6 +16,10 @@ struct ViewerView: View {
     @State private var nowPlaying: VideoItem?
     @State private var nowWork: DispatchWorkItem?
 
+    private var sideWidth: CGFloat {
+        hSize == .regular && (viewer.richView || showQueue) ? (viewer.richView ? 380 : 340) : 0
+    }
+
     @ViewBuilder private var sidePanel: some View {
         if viewer.richView { RichPanel() } else { QueueSidebar(onClose: closePanel) }
     }
@@ -93,6 +97,8 @@ struct ViewerView: View {
             // Shown with the overlay, and while the menu or queue is open. Hidden, it also lets taps through.
             let visible = showMenu || showControls || showQueue || viewer.current == nil
             menu
+                .padding(.trailing, sideWidth)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: sideWidth)
                 .opacity(visible ? 1 : 0)
                 .allowsHitTesting(visible)
                 .accessibilityHidden(!visible)
@@ -229,7 +235,6 @@ struct ViewerControls: View {
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
     let menuOpened: () -> Void
     @State private var scrub: Double?
-    @State private var seekWork: DispatchWorkItem?
 
     private func button(_ symbol: String, _ label: String, _ cmd: Command, size: CGFloat = 26) -> some View {
         Button {
@@ -331,20 +336,10 @@ struct ViewerControls: View {
         .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in menuOpened() })
     }
 
-    /// Sends where the slider was left. The end of the drag normally triggers it; a timer backs that up, because the
-    /// row is redrawn twice a second and iOS does not always report the end of a drag that was interrupted by that.
     private func commitSeek() {
-        seekWork?.cancel()
         guard let v = scrub else { return }
         scrub = nil
         viewer.handle(.seek(v), from: nil)
-    }
-
-    private func scheduleSeek() {
-        seekWork?.cancel()
-        let w = DispatchWorkItem { commitSeek() }
-        seekWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
     }
 
     var body: some View {
@@ -364,8 +359,9 @@ struct ViewerControls: View {
                     ScrubBar(
                         value: scrub ?? (viewer.live && viewer.atLiveHead ? viewer.duration : viewer.position),
                         maxValue: viewer.duration,
-                        onScrub: { scrub = $0; touched(); scheduleSeek() },
-                        onEnd: commitSeek)
+                        onScrub: { scrub = $0; touched() },
+                        onEnd: commitSeek,
+                        onCancel: { scrub = nil })
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {
