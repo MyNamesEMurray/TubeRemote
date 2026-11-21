@@ -21,6 +21,7 @@ final class ShareViewController: UIViewController {
 final class ShareModel: ObservableObject {
     enum State {
         case working(String)
+        case choose
         case pick([PairedDevice])
         case done(String)
         case failed(String)
@@ -30,6 +31,7 @@ final class ShareModel: ObservableObject {
     private weak var context: NSExtensionContext?
     private var config: SharedConfig?
     private var command: Command?
+    private var videoID: String?
     private var sender: ShareSender?
 
     init(context: NSExtensionContext?) { self.context = context }
@@ -52,7 +54,16 @@ final class ShareModel: ObservableObject {
             guard let url = await link(), let id = parseVideoID(url) else {
                 return state = .failed("Share a YouTube video link.")
             }
-            command = QueueAction.addToEnd.command(await VideoMetadata.item(videoID: id, duration: nil))
+            videoID = id
+            state = .choose
+        }
+    }
+
+    func choose(_ action: QueueAction) {
+        guard let config, let id = videoID else { return }
+        state = .working("Reading the link…")
+        Task {
+            command = action.command(await VideoMetadata.item(videoID: id, duration: nil))
             if let d = config.paired.first(where: { $0.key == config.lastViewer }) ?? (config.paired.count == 1 ? config.paired[0] : nil) {
                 send(to: d)
             } else {
@@ -128,6 +139,14 @@ struct ShareView: View {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 44)).foregroundStyle(.orange)
                 Text(text).multilineTextAlignment(.center)
                 Button("Close") { model.cancel() }.buttonStyle(.borderedProminent)
+            case .choose:
+                Text("What do you want to do?").font(.headline)
+                ForEach(QueueAction.allCases) { a in
+                    Button { model.choose(a) } label: { Label(a.label, systemImage: a.icon).frame(maxWidth: .infinity) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                }
+                Button("Cancel", role: .cancel) { model.cancel() }
             case .pick(let list):
                 Text("Send to which viewer?").font(.headline)
                 ForEach(list) { d in
