@@ -7,9 +7,6 @@ final class AppSettings: ObservableObject {
     @Published var defaultMode: Mode {
         didSet { UserDefaults.standard.set(defaultMode.rawValue, forKey: "defaultMode") }
     }
-    @Published var queueAction: QueueAction {
-        didSet { UserDefaults.standard.set(queueAction.rawValue, forKey: "queueAction") }
-    }
     /// Used by the viewer. A remote changes it by sending a command.
     @Published var preferredQuality: String {
         didSet { UserDefaults.standard.set(preferredQuality, forKey: "preferredQuality") }
@@ -63,7 +60,6 @@ final class AppSettings: ObservableObject {
         let d = UserDefaults.standard
         deviceName = d.string(forKey: "deviceName") ?? UIDevice.current.name
         defaultMode = Mode(rawValue: d.string(forKey: "defaultMode") ?? "") ?? .remote
-        queueAction = QueueAction(rawValue: d.string(forKey: "queueAction") ?? "") ?? .playNow
         preferredQuality = d.string(forKey: "preferredQuality") ?? "auto"
         saveQueue = d.object(forKey: "saveQueue") as? Bool ?? true
         let stored = Store.read("queue.json")
@@ -87,7 +83,7 @@ extension AppSettings {
     /// Gives the share extension what it needs to reach a viewer. Written whenever the app comes or goes.
     func mirrorForShare(pro: Bool) {
         let ok = SharedConfig(deviceKey: deviceKey, deviceName: name, paired: paired, lastViewer: lastViewerKey,
-                              queueAction: queueAction, pro: pro).write()
+                              pro: pro).write()
         if !ok { Log.add(SharedConfig.available ? "share: could not write the shared file" : "share: App Group not available to this build") }
     }
 }

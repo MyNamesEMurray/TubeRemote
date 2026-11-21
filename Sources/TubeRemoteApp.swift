@@ -304,16 +304,6 @@ struct SettingsView: View {
                     Text("A viewer plays videos on this screen. A remote browses YouTube and sends them.")
                 }
                 Section {
-                    Picker("Queue action", selection: $settings.queueAction) {
-                        ForEach(QueueAction.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                } header: {
-                    Text("Queue")
-                } footer: {
-                    Text("What the main send button does when you choose a video. Other options stay available from its menu.")
-                }
-                Section {
                     if settings.paired.isEmpty {
                         Text("No paired devices yet").foregroundStyle(.secondary)
                     }

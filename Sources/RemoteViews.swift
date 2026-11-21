@@ -47,7 +47,7 @@ struct RemoteView: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if let c = remote.active {
                         RemoteBar(client: c, canSend: browser.videoID != nil, hasPlaylist: browser.playlistID != nil,
-                                  sending: sending, open: { showNow = true }, send: { send($0, to: c) },
+                                  sending: sending, open: { showNow = true }, send: { send($0, to: c) }, play: { playTapped() },
                                   sendPlaylist: { sendPlaylist($0, reversed: $1, to: c) }, here: { browser.play() })
                     } else if browser.videoID != nil {
                         Button { showPicker = true } label: {
@@ -225,7 +225,6 @@ struct ChipInner: View {
 
 /// Send bar for browsing on the viewer itself.
 struct ActionBar: View {
-    @EnvironmentObject var settings: AppSettings
     let target: String
     let enabled: Bool
     let onAction: (QueueAction) -> Void
@@ -234,9 +233,9 @@ struct ActionBar: View {
         HStack(spacing: 8) {
             Button {
                 Haptics.tap()
-                onAction(settings.queueAction)
+                onAction(.playNow)
             } label: {
-                Label(settings.queueAction.title(on: target), systemImage: settings.queueAction.icon)
+                Label(QueueAction.playNow.title(on: target), systemImage: QueueAction.playNow.icon)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
@@ -244,17 +243,7 @@ struct ActionBar: View {
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
-
-            Menu {
-                ForEach(QueueAction.allCases.filter { $0 != settings.queueAction }) { a in
-                    Button { Haptics.tap(); onAction(a) } label: { Label(a.title(on: target), systemImage: a.icon) }
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.title2)
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("More ways to send")
+            QueueMenu(target: target, title: target, active: true, sending: !enabled, send: onAction)
         }
         .disabled(!enabled)
         .padding(.horizontal)
@@ -266,7 +255,6 @@ struct ActionBar: View {
 /// One bottom bar: what the viewer is playing, play/pause, and the Send button when a video page is open.
 struct RemoteBar: View {
     @ObservedObject var client: RemoteClient
-    @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var pro: ProStore
     @State private var showPaywall = false
     let canSend: Bool
@@ -274,6 +262,7 @@ struct RemoteBar: View {
     let sending: Bool
     let open: () -> Void
     let send: (QueueAction) -> Void
+    let play: () -> Void
     let sendPlaylist: (QueueAction, Bool) -> Void
     let here: () -> Void
 
@@ -330,10 +319,13 @@ struct RemoteBar: View {
                         .equatable()
                 }
                 if canSend {
-                    SendMenu(target: client.key, title: client.title, pairing: client.needsPairing,
-                             active: client.connected || client.needsPairing, sending: sending,
-                             action: settings.queueAction, send: send, here: here)
+                    PlayMenu(target: client.key, title: client.title, pairing: client.needsPairing,
+                             active: client.connected || client.needsPairing, sending: sending, play: play, here: here)
                         .equatable()
+                    if !client.needsPairing {
+                        QueueMenu(target: client.key, title: client.title, active: client.connected, sending: sending, send: send)
+                            .equatable()
+                    }
                 }
             }
             .foregroundStyle(.primary)
@@ -471,44 +463,72 @@ struct PlaylistMenu: View, Equatable {
     }
 }
 
-/// Tap sends with the default action from Settings; touch and hold lists every option. Compared by what it shows, for
+/// Tap plays the open video on the viewer; touch and hold offers playing it here instead. Compared by what it shows, for
 /// the same reason as `PlaylistMenu`.
-struct SendMenu: View, Equatable {
+struct PlayMenu: View, Equatable {
     let target: String
     let title: String
     let pairing: Bool
     let active: Bool
     let sending: Bool
-    let action: QueueAction
-    let send: (QueueAction) -> Void
+    let play: () -> Void
     let here: () -> Void
 
-    static func == (a: SendMenu, b: SendMenu) -> Bool {
-        a.target == b.target && a.title == b.title && a.pairing == b.pairing && a.active == b.active
-            && a.sending == b.sending && a.action == b.action
+    static func == (a: PlayMenu, b: PlayMenu) -> Bool {
+        a.target == b.target && a.title == b.title && a.pairing == b.pairing && a.active == b.active && a.sending == b.sending
     }
 
     var body: some View {
         Menu {
-            ForEach(QueueAction.allCases) { a in
-                Button { Haptics.tap(); send(a) } label: { Label(a.title(on: title), systemImage: a.icon) }
-            }
             Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
         } label: {
-            Label(pairing ? "Pair" : "Send", systemImage: pairing ? "link" : action.icon)
+            Image(systemName: pairing ? "link" : "play.fill")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 36)
-                .background(Color.accentColor, in: Capsule())
+                .frame(width: 36, height: 36)
+                .background(Color.accentColor, in: Circle())
                 .opacity(active && !sending ? 1 : 0.5)
-                .frame(minHeight: 44)
+                .frame(width: 44, height: 44)
         } primaryAction: {
             Haptics.tap()
-            send(action)
+            play()
         }
-        .accessibilityLabel(pairing ? "Pair with \(title)" : action.title(on: title))
-        .accessibilityHint(pairing ? "Compare a code on both devices" : "Touch and hold for more ways to send")
+        .accessibilityLabel(pairing ? "Pair with \(title)" : "Play on \(title)")
+        .accessibilityHint(pairing ? "Compare a code on both devices" : "Touch and hold to play it on this device instead")
+    }
+}
+
+/// Tap adds the open video to the end of the queue; touch and hold chooses play next or the end.
+struct QueueMenu: View, Equatable {
+    let target: String
+    let title: String
+    let active: Bool
+    let sending: Bool
+    let send: (QueueAction) -> Void
+
+    static func == (a: QueueMenu, b: QueueMenu) -> Bool {
+        a.target == b.target && a.title == b.title && a.active == b.active && a.sending == b.sending
+    }
+
+    var body: some View {
+        Menu {
+            ForEach([QueueAction.playNext, .addToEnd]) { a in
+                Button { Haptics.tap(); send(a) } label: { Label(a.title(on: title), systemImage: a.icon) }
+            }
+        } label: {
+            Image(systemName: QueueAction.addToEnd.icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 36, height: 36)
+                .background(Color(.secondarySystemFill), in: Circle())
+                .opacity(active && !sending ? 1 : 0.5)
+                .frame(width: 44, height: 44)
+        } primaryAction: {
+            Haptics.tap()
+            send(.addToEnd)
+        }
+        .accessibilityLabel("Add to the end of the queue on \(title)")
+        .accessibilityHint("Touch and hold to play it next instead")
     }
 }
 

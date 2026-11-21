@@ -52,7 +52,7 @@ final class ShareModel: ObservableObject {
             guard let url = await link(), let id = parseVideoID(url) else {
                 return state = .failed("Share a YouTube video link.")
             }
-            command = config.queueAction.command(await VideoMetadata.item(videoID: id, duration: nil))
+            command = QueueAction.addToEnd.command(await VideoMetadata.item(videoID: id, duration: nil))
             if let d = config.paired.first(where: { $0.key == config.lastViewer }) ?? (config.paired.count == 1 ? config.paired[0] : nil) {
                 send(to: d)
             } else {
