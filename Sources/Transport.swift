@@ -2,12 +2,10 @@ import CryptoKit
 import Foundation
 import Network
 
-/// JSON messages over plain TCP, each prefixed by a 4-byte big-endian length, advertised via Bonjour.
 /// Everything runs on the main queue. A relay server for remote-over-internet can speak the same messages.
 enum Transport {
     static let serviceType = "_ytremote._tcp"
     static let maxMessage = 1 << 20
-    /// Bump when a message changes in a way older builds cannot read.
     static let version = 3
 
     static func parameters() -> NWParameters {
@@ -27,7 +25,6 @@ enum Transport {
 
     static func nonce() -> Data { Data((0..<16).map { _ in UInt8.random(in: 0...255) }) }
 
-    /// True when iOS refused Local Network access (kDNSServiceErr_PolicyDenied).
     static func isDenied(_ e: NWError) -> Bool {
         if case .dns(let code) = e { return code == -65570 }
         return false
@@ -93,7 +90,6 @@ struct Channel {
         return box.ciphertext + box.tag
     }
 
-    /// Returns the decrypted message body, or nil if it was not the next message from the other side.
     mutating func open(_ data: Data) -> Data? {
         guard let box = try? ChaChaPoly.SealedBox(combined: Self.nonce(received + 1) + data),
               let body = try? ChaChaPoly.open(box, using: rx) else { return nil }
@@ -105,11 +101,9 @@ struct Channel {
 struct PendingPeer: Identifiable {
     let id: ObjectIdentifier
     let name: String
-    /// The remote's device key, known once it has said hello.
     var key: String? = nil
 }
 
-/// Viewer side: accepts any number of remotes. Only authenticated remotes get state and may send commands.
 final class ViewerServer {
     private struct Peer {
         let conn: NWConnection
@@ -138,16 +132,12 @@ final class ViewerServer {
     var onPeers: (() -> Void)?
     var onGone: ((ObjectIdentifier) -> Void)?
     var onDenied: ((Bool) -> Void)?
-    /// Whether the viewer's own device has Pro.
     var viewerPro: (() -> Bool)?
-    /// Short messages for the person at the viewer.
     var notify: ((String) -> Void)?
-    /// Whether a video is loaded, so extra remotes can be sent away when nothing is playing.
     var hasVideo: (() -> Bool)?
     private var excessPending = false
     private var idleSince: Date?
 
-    /// Remotes that said hello but are not authenticated, so they can be offered for pairing.
     var pending: [PendingPeer] {
         conns.compactMap { $0.value.hello && !$0.value.authed ? PendingPeer(id: $0.key, name: $0.value.name) : nil }
             .sorted { $0.name < $1.name }
@@ -217,7 +207,6 @@ final class ViewerServer {
         if SessionRules.shouldTrim(playing: playing, idleSince: idleSince, now: Date()) { trimExtras() }
     }
 
-    /// The viewer calls this when a new video starts.
     func videoChanged() {
         if excessPending { trimExtras() }
     }
@@ -239,8 +228,6 @@ final class ViewerServer {
         }
     }
 
-    /// One remote at a time unless the viewer or a connected remote has Pro. A device that signs in again replaces
-    /// its own older connection.
     private func admit(_ id: ObjectIdentifier) -> Bool {
         guard let me = conns[id], let key = me.key else { return false }
         for (other, p) in conns where other != id && p.authed && p.key == key {
@@ -307,18 +294,15 @@ final class ViewerServer {
         if let c = conns[id]?.conn { Transport.send(m, on: c) }
     }
 
-    /// Remotes signed in right now, so the person at the viewer can see and disconnect them.
     var connected: [PendingPeer] {
         conns.compactMap { $0.value.authed ? PendingPeer(id: $0.key, name: $0.value.name, key: $0.value.key) : nil }
             .sorted { $0.name < $1.name }
     }
 
-    /// Disconnects every signed-in remote. Devices still waiting to pair are left alone.
     func disconnectAll() {
         for (id, p) in conns where p.authed { disconnect(id) }
     }
 
-    /// Tells the remote, then closes the connection once the message has had time to leave.
     func disconnect(_ id: ObjectIdentifier, with message: ServerMessage = .goodbye) {
         guard let c = conns[id]?.conn else { return }
         // A signed-in remote only believes a goodbye that arrives inside its encrypted channel.
@@ -334,7 +318,6 @@ final class ViewerServer {
         send(.sealed(box), to: id)
     }
 
-    /// A pairing just finished: ask the remote with this key to sign in with its new secret.
     func challenge(key: String) {
         for (id, p) in conns where p.key == key && p.hello { challenge(id) }
         onPeers?()
@@ -347,7 +330,6 @@ final class ViewerServer {
         send(.challenge(nonce), to: id)
     }
 
-    /// The paired list changed: disconnect signed-in remotes that are no longer on it.
     func keep(_ keys: Set<String>) {
         for (id, p) in conns where p.authed && !keys.contains(p.key ?? "") {
             Log.add("unpaired \(Log.who(p.key)), disconnecting")

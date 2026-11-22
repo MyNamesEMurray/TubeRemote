@@ -3,7 +3,6 @@ import CryptoKit
 import Foundation
 import Network
 
-/// One connection to one viewer. Reconnects forever until stop().
 final class RemoteClient: ObservableObject, Identifiable {
     let key: String
     @Published var name: String
@@ -13,11 +12,8 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var connected = false
     @Published var detail = ""
     @Published var needsPairing = false
-    /// The two devices run app versions that cannot talk to each other.
     @Published var outdated = false
-    /// The viewer disconnected this remote on purpose, so it stays away until its owner reconnects.
     @Published var released = false
-    /// The viewer already serves another remote, and nothing connected has Pro. Pro on this device would let it in.
     @Published var busy = false
     var endpoints: [NWEndpoint]
     private var attempt = 0
@@ -104,7 +100,6 @@ final class RemoteClient: ObservableObject, Identifiable {
         connect()
     }
 
-    /// Signs in again, so the viewer learns about a change such as buying Pro.
     func refresh() {
         guard !released else { return }
         busy = false
@@ -115,7 +110,6 @@ final class RemoteClient: ObservableObject, Identifiable {
         pairing.begin(peer: key) { [weak self] in self?.sendRaw(.pair($0)) }
     }
 
-    /// False when the viewer runs an app version this one cannot talk to. Older viewers never say hello back.
     private func sameVersion() -> Bool {
         if peerVersion == nil { outdated = true }
         return !outdated
@@ -229,13 +223,11 @@ final class RemoteClient: ObservableObject, Identifiable {
     }
 }
 
-/// Browses Bonjour for viewers and keeps a client per viewer, so the picker shows live status.
 final class RemoteController: ObservableObject {
     @Published var devices: [RemoteClient] = []
     @Published var selectedKey: String? {
         didSet { settings.lastViewerKey = selectedKey }
     }
-    /// iOS refused Local Network access, so no viewer can ever be found.
     @Published var denied = false
     var active: RemoteClient? { devices.first { $0.key == selectedKey } }
 
@@ -309,7 +301,6 @@ final class RemoteController: ObservableObject {
 
     func select(_ c: RemoteClient) { selectedKey = c.key }
 
-    /// Bonjour service names are "<device name>#<device key>".
     private static func split(_ s: String) -> (name: String, key: String) {
         guard let r = s.range(of: "#", options: .backwards) else { return (s, s) }
         return (String(s[..<r.lowerBound]), String(s[r.upperBound...]))

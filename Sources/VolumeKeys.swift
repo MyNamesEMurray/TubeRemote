@@ -13,7 +13,6 @@ final class VolumeKeys {
     private var base: Float = 0.5
     private var onStep: ((Float) -> Void)?
 
-    /// `onStep` gets +1/16 or -1/16, the size of one hardware button press.
     func start(onStep: @escaping (Float) -> Void) {
         self.onStep = onStep
         let nc = NotificationCenter.default

@@ -52,7 +52,6 @@ enum QueueAction: String, CaseIterable, Identifiable, Codable {
 }
 
 extension Command {
-    /// The command's name without its contents, for the log: "play", not the video it carries.
     var logName: String { String(String(describing: self).prefix { $0 != "(" }) }
 }
 
@@ -66,15 +65,12 @@ struct VideoItem: Codable, Identifiable, Hashable {
     var startAt: Double?
 
     var thumbnailURL: URL { URL(string: "https://i.ytimg.com/vi/\(videoID)/mqdefault.jpg")! }
-    /// Sharper image for the large Now Playing artwork. Older videos lack it, so pair it with thumbnailURL.
     var artworkURL: URL { URL(string: "https://i.ytimg.com/vi/\(videoID)/hq720.jpg")! }
-    /// Same video with a new queue-entry id, so one video can sit in the queue twice.
     var fresh: VideoItem { var c = self; c.id = UUID(); return c }
     /// videoID is interpolated into JS on the viewer, and arrives over the network: whitelist it.
     var isValid: Bool { videoID.range(of: "^[A-Za-z0-9_-]{6,20}$", options: .regularExpression) != nil }
 }
 
-/// What a remote keeps of a viewer's queue: the video that was playing, where it had got to, and what was next.
 struct SavedQueue: Codable, Equatable {
     var current: VideoItem?
     var position = 0.0
@@ -82,7 +78,6 @@ struct SavedQueue: Codable, Equatable {
 
     var count: Int { (current == nil ? 0 : 1) + queue.count }
     var isEmpty: Bool { count == 0 }
-    /// Videos in the order they would play, the first starting where it left off.
     var items: [VideoItem] {
         guard var c = current else { return queue }
         c.startAt = position > 5 ? position : nil
@@ -102,43 +97,30 @@ struct ViewerState: Codable, Equatable {
     // Optional so builds from before these existed still decode; nil hides the controls on the remote.
     var speed: Double?
     var captions: Bool?
-    /// YouTube's name for the quality now playing, e.g. "hd1080".
     var quality: String?
     var qualities: [String]?
-    /// An advert is playing and YouTube is offering its Skip button.
     var adSkippable: Bool?
-    /// What the viewer starts every video at (see `preferredQualityChoices`).
     var preferredQuality: String?
-    /// When the viewer will pause by itself, if a sleep timer is running.
     var sleepEndsAt: Date?
-    /// No quality is forced; `quality` is then whatever YouTube picked.
     var autoQuality: Bool?
     /// "searching": captions were asked for and none are showing yet. "none": this video has none.
     var captionsStatus: String?
-    /// Pro is on the viewer or a connected remote, so every remote may use Pro features.
     var sessionPro: Bool?
-    /// Pro: when the queue runs out the viewer starts what YouTube suggests next. Nil on a viewer that cannot do this.
     var autoplay: Bool?
-    /// What autoplay will start when the queue runs out, once the viewer knows.
     var autoplayNext: VideoItem?
-    /// Pro, rich video view: the viewer is showing the video's description. Nil on a viewer that cannot.
     var richView: Bool?
-    /// 0 the description, 1 the comments.
     var richTab: Int?
-    /// The video is a live stream, and whether the player is at its live edge.
     var live: Bool?
     var liveHead: Bool?
 
     var muted: Bool { volume < 0.01 }
 }
 
-/// What YouTube's page says about a video: shown by the rich view on the viewer and the remote.
 struct VideoInfo: Codable, Equatable {
     var videoID: String
     var title: String
     var channel: String
     var views: Int?
-    /// A date such as "2025-03-01" or a full timestamp; only the day is shown.
     var published: String?
     var description: String
 
@@ -163,12 +145,9 @@ struct VideoComment: Codable, Equatable, Identifiable {
     var likes: String?
     var age: String?
     var replies: String?
-    /// Loaded when the comment is opened; nil until then.
     var replyList: [VideoComment]?
 }
 
-/// The description and comments of the playing video. Sent on their own, only when they change, to remotes that
-/// have the Details tab open (the viewer reads them from the page).
 struct VideoDetails: Codable, Equatable {
     var videoID: String
     var info: VideoInfo?
@@ -176,14 +155,10 @@ struct VideoDetails: Codable, Equatable {
     /// nil while loading, "ok", "none" (off or not found) or "error".
     var commentsStatus: String?
     var moreComments = false
-    /// Ids of the comments that are open, so every screen shows the same ones.
     var expanded: [String] = []
-    /// YouTube's storyboard description: where the small preview frames for seeking are.
     var storyboard: String?
 }
 
-/// How fast holding a skip button scans: 4 times normal speed, rising by half every 3 seconds up to a cap that grows with the
-/// length of the video. The viewer and the remote must agree on it, so it lives here.
 enum ScanRamp {
     static let base = 4.0
     static let growth = 1.5
@@ -197,7 +172,6 @@ enum ScanRamp {
         min(base * pow(growth, max(t, 0) / period), cap)
     }
 
-    /// Seconds of video covered by holding for `t` seconds.
     static func distance(held t: Double, cap: Double) -> Double {
         let t = max(t, 0)
         let k = log(growth) / period
@@ -215,32 +189,23 @@ enum Command: Codable {
     case setVolume(Float), setMuted(Bool)
     case remove(UUID), reorder([UUID]), playQueueItem(UUID)
     case clearQueue, clearHistory
-    /// Quality is YouTube's name ("hd1080"), or "auto".
     case setSpeed(Double), setCaptions(Bool), setQuality(String)
     case skipAd
-    /// The quality every video starts at: YouTube's quality name, "best" or "auto".
     case setPreferredQuality(String)
     /// Seconds until the viewer pauses; 0 means at the end of the video, -1 at the end of the queue, nil switches the timer off.
     case setSleepTimer(Double?)
     case setAutoplay(Bool)
-    /// Not that one: pick another video for autoplay.
     case autoplayAnother
-    /// Show or hide the description beside the video on the viewer.
     case setRichView(Bool)
-    /// The remote has its Details tab open (or closed): the viewer reads the description and comments for it.
     case watchDetails(Bool)
     case moreComments
-    /// Open or close one comment's replies.
     case toggleComment(String)
     case richTab(Int)
     case goLive
     /// Hold to scan: -1 backwards, 1 forwards, 0 stop. Sent again while held; the viewer stops by itself if it stops hearing.
     case scan(Int, mute: Bool)
-    /// The hold ended after this many seconds; the viewer puts playback where that much scanning leaves it.
     case scanEnd(Double)
-    /// The first description line the remote has in view; the viewer scrolls to it.
     case richScroll(Int)
-    /// A whole playlist at once, placed in the queue the way `QueueAction` says.
     case playlist([VideoItem], QueueAction)
 }
 
@@ -262,9 +227,7 @@ enum PairMessage: Codable {
 // Devices on different app versions must still understand each other's hello, so keep `hello` stable,
 // bump Transport.version for breaking changes, and make any field added to a message optional.
 
-/// Remote -> viewer. `command` is only accepted inside `sealed`.
 enum ClientMessage: Codable {
-    /// `pro` says whether this device has TubeRemote Pro; one Pro device lets several remotes share a viewer.
     case hello(name: String, key: String, version: Int?, pro: Bool?)
     case auth(mac: Data, nonce: Data)
     case ping
@@ -273,7 +236,6 @@ enum ClientMessage: Codable {
     case sealed(Data)
 }
 
-/// Viewer -> remote. `state` is only sent inside `sealed`, to authenticated remotes.
 enum ServerMessage: Codable {
     case hello(version: Int)
     case state(ViewerState)
@@ -281,17 +243,13 @@ enum ServerMessage: Codable {
     case challenge(Data)
     case pair(PairMessage)
     case sealed(Data)
-    /// The person at the viewer disconnected this remote; it should not reconnect by itself.
     case goodbye
-    /// The queue and history, sent only when they change; the state that follows carries them empty.
     case lists(queue: [VideoItem], history: [VideoItem])
-    /// The description and comments of the playing video. Older remotes cannot decode this and ignore it.
     case details(VideoDetails)
     /// The viewer already serves another remote and nothing connected has Pro. The remote should not retry by itself.
     case busy
 }
 
-/// Who may be connected to a viewer at once: one remote, or any number when the viewer or a connected remote has Pro.
 struct SessionRules {
     struct Remote: Equatable {
         var key: String
@@ -299,19 +257,15 @@ struct SessionRules {
         var since: Date
     }
 
-    /// A remote signing in is let in if it is the only one, or the session has Pro through the viewer, the newcomer or
-    /// anyone already connected. A device's own older connection does not count against it.
     static func admits(_ newcomer: Remote, among current: [Remote], viewerPro: Bool) -> Bool {
         let others = current.filter { $0.key != newcomer.key }
         return others.isEmpty || viewerPro || newcomer.pro || others.contains { $0.pro }
     }
 
-    /// After the Pro device left: nothing is playing and the extras have had a minute.
     static func shouldTrim(playing: Bool, idleSince: Date?, now: Date) -> Bool {
         !playing && idleSince.map { now.timeIntervalSince($0) >= 60 } == true
     }
 
-    /// When a session has lost Pro (the Pro remote left) and several remotes remain: everyone but the one connected longest.
     static func excess(_ current: [Remote], viewerPro: Bool) -> [String] {
         guard !viewerPro, current.count > 1, !current.contains(where: \.pro),
               let keep = current.min(by: { $0.since < $1.since })?.key else { return [] }
@@ -345,13 +299,11 @@ func parseVideoID(_ url: URL?) -> String? {
     return nil
 }
 
-/// What can be chosen as the preferred quality. "best" is the highest the video offers up to 4K, "auto" leaves it to YouTube.
 let preferredQualityChoices: [(id: String, label: String)] = [
     ("auto", "Auto"), ("best", "Highest available"), ("hd2160", "2160p (4K)"),
     ("hd1440", "1440p"), ("hd1080", "1080p"), ("hd720", "720p"), ("large", "480p"),
 ]
 
-/// "hd1080" -> "1080p".
 func qualityLabel(_ q: String?) -> String {
     let names = ["highres": "Max", "large": "480p", "medium": "360p", "small": "240p", "tiny": "144p"]
     guard let q, q != "auto", q != "unknown" else { return "Auto" }

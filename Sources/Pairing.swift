@@ -16,7 +16,6 @@ final class Pairing: ObservableObject {
 
     private final class Session {
         let priv = Curve25519.KeyAgreement.PrivateKey()
-        /// The connection this session belongs to; messages from anyone else are ignored.
         let peer: AnyHashable
         let initiator: Bool
         let send: (PairMessage) -> Void
@@ -94,7 +93,6 @@ final class Pairing: ObservableObject {
         prompt = nil
     }
 
-    /// The connection to this peer went away, so its half-finished pairing cannot complete.
     func cancel(peer: AnyHashable) {
         if session?.peer == peer { cancel() }
     }

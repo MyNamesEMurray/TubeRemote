@@ -2,7 +2,6 @@ import SwiftUI
 
 struct Thumb: View {
     let url: URL
-    /// Shown when `url` fails to load.
     var fallback: URL?
     var radius: CGFloat = 6
 
@@ -308,8 +307,6 @@ struct Pill<Content: View>: View {
     }
 }
 
-/// A list the viewer scrolls to `follow` and the remote reports the first visible row of through `onTop`, so the
-/// two screens can show the same part of it. `onNearEnd` fires when the last rows come into view.
 struct FollowScroll<Header: View, Row: View>: View {
     let count: Int
     var follow: Int?
@@ -364,7 +361,6 @@ struct FollowScroll<Header: View, Row: View>: View {
     }
 }
 
-/// A description line with its web addresses and times made tappable; a time is a link to `tubeseek://<seconds>`.
 func linkified(_ line: String) -> AttributedString {
     var out = AttributedString(line)
     let whole = NSRange(location: 0, length: (line as NSString).length)
@@ -386,7 +382,6 @@ func linkified(_ line: String) -> AttributedString {
     return out
 }
 
-/// A video's title, facts and description.
 struct DescriptionLines: View {
     let info: VideoInfo
     var follow: Int?
@@ -460,7 +455,6 @@ struct CommentRow: View {
     }
 }
 
-/// A video's comments, with what to show while there are none.
 struct CommentsList: View {
     let details: VideoDetails?
     var follow: Int?
@@ -487,14 +481,12 @@ struct CommentsList: View {
     }
 }
 
-/// Queue with tap-to-play, swipe-to-delete, drag reorder (in Reorder mode) and clear.
 struct QueueList: View {
     let items: [VideoItem]
     let onPlay: (VideoItem) -> Void
     let onRemove: (VideoItem) -> Void
     let onMove: (IndexSet, Int) -> Void
     let onClear: () -> Void
-    /// What autoplay will play after the queue, with a tap to queue it and a swipe to ask for another.
     var autoplayNext: VideoItem?
     var onAddNext: (VideoItem) -> Void = { _ in }
     var onAnother: () -> Void = {}

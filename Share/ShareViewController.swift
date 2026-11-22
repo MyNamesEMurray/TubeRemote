@@ -2,7 +2,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The sheet that appears under Share > Send to Viewer. It sends one video to a paired viewer and closes.
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -103,7 +102,6 @@ final class ShareModel: ObservableObject {
         }
     }
 
-    /// The link being shared: a URL, or the first link inside shared text.
     private func link() async -> URL? {
         let items = (context?.inputItems as? [NSExtensionItem]) ?? []
         for item in items {

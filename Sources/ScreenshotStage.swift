@@ -1,8 +1,6 @@
 #if DEBUG
 import SwiftUI
 
-/// Debug builds only. Launched with `-TubeRemoteScreenshots controls|queue|paywall`, the app opens straight onto that
-/// Now Playing panel with a staged viewer in place of a network, for the store screenshots (`screenshots.yml`).
 enum ScreenshotStage {
     static var shot: String? { UserDefaults.standard.string(forKey: "TubeRemoteScreenshots") }
     static var panel: String? { shot }

@@ -114,7 +114,6 @@ struct ViewerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            // Shown with the overlay, and while the menu or queue is open. Hidden, it also lets taps through.
             let visible = showMenu || showControls || showQueue || viewer.current == nil
             menu
                 .padding(.trailing, sideWidth)
@@ -149,7 +148,6 @@ struct ViewerView: View {
             }
             .padding(12)
         }
-        // The page reports taps on the video; nothing native sits on top of it to catch them.
         .onReceive(viewer.tapped) { _ in
             closeMenu()
             if showControls { hideWork?.cancel(); showControls = false } else { keepControls() }
@@ -164,7 +162,6 @@ struct ViewerView: View {
         .onChange(of: viewer.current?.videoID) { _ in announce() }
     }
 
-    /// Shows the controls and hides them again after four quiet seconds, or `seconds`.
     private func keepControls(for seconds: Double = 4) {
         hideWork?.cancel()
         showControls = true
@@ -187,7 +184,6 @@ struct ViewerView: View {
         showMenu = false
     }
 
-    /// Opens or closes the menu. Unlike a system menu it fades away by itself after six seconds.
     private func toggleMenu() {
         Haptics.tap()
         guard !showMenu else { return closeMenu() }
@@ -257,13 +253,11 @@ struct ViewerView: View {
     }
 }
 
-/// Playback controls on the viewer itself, shown by tapping the video.
 struct ViewerControls: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings
     @StateObject private var storyboard = Storyboard()
     let visible: Bool
-    /// Called on every interaction so the controls stay up while in use.
     let touched: () -> Void
     /// A menu can be open longer than the usual quiet time, and opening one calls no button action.
     let menuOpened: () -> Void
@@ -334,7 +328,6 @@ struct ViewerControls: View {
         Button {
             Haptics.tap()
             touched()
-            // While searching, a tap cancels the request.
             viewer.handle(.setCaptions(!viewer.captions && viewer.captionsStatus == nil), from: nil)
         } label: {
             switch viewer.captionsStatus {
@@ -373,7 +366,6 @@ struct ViewerControls: View {
                     }
                 }
             } label: {
-                // In automatic mode say so, with the quality YouTube picked.
                 option(viewer.autoQuality ? "Auto \(qualityLabel(viewer.quality))" : qualityLabel(viewer.quality), "tv")
             }
             .menuOrder(.fixed)
@@ -381,7 +373,6 @@ struct ViewerControls: View {
         }
     }
 
-    /// Captions, quality and the rest, the same options the remote has. On one row if they fit, else on two.
     private var options: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) { speedPill; captionsPill; sleepPill; autoplayPill; qualityPill }
@@ -515,7 +506,6 @@ struct IdleView: View {
     }
 }
 
-/// The description or comments beside the video. The remote opens it, picks the tab and scrolls it.
 struct SwipeAway<Content: View>: View {
     let onClose: () -> Void
     @ViewBuilder let content: Content
@@ -681,7 +671,6 @@ struct QueueSidebar: View {
     }
 }
 
-/// Browse YouTube on the viewer itself; actions go straight to the local queue.
 struct LocalBrowse: View {
     @EnvironmentObject var browser: Browser
     @EnvironmentObject var viewer: ViewerController
@@ -716,7 +705,6 @@ struct LocalBrowse: View {
             .pairingPrompt()
         }
         .onAppear { browser.ensureLoaded() }
-        // Tapping play on the page plays the video on this viewer and closes the browser.
         .onReceive(browser.playTapped) { _ in
             send(.playNow)
             dismiss()
@@ -724,7 +712,6 @@ struct LocalBrowse: View {
     }
 }
 
-/// Every paired device, with the ones connected right now first, and devices that connected but are not paired yet.
 struct PairSheet: View {
     @EnvironmentObject var viewer: ViewerController
     @EnvironmentObject var settings: AppSettings

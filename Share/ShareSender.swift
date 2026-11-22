@@ -4,7 +4,6 @@ import Network
 
 enum ShareError: Error { case notFound, dropped, unpaired, version, busy }
 
-/// Finds one paired viewer on the network, signs in the way the app's remote does, sends one command and hangs up.
 /// Everything runs on the main queue and `done` is called once.
 final class ShareSender {
     private let config: SharedConfig
