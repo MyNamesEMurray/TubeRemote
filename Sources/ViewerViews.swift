@@ -568,6 +568,8 @@ struct ClockPill: View {
             }
         }
         .font(.subheadline.weight(.semibold).monospacedDigit())
+        .lineLimit(1)
+        .fixedSize()
         .foregroundStyle(.white)
         .padding(.horizontal, 14)
         .frame(minHeight: 36)
