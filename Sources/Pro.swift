@@ -64,7 +64,7 @@ final class ProStore: ObservableObject {
                     await t.finish()
                     await refreshEntitlement()
                 } else {
-                    message = "Purchase could not be verified."
+                    message = "Purchase couldn't be verified."
                 }
             case .pending:
                 message = "Purchase pending approval."
@@ -226,6 +226,7 @@ struct SleepTimerMenu: View, Equatable {
                 } label: { label }
                 .menuOrder(.fixed)
                 .accessibilityLabel(endsAt == nil ? "Sleep timer" : "Sleep timer running")
+                .accessibilityValue(endsAt.map { "\(clock(max($0.timeIntervalSinceNow, 0))) left" } ?? "")
             } else {
                 Button { showPaywall = true } label: { label }
             }
@@ -258,7 +259,7 @@ struct AutoplayButton: View {
                 }
             }
         }
-        .accessibilityLabel(on ? "Autoplay on" : "Autoplay off")
+        .accessibilityLabel(!isPro ? "Autoplay, needs Pro" : on ? "Autoplay on" : "Autoplay off")
         .sheet(isPresented: $showPaywall) { PaywallView() }
     }
 }

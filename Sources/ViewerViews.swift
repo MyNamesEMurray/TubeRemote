@@ -9,6 +9,7 @@ struct ViewerView: View {
     @State private var showQueue = false
     @State private var showBrowse = false
     @State private var showPair = false
+    @State private var confirmEnd = false
     @State private var showControls = false
     @State private var hideWork: DispatchWorkItem?
     @State private var showMenu = false
@@ -37,7 +38,14 @@ struct ViewerView: View {
             .statusBarHidden(settings.hideStatusBar)
             .sheet(isPresented: $showBrowse) { LocalBrowse() }
             .sheet(isPresented: $showPair) { PairSheet() }
-            .pairingPrompt()
+            .confirmationDialog("End the session?", isPresented: $confirmEnd, titleVisibility: .visible) {
+                Button("End Session", role: .destructive) {
+                    showQueue = false
+                    viewer.endSession()
+                }
+            } message: {
+                Text("This clears the queue and disconnects every remote.")
+            }
     }
 
     private var stage: some View {
@@ -136,7 +144,7 @@ struct ViewerView: View {
                         Haptics.tap()
                         viewer.unmuteVideo()
                     } label: {
-                        Label("Tap to unmute", systemImage: "speaker.slash.fill")
+                        Label("Tap to Unmute", systemImage: "speaker.slash.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 14)
@@ -236,11 +244,11 @@ struct ViewerView: View {
                     Divider()
                     menuRow("Devices", "link") { showPair = true }
                     Divider()
-                    menuRow(showQueue ? "Hide queue" : "Show queue", "list.bullet") { showQueue.toggle() }
+                    menuRow(showQueue ? "Hide Queue" : "Show Queue", "list.bullet") { showQueue.toggle() }
                     Divider()
-                    menuRow("End session", "stop.circle", tint: .red) {
-                        showQueue = false
-                        viewer.endSession()
+                    menuRow("End Session", "stop.circle", tint: .red) {
+                        closeMenu()
+                        confirmEnd = true
                     }
                 }
                 .foregroundStyle(.white)
@@ -478,7 +486,7 @@ struct IdleView: View {
                 Text(settings.name).font(.largeTitle.bold())
                 if viewer.denied {
                     Text("Local Network access is off").font(.title3).foregroundStyle(.orange)
-                    Text("Other devices cannot find this viewer until you allow it in Settings.")
+                    Text("Other devices can't find this viewer until you allow it in Settings.")
                         .font(.title3).foregroundStyle(.secondary)
                 } else {
                     Text("Ready to receive videos").font(.title2).foregroundStyle(.secondary)
@@ -562,7 +570,7 @@ struct ClockPill: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(Date.now, style: .time)
+            TimelineView(.everyMinute) { Text($0.date, style: .time) }
             if level >= 0 {
                 Label("\(Int((level * 100).rounded()))%", systemImage: symbol)
             }
@@ -639,7 +647,7 @@ struct QueueSidebar: View {
         VStack(spacing: 8) {
             HStack(spacing: 4) {
                 Picker("List", selection: $tab) {
-                    Text("Up next").tag(0)
+                    Text("Queue").tag(0)
                     Text("History").tag(1)
                 }
                 .pickerStyle(.segmented)
@@ -706,7 +714,10 @@ struct LocalBrowse: View {
             }
             .pairingPrompt()
         }
-        .onAppear { browser.ensureLoaded() }
+        .onAppear {
+            browser.ensureLoaded()
+            browser.target = "Play on this device"
+        }
         .onReceive(browser.playTapped) { _ in
             send(.playNow)
             dismiss()

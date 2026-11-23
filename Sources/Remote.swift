@@ -9,6 +9,11 @@ final class RemoteClient: ObservableObject, Identifiable {
     @Published var state: ViewerState?
     @Published var details: VideoDetails?
     private var lists: (queue: [VideoItem], history: [VideoItem]) = ([], [])
+
+    func setQueue(_ q: [VideoItem]) {
+        lists.queue = q
+        state?.queue = q
+    }
     @Published var connected = false
     @Published var detail = ""
     @Published var needsPairing = false
@@ -192,7 +197,7 @@ final class RemoteClient: ObservableObject, Identifiable {
         guard connected, let box = channel?.seal(ClientMessage.command(cmd)) else {
             return Log.add("send \(cmd.logName) dropped: not connected")
         }
-        Log.add("send \(cmd.logName)")
+        if !cmd.logsOften { Log.add("send \(cmd.logName)") }
         sendRaw(.sealed(box))
     }
 

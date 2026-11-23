@@ -178,7 +178,7 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
             card(.viewer, "Viewer", "Plays videos on this screen. Great for an iPad or TV-connected device.")
             card(.remote, "Remote", "Browse YouTube and send videos to a viewer.")
-            Text("You can change this later in Settings.\nNext, iOS asks to find devices on your local network. Choose Allow, or your devices cannot see each other.")
+            Text("You can change this later in Settings.\nNext, iOS asks to find devices on your local network. Choose Allow, or your devices can't see each other.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -250,6 +250,10 @@ struct SettingsView: View {
                         }
                     }
                     Button("Restore Purchases") { Task { await pro.restore() } }
+                        .disabled(pro.busy)
+                    if let m = pro.message {
+                        Text(m).font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
                 Section("This Device") {
                     TextField("Device name", text: $settings.deviceName)

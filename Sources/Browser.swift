@@ -31,12 +31,14 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
         var p=document.getElementById('movie_player'),id=new URLSearchParams(location.search).get('v');
         if(!p||window.__allowPlay||location.pathname!=='/watch'||!/^[\w-]{6,20}$/.test(id||'')){cover.remove();return}
         var t=window.__trTarget;
-        pill.textContent=t?(t.indexOf('Pair')===0?t:'\u25B6\uFE0E  '+t):'Choose a viewer';
+        pill.textContent=t?(t.indexOf('Pair')===0?t:'\u25B6\uFE0E  '+t):'Choose a Viewer';
         cover.style.backgroundImage='linear-gradient(rgba(0,0,0,.3),rgba(0,0,0,.3)),url(https://i.ytimg.com/vi/'+id+'/hqdefault.jpg)';
         if(cover.parentNode!==p)p.appendChild(cover);
       },300);
     })()
     """#
+
+    private var cookieSave: DispatchWorkItem?
 
     override init() {
         let cfg = WKWebViewConfiguration()
@@ -122,6 +124,13 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
 
     // shortcut: WKWebView drops session cookies on relaunch, so keep a copy and give them a one-year expiry
     func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        cookieSave?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.saveCookies(cookieStore) }
+        cookieSave = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
+    }
+
+    private func saveCookies(_ cookieStore: WKHTTPCookieStore) {
         cookieStore.getAllCookies { cookies in
             let rows: [[String: Any]] = cookies
                 .filter { $0.domain.contains("google") || $0.domain.contains("youtube") }
@@ -134,8 +143,8 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
                     return p
                 }
             // Sign-in cookies stay on this device: keep them out of iCloud and computer backups.
-            Store.write("cookies.plist", try? PropertyListSerialization.data(fromPropertyList: rows, format: .binary, options: 0),
-                        backup: false)
+            let data = try? PropertyListSerialization.data(fromPropertyList: rows, format: .binary, options: 0)
+            DispatchQueue.global(qos: .utility).async { Store.write("cookies.plist", data, backup: false) }
         }
     }
 

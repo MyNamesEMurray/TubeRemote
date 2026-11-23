@@ -141,6 +141,10 @@ struct HoldToScan: ViewModifier {
                     end(Date().timeIntervalSince(pressedAt))
                 }
             }
+            .onDisappear {
+                timer?.invalidate()
+                timer = nil
+            }
     }
 }
 
@@ -284,6 +288,8 @@ struct LivePill: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(atHead ? Color.red : onDark ? Color.white.opacity(0.18) : Color(.secondarySystemFill), in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .disabled(atHead)
         .accessibilityLabel(atHead ? "Live" : "Go to the live edge")
@@ -314,8 +320,11 @@ struct FollowScroll<Header: View, Row: View>: View {
     var onNearEnd: (() -> Void)?
     let header: Header
     let row: (Int) -> Row
-    @State private var visible = Set<Int>()
-    @State private var reportWork: DispatchWorkItem?
+    private final class Seen {
+        var visible = Set<Int>()
+        var work: DispatchWorkItem?
+    }
+    @State private var seen = Seen()
 
     init(count: Int, follow: Int? = nil, onTop: ((Int) -> Void)? = nil, onNearEnd: (() -> Void)? = nil,
          @ViewBuilder header: () -> Header, @ViewBuilder row: @escaping (Int) -> Row) {
@@ -329,9 +338,10 @@ struct FollowScroll<Header: View, Row: View>: View {
 
     private func report() {
         guard let onTop else { return }
-        reportWork?.cancel()
-        let w = DispatchWorkItem { onTop(visible.min() ?? 0) }
-        reportWork = w
+        seen.work?.cancel()
+        let box = seen
+        let w = DispatchWorkItem { onTop(box.visible.min() ?? 0) }
+        seen.work = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: w)
     }
 
@@ -344,11 +354,11 @@ struct FollowScroll<Header: View, Row: View>: View {
                         row(i)
                             .id(i)
                             .onAppear {
-                                visible.insert(i)
+                                seen.visible.insert(i)
                                 report()
                                 if i >= count - 3 { onNearEnd?() }
                             }
-                            .onDisappear { visible.remove(i); report() }
+                            .onDisappear { seen.visible.remove(i); report() }
                     }
                 }
                 .padding()
@@ -361,15 +371,20 @@ struct FollowScroll<Header: View, Row: View>: View {
     }
 }
 
+private enum LinkTools {
+    static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+    static let time = try? NSRegularExpression(pattern: "(?<![\\d:])(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})(?![\\d:])")
+}
+
 func linkified(_ line: String) -> AttributedString {
     var out = AttributedString(line)
     let whole = NSRange(location: 0, length: (line as NSString).length)
-    if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+    if let detector = LinkTools.detector {
         for m in detector.matches(in: line, range: whole) {
             if let url = m.url, let r = Range(m.range, in: out) { out[r].link = url }
         }
     }
-    if let re = try? NSRegularExpression(pattern: "(?<![\\d:])(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})(?![\\d:])") {
+    if let re = LinkTools.time {
         for m in re.matches(in: line, range: whole) {
             func part(_ i: Int) -> Int {
                 let r = m.range(at: i)
@@ -444,6 +459,9 @@ struct CommentRow: View {
                             .padding(.leading, 14)
                             .overlay(alignment: .leading) { Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: 2) }
                     }
+                    if let total = Int(comment.replies ?? ""), total > list.count {
+                        Text("Showing the first \(list.count) replies").font(.caption).foregroundStyle(.secondary).padding(.leading, 14)
+                    }
                 } else {
                     ProgressView().padding(.leading, 14).padding(.vertical, 4)
                 }
@@ -474,7 +492,7 @@ struct CommentsList: View {
         } else if details?.commentsStatus == "none" {
             EmptyState(symbol: "bubble.left", title: "No comments", message: "Comments are off for this video, or none were found.")
         } else if details?.commentsStatus == "error" {
-            EmptyState(symbol: "exclamationmark.bubble", title: "Couldn't load comments", message: "YouTube did not answer in a form this app reads.")
+            EmptyState(symbol: "exclamationmark.bubble", title: "Couldn't load comments", message: "YouTube didn't answer in a form this app can read.")
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -499,7 +517,7 @@ struct QueueList: View {
         } else {
             VStack(spacing: 0) {
                 HStack {
-                    Text("Up Next").font(.headline)
+                    Text("Queue").font(.headline)
                     Spacer()
                     Button(editMode.isEditing ? "Done" : "Reorder") {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -569,7 +587,7 @@ struct HistoryList: View {
         } else {
             VStack(spacing: 0) {
                 HStack {
-                    Text("Recently Played").font(.headline)
+                    Text("History").font(.headline)
                     Spacer()
                     Button("Clear", role: .destructive) { confirmClear = true }
                         .frame(minHeight: 44)
@@ -584,7 +602,7 @@ struct HistoryList: View {
                 List(items) { item in
                     Menu {
                         Button { Haptics.tap(); onReplay(item) } label: { Label("Replay now", systemImage: "play.fill") }
-                        Button { Haptics.tap(); onRequeue(item) } label: { Label("Add to queue", systemImage: "text.append") }
+                        Button { Haptics.success(); onRequeue(item) } label: { Label("Add to queue", systemImage: "text.append") }
                     } label: {
                         VideoRow(item: item)
                     } primaryAction: {

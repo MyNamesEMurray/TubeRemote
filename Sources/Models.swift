@@ -53,6 +53,13 @@ enum QueueAction: String, CaseIterable, Identifiable, Codable {
 
 extension Command {
     var logName: String { String(String(describing: self).prefix { $0 != "(" }) }
+
+    var logsOften: Bool {
+        switch self {
+        case .setVolume, .richScroll, .scan, .seek: return true
+        default: return false
+        }
+    }
 }
 
 struct VideoItem: Codable, Identifiable, Hashable {
@@ -112,6 +119,8 @@ struct ViewerState: Codable, Equatable {
     var richTab: Int?
     var live: Bool?
     var liveHead: Bool?
+    var needsUnmute: Bool?
+    var notice: String?
 
     var muted: Bool { volume < 0.01 }
 }

@@ -56,7 +56,7 @@ struct DebugLogView: View {
                 .padding()
                 .textSelection(.enabled)
         }
-        .navigationTitle("Debug log")
+        .navigationTitle("Debug Log")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button("Copy") { UIPasteboard.general.string = log.lines.joined(separator: "\n") }
