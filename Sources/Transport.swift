@@ -428,7 +428,7 @@ final class ViewerServer {
             guard case .command(let cmd)? = try? JSONDecoder().decode(ClientMessage.self, from: body) else {
                 return Log.add("rx sealed decode failed")
             }
-            Log.add("command \(cmd.logName) from \(Log.who(conns[id]?.key))")
+            if !cmd.logsOften { Log.add("command \(cmd.logName) from \(Log.who(conns[id]?.key))") }
             onCommand?(cmd, conns[id]?.name ?? "a remote")
         case .command:
             Log.add("ignored unencrypted command")

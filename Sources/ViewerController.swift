@@ -4,7 +4,7 @@ import WebKit
 import AVFoundation
 import MediaPlayer
 
-final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler {
+final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler, WKNavigationDelegate {
     @Published var current: VideoItem?
     @Published var isPlaying = false
     // Not published: they change twice a second, and publishing re-drew the whole viewer screen each time,
@@ -439,6 +439,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         super.init()
         history = Store.read("history.json").flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? []
         cfg.userContentController.add(self, name: "yt")
+        webView.navigationDelegate = self
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.scrollView.isScrollEnabled = false
@@ -466,6 +467,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         server.onPeers = { [weak self] in
             self?.pending = self?.server.pending ?? []
             self?.connected = self?.server.connected ?? []
+            if self?.connected.isEmpty == true { self?.watching = false }
         }
         server.onGone = { [weak self] id in self?.pairing.cancel(peer: id) }
         server.onDenied = { [weak self] in self?.denied = $0 }
@@ -956,7 +958,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private static func comment(_ c: [String: Any]) -> VideoComment? {
         guard let id = c["id"] as? String, let text = c["t"] as? String, !text.isEmpty else { return nil }
         func s(_ k: String) -> String? { (c[k] as? String).flatMap { $0.isEmpty ? nil : $0 } }
-        return VideoComment(id: id, author: String((c["a"] as? String ?? "").prefix(100)), text: String(text.prefix(2000)),
+        return VideoComment(id: id, author: String((c["a"] as? String ?? "").prefix(100)), text: String(text.prefix(1000)),
                             likes: s("l"), age: s("w"), replies: s("r"))
     }
 
@@ -1095,7 +1097,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 Log.add("player error with quality forced, back to Auto")
                 wantQuality = nil
                 autoQuality = true
-                flash("That quality will not play on this device. Back to Auto.")
+                flash("That quality won't play on this device. Back to Auto.")
                 loading = true
                 webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(Int(position))s")!))
             } else {
@@ -1112,7 +1114,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             flash("This video has no captions")
             broadcast()
         case "nopip":
-            flash("Picture in Picture is not available. YouTube allows it with Premium.")
+            flash("Picture in Picture isn't available. YouTube allows it with Premium.")
         case "info":
             let id = b["id"] as? String ?? ""
             let title = b["title"] as? String ?? ""
@@ -1148,7 +1150,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             guard let cid = b["cid"] as? String else { break }
             replyLoading.remove(cid)
             guard var d = currentDetails(), let i = d.comments.firstIndex(where: { $0.id == cid }) else { break }
-            d.comments[i].replyList = (b["items"] as? [[String: Any]] ?? []).compactMap { Self.comment($0) }
+            d.comments[i].replyList = (b["items"] as? [[String: Any]] ?? []).compactMap { Self.comment($0) }.prefix(20).map { $0 }
             publish(d)
         case "next":
             if awaitingNext { upNext(b["id"] as? String) } else { prefetched(b["id"] as? String) }
@@ -1243,6 +1245,24 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         }
     }
 
+    func webView(_ w: WKWebView, didFailProvisionalNavigation n: WKNavigation!, withError e: Error) { loadFailed(e) }
+    func webView(_ w: WKWebView, didFail n: WKNavigation!, withError e: Error) { loadFailed(e) }
+
+    private func loadFailed(_ e: Error) {
+        guard loading, (e as NSError).code != NSURLErrorCancelled, let c = current else { return }
+        Log.add("page load failed: \((e as NSError).code)")
+        flash("Can't load \(c.title), skipping")
+        advance()
+        broadcast()
+    }
+
+    func webViewWebContentProcessDidTerminate(_ w: WKWebView) {
+        guard let id = current?.videoID else { return }
+        Log.add("web process ended, reloading")
+        loading = true
+        w.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(Int(position))s")!))
+    }
+
     // MARK: State out
 
     func snapshot() -> ViewerState {
@@ -1252,7 +1272,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     adSkippable: adSkippable, preferredQuality: settings.preferredQuality, sleepEndsAt: sleepEndsAt,
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
                     autoplay: settings.autoplay, autoplayNext: autoplayNext,
-                    richView: richView, richTab: richTab, live: live, liveHead: atLiveHead)
+                    richView: richView, richTab: richTab, live: live, liveHead: atLiveHead,
+                    needsUnmute: needsUnmute ? true : nil, notice: toast)
     }
 
     private func broadcast() {

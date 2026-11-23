@@ -106,9 +106,18 @@ struct RemoteView: View {
         Task { @MainActor in
             defer { sending = false }
             guard let item = await browser.makeItem() else { return }
+            guard c.connected else {
+                Haptics.warning()
+                return show("Lost connection to \(c.title)")
+            }
             c.send(action.command(item))
             browser.pause()
             Haptics.success()
+            switch action {
+            case .playNow: break
+            case .playNext: show("Playing next on \(c.title)")
+            case .addToEnd: show("Added to the queue on \(c.title)")
+            }
         }
     }
 
@@ -169,7 +178,7 @@ struct ConnectionChip: View {
             ChipInner(client: c, onTap: onTap)
         } else {
             Button(action: onTap) {
-                Label("Choose Viewer", systemImage: "tv")
+                Label("Choose a Viewer", systemImage: "tv")
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 12)
                     .frame(minHeight: 32)
@@ -188,6 +197,15 @@ struct ChipInner: View {
     @EnvironmentObject var browser: Browser
     let onTap: () -> Void
 
+    private var chipState: String {
+        if client.connected { return "connected" }
+        if client.needsPairing { return "not paired" }
+        if client.outdated { return "needs an update" }
+        if client.busy { return "in use by another remote" }
+        if client.released { return "disconnected by the viewer" }
+        return "connecting"
+    }
+
     private var coverLabel: String { client.needsPairing ? "Pair with \(client.title)" : "Play on \(client.title)" }
 
     var body: some View {
@@ -198,7 +216,7 @@ struct ChipInner: View {
                     Circle().fill(Color.green).frame(width: 8, height: 8)
                 } else if client.needsPairing {
                     Image(systemName: "link").font(.caption2.weight(.bold)).foregroundStyle(.orange)
-                } else if client.released || client.busy {
+                } else if client.released || client.busy || client.outdated {
                     Circle().fill(Color.secondary).frame(width: 8, height: 8)
                 } else {
                     ProgressView().controlSize(.mini)
@@ -212,7 +230,7 @@ struct ChipInner: View {
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)
-        .accessibilityLabel("\(client.title), \(client.needsPairing ? "not paired" : client.connected ? "connected" : "connecting")")
+        .accessibilityLabel("\(client.title), \(chipState)")
         .accessibilityHint("Opens the viewer list")
         .onAppear { browser.target = coverLabel }
         .onChange(of: coverLabel) { browser.target = $0 }
@@ -275,7 +293,7 @@ struct RemoteBar: View {
                     HStack(spacing: 12) {
                         if let cur { Thumb(url: cur.thumbnailURL, radius: 8).frame(width: 44, height: 44) }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(cur?.title ?? (client.needsPairing ? "Not paired" : "Nothing playing")).font(.headline).lineLimit(1)
+                            Text(cur?.title ?? (client.needsPairing ? "Not paired" : "Nothing Playing")).font(.headline).lineLimit(1)
                             Text(client.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 0)
@@ -294,7 +312,7 @@ struct RemoteBar: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text("Skip Ad")
-                            if !pro.has(client.state) { Image(systemName: "lock.fill").font(.caption2) }
+                            if !pro.has(client.state) { GatedBadge() }
                         }
                     }
                     .buttonStyle(.bordered)
@@ -315,6 +333,7 @@ struct RemoteBar: View {
                         Menu {
                             Button { Haptics.tap(); here() } label: { Label("Play here", systemImage: "iphone") }
                         } label: { icon } primaryAction: {
+                            guard client.connected else { return }
                             Haptics.tap()
                             client.send(playing ? .pause : .resume)
                         }
@@ -325,6 +344,7 @@ struct RemoteBar: View {
                             Haptics.tap()
                             client.send(playing ? .pause : .resume)
                         } label: { icon }
+                            .disabled(!client.connected)
                             .accessibilityLabel(playing ? "Pause" : "Play")
                     }
                 }
@@ -421,7 +441,7 @@ struct SavedQueueSheet: View {
                     }
                 }
                 if !saved.queue.isEmpty {
-                    Section("Up Next") { ForEach(saved.queue) { VideoRow(item: $0) } }
+                    Section("Queue") { ForEach(saved.queue) { VideoRow(item: $0) } }
                 }
             }
             .navigationTitle("Saved queue")
@@ -467,6 +487,7 @@ struct PlaylistMenu: View, Equatable {
         }
         .menuOrder(.fixed)
         .accessibilityLabel("Add the whole playlist")
+        .accessibilityHint(locked ? "Needs Pro" : "")
     }
 }
 
@@ -502,6 +523,56 @@ struct PlayMenu: View, Equatable {
         }
         .accessibilityLabel(pairing ? "Pair with \(title)" : "Play on \(title)")
         .accessibilityHint(pairing ? "Compare a code on both devices" : "Touch and hold to play it on this device instead")
+    }
+}
+
+private func menuCheck(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
+    Button {
+        Haptics.tap()
+        action()
+    } label: {
+        if on { Label(text, systemImage: "checkmark") } else { Text(text) }
+    }
+}
+
+struct SpeedMenu: View, Equatable {
+    let speed: Double
+    let pick: (Double) -> Void
+
+    static func == (a: SpeedMenu, b: SpeedMenu) -> Bool { a.speed == b.speed }
+
+    var body: some View {
+        Menu {
+            ForEach(playbackSpeeds, id: \.self) { r in menuCheck(rateLabel(r), r == speed) { pick(r) } }
+        } label: {
+            Pill { Label(rateLabel(speed), systemImage: "speedometer") }
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("Playback speed, \(rateLabel(speed))")
+    }
+}
+
+struct QualityMenu: View, Equatable {
+    let qualities: [String]
+    let quality: String?
+    let auto: Bool
+    let pick: (String) -> Void
+
+    static func == (a: QualityMenu, b: QualityMenu) -> Bool {
+        a.qualities == b.qualities && a.quality == b.quality && a.auto == b.auto
+    }
+
+    var body: some View {
+        Menu {
+            menuCheck("Auto", auto) { pick("auto") }
+            ForEach(qualities, id: \.self) { q in
+                menuCheck(qualityLabel(q), !auto && q == quality) { pick(q) }
+            }
+        } label: {
+            Pill { Label(auto ? "Auto \(qualityLabel(quality))" : qualityLabel(quality), systemImage: "tv") }
+        }
+        .menuOrder(.fixed)
+        .accessibilityLabel("Quality, \(qualityLabel(quality))")
     }
 }
 
@@ -652,7 +723,7 @@ struct DeviceRow: View {
                 Image(systemName: "tv").font(.title3).foregroundStyle(Color.accentColor).frame(width: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(client.title).font(.body).foregroundStyle(.primary)
-                    Text(status).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text(status).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 0)
                 Circle().fill(client.connected ? Color.green : Color.orange).frame(width: 8, height: 8)
@@ -732,6 +803,8 @@ struct NowPlayingContent: View {
                                 client.beginPair()
                             }
                             .font(.footnote.weight(.semibold))
+                        } else if client.outdated {
+                            Text("Update TubeRemote on both devices").font(.footnote)
                         } else if client.released || client.busy {
                             Text(client.busy ? "\(client.title) is in use by another remote" : "Disconnected by \(client.title)")
                                 .font(.footnote)
@@ -751,10 +824,19 @@ struct NowPlayingContent: View {
                     .padding(.top, 4)
                     .transition(.opacity)
                 }
+                if client.connected, let note = client.state?.notice ?? (client.state?.needsUnmute == true ? "No sound yet. Tap to Unmute on the viewer." : nil) {
+                    Text(note)
+                        .font(.footnote)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .glassBackground(Capsule(), .regularMaterial)
+                        .padding(.top, 4)
+                        .transition(.opacity)
+                }
                 Group {
                     switch panel {
-                    case .queue: RemoteQueue(client: client)
-                    case .history: RemoteHistory(client: client)
+                    case .queue: RemoteQueue(client: client).disabled(!client.connected)
+                    case .history: RemoteHistory(client: client).disabled(!client.connected)
                     case .controls: ControlsPane(client: client, open: openPage)
                     case .details: DetailsPane(client: client)
                     }
@@ -766,7 +848,7 @@ struct NowPlayingContent: View {
                 Picker("Show", selection: $panel) {
                     Text("Controls").tag(Panel.controls)
                     if client.state?.richView != nil { Text("Details").tag(Panel.details) }
-                    Text("Up Next").tag(Panel.queue)
+                    Text("Queue").tag(Panel.queue)
                     Text("History").tag(Panel.history)
                 }
                 .pickerStyle(.segmented)
@@ -847,12 +929,7 @@ struct ControlsPane: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityHint("Opens the video's page to read its description and comments")
                     if s.duration <= 0, s.position > 5 {
-                        Text("LIVE")
-                            .font(.caption.bold())
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.red, in: Capsule())
+                        LivePill(atHead: true, action: {})
                     } else {
                     VStack(spacing: 2) {
                         ScrubBar(
@@ -877,13 +954,13 @@ struct ControlsPane: View {
                     }
                     }
                     HStack(spacing: 0) {
-                        transport("backward.end.fill", "Previous track", size: 28) { client.send(.previous) }
+                        transport("backward.end.fill", "Previous", size: 28) { client.send(.previous) }
                         skipButton(forward: false, s, pos)
                         transport(s.isPlaying ? "pause.fill" : "play.fill", s.isPlaying ? "Pause" : "Play", size: 44) {
                             client.send(s.isPlaying ? .pause : .resume)
                         }
                         skipButton(forward: true, s, pos)
-                        transport("forward.end.fill", "Next track", size: 28) { client.send(.next) }
+                        transport("forward.end.fill", "Next", size: 28) { client.send(.next) }
                     }
                     if s.adSkippable == true {
                         Button {
@@ -969,32 +1046,13 @@ struct ControlsPane: View {
         Haptics.tap()
     }
 
-    private static let speeds = playbackSpeeds
-
-    private func rate(_ r: Double) -> String { rateLabel(r) }
-
     private func option(_ text: String, _ symbol: String, selected: Bool = false) -> some View {
         Pill(selected: selected) { Label(text, systemImage: symbol) }
     }
 
-    private func check(_ text: String, _ on: Bool, _ action: @escaping () -> Void) -> some View {
-        Button {
-            Haptics.tap()
-            action()
-        } label: {
-            if on { Label(text, systemImage: "checkmark") } else { Text(text) }
-        }
-    }
-
     private func playbackOptions(_ s: ViewerState, speed: Double) -> some View {
-        HStack(spacing: 10) {
-            Menu {
-                ForEach(Self.speeds, id: \.self) { r in check(rate(r), r == speed) { client.send(.setSpeed(r)) } }
-            } label: {
-                option(rate(speed), "speedometer")
-            }
-            .menuOrder(.fixed)
-            .accessibilityLabel("Playback speed, \(rate(speed))")
+        let row = HStack(spacing: 10) {
+            SpeedMenu(speed: speed, pick: { client.send(.setSpeed($0)) }).equatable()
             Button {
                 Haptics.tap()
                 client.send(.setCaptions(s.captions != true && s.captionsStatus == nil))
@@ -1009,18 +1067,13 @@ struct ControlsPane: View {
             .accessibilityLabel(s.captionsStatus == "none" ? "This video has no captions"
                                 : s.captions == true ? "Turn captions off" : "Turn captions on")
             if let qs = s.qualities, qs.count > 1 {
-                Menu {
-                    let auto = s.autoQuality != false
-                    check("Auto", auto) { client.send(.setQuality("auto")) }
-                    ForEach(qs, id: \.self) { q in
-                        check(qualityLabel(q), !auto && q == s.quality) { client.send(.setQuality(q)) }
-                    }
-                } label: {
-                    option(s.autoQuality != false ? "Auto \(qualityLabel(s.quality))" : qualityLabel(s.quality), "tv")
-                }
-                .menuOrder(.fixed)
-                .accessibilityLabel("Quality, \(qualityLabel(s.quality))")
+                QualityMenu(qualities: qs, quality: s.quality, auto: s.autoQuality != false,
+                            pick: { client.send(.setQuality($0)) }).equatable()
             }
+        }
+        return ViewThatFits(in: .horizontal) {
+            row
+            ScrollView(.horizontal, showsIndicators: false) { row }
         }
         .foregroundStyle(.primary)
     }
@@ -1137,7 +1190,10 @@ struct DetailsPane: View {
             }
             .id("\(client.state?.current?.videoID ?? "")\(tab)")
         }
-        .onAppear { client.send(.watchDetails(true)) }
+        .onAppear {
+            if richOn, let t = client.state?.richTab { tab = t }
+            client.send(.watchDetails(true))
+        }
         .onDisappear { client.send(.watchDetails(false)) }
         .onChange(of: client.connected) { if $0 { client.send(.watchDetails(true)) } }
         .onChange(of: tab) { t in
@@ -1157,13 +1213,13 @@ struct RemoteQueue: View {
             onPlay: { client.send(.playQueueItem($0.id)) },
             onRemove: { item in
                 // The row must leave the list now; waiting for the viewer's next state makes the list crash.
-                client.state?.queue.removeAll { $0.id == item.id }
+                client.setQueue((client.state?.queue ?? []).filter { $0.id != item.id })
                 client.send(.remove(item.id))
             },
             onMove: { from, to in
                 guard var q = client.state?.queue else { return }
                 q.move(fromOffsets: from, toOffset: to)
-                client.state?.queue = q
+                client.setQueue(q)
                 client.send(.reorder(q.map(\.id)))
             },
             onClear: { client.send(.clearQueue) },
