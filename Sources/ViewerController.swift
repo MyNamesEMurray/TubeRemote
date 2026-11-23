@@ -219,6 +219,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
               }
             });
           });
+          if (!items.length) {
+            try {
+              var e0 = (j.onResponseReceivedEndpoints || j.onResponseReceivedActions || [])[0] || {}, k0 = Object.keys(e0)[0] || '';
+              var c0 = e0[k0] || {}, list0 = c0.continuationItems || [];
+              post({t:'log', m:'ytPage empty: top ' + Object.keys(j).join(',') + '; action ' + k0 + '; ' + list0.length + ' items, first ' +
+                    Object.keys(list0[0] || {}).join(',') + '; ' + muts.length + ' mutations'});
+            } catch(x) {}
+          }
           done(items, next, muts.length);
         }).catch(fail);
       }
@@ -723,10 +731,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return nil
         case .toggleComment(let id):
             guard needsDetails, var d = currentDetails(), let i = d.comments.firstIndex(where: { $0.id == id }) else { return nil }
-            if let j = d.expanded.firstIndex(of: id) {
-                d.expanded.remove(at: j)
+            if d.expanded.contains(id) {
+                d.expanded = []
             } else {
-                d.expanded.append(id)
+                d.expanded = [id]
                 if d.comments[i].replyList == nil {
                     if let tok = replyTokens[id], !replyLoading.contains(id) {
                         replyLoading.insert(id)
