@@ -55,4 +55,4 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 
 ## Not verified on a device
 
-The comment and reply loaders, storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
+Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
