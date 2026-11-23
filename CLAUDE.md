@@ -32,6 +32,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 Each has a log line in the Debug Log. Ask the user for it when something stops working.
 
 - Player control and ads: `#movie_player`, `.ad-showing`, `.ytp-*` in `bridge`.
+- Skip Ad from the remote: YouTube ignores a script's click, so the bridge sends a full press and then moves the ad to its end. Log: `page: skip ad: ...` lines say which step ran and whether the ad went away.
 - Description: `ytInitialPlayerResponse.videoDetails` and `microformat`. Log: none; Details stays a spinner.
 - Comments and replies: `/youtubei/v1/next` with a continuation token found in `ytInitialData`. Two response shapes are read. Log: `comments N comments, next ..., mutations ...` and `replies ...`.
 - Seek previews: `storyboards.playerStoryboardSpecRenderer.spec`. Log: `storyboard: WxH, N frames`.
