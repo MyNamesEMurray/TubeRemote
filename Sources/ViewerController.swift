@@ -740,6 +740,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                         replyLoading.insert(id)
                         js("__tr.replies(\(Self.jsString(id)), \(Self.jsString(tok)))")
                     } else if replyTokens[id] == nil {
+                        Log.add("replies: no reply token for this comment (\(replyTokens.count) of \(d.comments.count) comments have one)")
                         d.comments[i].replyList = []
                     }
                 }
