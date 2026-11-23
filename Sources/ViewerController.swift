@@ -33,6 +33,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     var sessionPro: Bool { ProStore.shared.isPro || server.anyRemotePro }
     private var timer: Timer?
     private var toastWork: DispatchWorkItem?
+    private var toastShared = false
     private var volumeObs: NSKeyValueObservation?
     private var premuteVolume: Float = 0.5
     private var running = false
@@ -1097,12 +1098,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                 Log.add("player error with quality forced, back to Auto")
                 wantQuality = nil
                 autoQuality = true
-                flash("That quality won't play on this device. Back to Auto.")
+                flash("That quality won't play on this device. Back to Auto.", shared: true)
                 loading = true
                 webView.load(URLRequest(url: URL(string: "https://m.youtube.com/watch?v=\(id)&t=\(Int(position))s")!))
             } else {
                 Log.add("player error screen")
-                flash("Can't play \(current?.title ?? "video") here, skipping")
+                flash("Can't play \(current?.title ?? "video") here, skipping", shared: true)
                 advance()
             }
             broadcast()
@@ -1237,7 +1238,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             Log.add("player never started")
             // Private, removed or region-blocked, or YouTube is asking for something on this screen.
             guard current != nil else { break }
-            flash("Can't play \(current?.title ?? "video") here, skipping")
+            flash("Can't play \(current?.title ?? "video") here, skipping", shared: true)
             advance()
             broadcast()
         default:
@@ -1251,7 +1252,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func loadFailed(_ e: Error) {
         guard loading, (e as NSError).code != NSURLErrorCancelled, let c = current else { return }
         Log.add("page load failed: \((e as NSError).code)")
-        flash("Can't load \(c.title), skipping")
+        flash("Can't load \(c.title), skipping", shared: true)
         advance()
         broadcast()
     }
@@ -1273,7 +1274,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
                     autoplay: settings.autoplay, autoplayNext: autoplayNext,
                     richView: richView, richTab: richTab, live: live, liveHead: atLiveHead,
-                    needsUnmute: needsUnmute ? true : nil, notice: toast)
+                    needsUnmute: needsUnmute ? true : nil, notice: toastShared ? toast : nil)
     }
 
     private func broadcast() {
@@ -1291,7 +1292,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         }
     }
 
-    private func flash(_ s: String) {
+    private func flash(_ s: String, shared: Bool = false) {
+        toastShared = shared
         toast = s
         toastWork?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.toast = nil }

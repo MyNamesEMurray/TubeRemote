@@ -824,15 +824,6 @@ struct NowPlayingContent: View {
                     .padding(.top, 4)
                     .transition(.opacity)
                 }
-                if client.connected, let note = client.state?.notice ?? (client.state?.needsUnmute == true ? "No sound yet. Tap to Unmute on the viewer." : nil) {
-                    Text(note)
-                        .font(.footnote)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .glassBackground(Capsule(), .regularMaterial)
-                        .padding(.top, 4)
-                        .transition(.opacity)
-                }
                 Group {
                     switch panel {
                     case .queue: RemoteQueue(client: client).disabled(!client.connected)
@@ -842,6 +833,17 @@ struct NowPlayingContent: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) {
+                    if client.connected, let note = client.state?.notice ?? (client.state?.needsUnmute == true ? "No sound yet. Tap to Unmute on the viewer." : nil) {
+                        Text(note)
+                            .font(.footnote)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .glassBackground(Capsule(), .regularMaterial)
+                            .padding(.top, 4)
+                            .transition(.opacity)
+                    }
+                }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: client.connected)
             .safeAreaInset(edge: .bottom, spacing: 0) {
