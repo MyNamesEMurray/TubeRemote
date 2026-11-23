@@ -182,7 +182,19 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           var muts = ((j.frameworkUpdates || {}).entityBatchUpdate || {}).mutations || [];
           muts.forEach(function(m){ var p = m.payload && m.payload.commentEntityPayload; if (p) ents[m.entityKey || p.key] = p });
           var replyTok = function(t){
-            try { return t.replies.commentRepliesRenderer.contents[0].continuationItemRenderer.continuationEndpoint.continuationCommand.token } catch(e) { return '' }
+            if (!t.replies) return '';
+            try {
+              var st = [t.replies], n = 0;
+              while (st.length && n++ < 2000) {
+                var x = st.pop();
+                if (x && typeof x === 'object') {
+                  if (x.continuationCommand && x.continuationCommand.token) return x.continuationCommand.token;
+                  for (var k in x) st.push(x[k]);
+                }
+              }
+            } catch(e) {}
+            if (!window.__noRepTok) { window.__noRepTok = true; post({t:'log', m:'no reply token in ' + JSON.stringify(t.replies).slice(0, 400)}) }
+            return '';
           };
           var fromVM = function(vm, rt, i){
             var v = vm.commentViewModel || vm, p = ents[v.commentKey];
@@ -219,6 +231,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
               }
             });
           });
+          if (!items.length) {
+            try {
+              var e0 = (j.onResponseReceivedEndpoints || j.onResponseReceivedActions || [])[0] || {}, k0 = Object.keys(e0)[0] || '';
+              var c0 = e0[k0] || {}, list0 = c0.continuationItems || [];
+              post({t:'log', m:'ytPage empty: top ' + Object.keys(j).join(',') + '; action ' + k0 + '; ' + list0.length + ' items, first ' +
+                    Object.keys(list0[0] || {}).join(',') + '; ' + muts.length + ' mutations'});
+            } catch(x) {}
+          }
           done(items, next, muts.length);
         }).catch(fail);
       }
@@ -723,15 +743,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return nil
         case .toggleComment(let id):
             guard needsDetails, var d = currentDetails(), let i = d.comments.firstIndex(where: { $0.id == id }) else { return nil }
-            if let j = d.expanded.firstIndex(of: id) {
-                d.expanded.remove(at: j)
+            if d.expanded.contains(id) {
+                d.expanded = []
             } else {
-                d.expanded.append(id)
+                d.expanded = [id]
                 if d.comments[i].replyList == nil {
                     if let tok = replyTokens[id], !replyLoading.contains(id) {
                         replyLoading.insert(id)
                         js("__tr.replies(\(Self.jsString(id)), \(Self.jsString(tok)))")
                     } else if replyTokens[id] == nil {
+                        Log.add("replies: no reply token for this comment (\(replyTokens.count) of \(d.comments.count) comments have one)")
                         d.comments[i].replyList = []
                     }
                 }

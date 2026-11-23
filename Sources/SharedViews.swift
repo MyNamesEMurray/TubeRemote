@@ -454,12 +454,15 @@ struct CommentRow: View {
             .foregroundStyle(.secondary)
             if expanded && hasReplies {
                 if let list = comment.replyList {
+                    if list.isEmpty {
+                        Text("Couldn't load the replies").font(.caption).foregroundStyle(.secondary).padding(.leading, 14)
+                    }
                     ForEach(list) { r in
                         CommentRow(comment: r, isReply: true)
                             .padding(.leading, 14)
                             .overlay(alignment: .leading) { Rectangle().fill(Color.secondary.opacity(0.3)).frame(width: 2) }
                     }
-                    if let total = Int(comment.replies ?? ""), total > list.count {
+                    if let total = Int(comment.replies ?? ""), total > list.count, !list.isEmpty {
                         Text("Showing the first \(list.count) replies").font(.caption).foregroundStyle(.secondary).padding(.leading, 14)
                     }
                 } else {
@@ -468,8 +471,10 @@ struct CommentRow: View {
             }
         }
         .padding(.vertical, 6)
+        .padding(.horizontal, expanded && !isReply ? 8 : 0)
+        .background(expanded && !isReply ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture { if hasReplies { onToggle?() } }
+        .onTapGesture { if !isReply { onToggle?() } }
     }
 }
 
@@ -478,10 +483,19 @@ struct CommentsList: View {
     var follow: Int?
     var onTop: ((Int) -> Void)?
     var onNearEnd: (() -> Void)?
+    var solo = false
     var onToggle: ((String) -> Void)?
 
     var body: some View {
-        if let d = details, !d.comments.isEmpty {
+        if solo, let d = details, let id = d.expanded.first, let c = d.comments.first(where: { $0.id == id }) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    CommentRow(comment: c, expanded: true, onToggle: { onToggle?(c.id) })
+                    Text("Tap the comment to show them all again").font(.caption).foregroundStyle(.secondary)
+                }
+                .padding()
+            }
+        } else if let d = details, !d.comments.isEmpty {
             FollowScroll(count: d.comments.count, follow: follow, onTop: onTop, onNearEnd: onNearEnd, header: { EmptyView() }, row: { i in
                 VStack(alignment: .leading, spacing: 0) {
                     CommentRow(comment: d.comments[i], expanded: d.expanded.contains(d.comments[i].id),

@@ -624,7 +624,7 @@ struct RichPanel: View {
             Group {
                 if viewer.richTab == 1 {
                     CommentsList(details: viewer.details, follow: viewer.richScroll,
-                                 onToggle: { viewer.handle(.toggleComment($0), from: nil) })
+                                 solo: true, onToggle: { viewer.handle(.toggleComment($0), from: nil) })
                 } else if let info = viewer.details?.info {
                     DescriptionLines(info: info, follow: viewer.richScroll)
                 } else {
