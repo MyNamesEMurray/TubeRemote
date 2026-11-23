@@ -231,7 +231,19 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           try { var p = mp(); if (p && p.seekTo) { p.seekTo(t, true); return } } catch(e) {}
           var v = vid(); if (v) v.currentTime = t
         },
-        skipAd: function(){ var b = skipButton(); if (b) b.click() },
+        // YouTube ignores a script's click on Skip, so send the whole press and, if the ad is still up, end it.
+        skipAd: function(){
+          var b = skipButton(); if (!b) return;
+          var r = b.getBoundingClientRect();
+          var o = {bubbles:true, cancelable:true, composed:true, view:window, clientX:r.left + r.width / 2, clientY:r.top + r.height / 2};
+          ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(function(n){
+            b.dispatchEvent(n.indexOf('pointer') === 0 ? new PointerEvent(n, o) : new MouseEvent(n, o));
+          });
+          setTimeout(function(){
+            var v = vid();
+            if (ad() && skipButton() && v && isFinite(v.duration)) { post({t:'log', m:'skip ad: click ignored, ending the ad'}); v.currentTime = v.duration }
+          }, 400);
+        },
         // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the
         // debug log. Called from the app, so it runs as the same kind of call as a tap on Play.
         kick: function(n){
