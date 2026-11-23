@@ -182,7 +182,19 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           var muts = ((j.frameworkUpdates || {}).entityBatchUpdate || {}).mutations || [];
           muts.forEach(function(m){ var p = m.payload && m.payload.commentEntityPayload; if (p) ents[m.entityKey || p.key] = p });
           var replyTok = function(t){
-            try { return t.replies.commentRepliesRenderer.contents[0].continuationItemRenderer.continuationEndpoint.continuationCommand.token } catch(e) { return '' }
+            if (!t.replies) return '';
+            try {
+              var st = [t.replies], n = 0;
+              while (st.length && n++ < 2000) {
+                var x = st.pop();
+                if (x && typeof x === 'object') {
+                  if (x.continuationCommand && x.continuationCommand.token) return x.continuationCommand.token;
+                  for (var k in x) st.push(x[k]);
+                }
+              }
+            } catch(e) {}
+            if (!window.__noRepTok) { window.__noRepTok = true; post({t:'log', m:'no reply token in ' + JSON.stringify(t.replies).slice(0, 400)}) }
+            return '';
           };
           var fromVM = function(vm, rt, i){
             var v = vm.commentViewModel || vm, p = ents[v.commentKey];
