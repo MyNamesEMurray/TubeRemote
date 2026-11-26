@@ -34,6 +34,9 @@ final class AppSettings: ObservableObject {
     @Published var muteWhileScanning: Bool {
         didSet { UserDefaults.standard.set(muteWhileScanning, forKey: "muteWhileScanning") }
     }
+    @Published var lockScreenControls: Bool {
+        didSet { UserDefaults.standard.set(lockScreenControls, forKey: "lockScreenControls") }
+    }
     @Published var haptics: Bool {
         didSet { UserDefaults.standard.set(haptics, forKey: "haptics") }
     }
@@ -74,6 +77,7 @@ final class AppSettings: ObservableObject {
         lockOnSleep = d.object(forKey: "lockOnSleep") as? Bool ?? true
         autoplay = d.bool(forKey: "autoplay")
         haptics = d.object(forKey: "haptics") as? Bool ?? true
+        lockScreenControls = d.bool(forKey: "lockScreenControls")
         muteWhileScanning = d.object(forKey: "muteWhileScanning") as? Bool ?? true
         hideStatusBar = d.bool(forKey: "hideStatusBar")
         skipSeconds = min(max(d.object(forKey: "skipSeconds") as? Int ?? 10, 5), 30)

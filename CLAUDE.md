@@ -17,6 +17,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 - `Sources/Transport.swift`: Bonjour, framing, the sealed `Channel`, the viewer's server. `Sources/Remote.swift`: the remote's client per viewer. `Sources/Pairing.swift`: six-digit code pairing.
 - `Sources/ViewerController.swift`: owns queue, history, player, the page bridge (`bridge` JavaScript string), autoplay, sleep timer, scanning, details and comments.
 - `Sources/ViewerViews.swift`, `RemoteViews.swift`, `SharedViews.swift`, `Pro.swift`, `TubeRemoteApp.swift` (root, Settings, onboarding), `Browser.swift` (the remote's YouTube browser and the viewer's cookie sharing).
+- `Sources/LockScreenControls.swift`: the remote's lock screen and Control Center controls.
 - `Sources/Storyboard.swift`: seek preview frames. `Sources/QueueKeeper.swift`: the remote's saved queue. `Share/`: the share extension, which compiles `Models.swift`, `Transport.swift`, `Log.swift` and `SharedConfig.swift`.
 - `project.yml` is the source of the Xcode project. `Config/` is generated. `site/` is the privacy and support website, published by `pages.yml`.
 
@@ -51,8 +52,9 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 - A single tap on the video waits 320 ms so a second tap can be a double tap.
 - Hold to scan uses `ScanRamp` on both devices. On release the remote sends how long it was held and the viewer seeks to where that distance leaves it, so a late stop does not overshoot.
 - The hidden volume slider must stay inside the window, in the top-left corner. Do not move it off screen: iOS then shows its own volume HUD.
+- Lock screen controls (Settings, off by default) play a silent looping sound so iOS treats the remote as the Now Playing app, and that also keeps it connected in the background. It must not mix with other audio or iOS ignores it, and `VolumeKeys` must not change the audio category while it runs.
 - Do not use `UIScreen.main`, the device idiom, or orientation to lay out. Apple's iPhone Duo guidance asks for width and size from the container.
 
 ## Not verified on a device
 
-Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
+Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls are unverified: whether iOS shows them, how long the link survives a locked phone, and App Review's view of the silent audio. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
