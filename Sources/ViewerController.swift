@@ -268,11 +268,20 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
           log('sent ' + sent.join(','));
           setTimeout(function(){
             if (!ad()) return log('ad gone after the click');
-            var v2 = vid();
-            if (!skipButton() || !v2 || !isFinite(v2.duration)) return log('click ignored, no way to end it: button ' + !!skipButton() + ', duration ' + (v2 && v2.duration));
-            log('click ignored, moving the ad to its end');
-            v2.currentTime = v2.duration;
-            setTimeout(function(){ log(ad() ? 'ad still showing 1.5 s after moving it' : 'ad gone after moving it') }, 1500);
+            var tries = 0;
+            var end = function(){
+              if (!ad()) return log('ad gone');
+              var v2 = vid();
+              if (v2 && isFinite(v2.duration) && v2.duration > 1) {
+                log('click ignored, moving the ad to its end (' + Math.round(v2.currentTime) + '/' + Math.round(v2.duration) + ', paused ' + v2.paused + ')');
+                v2.currentTime = Math.max(v2.duration - 0.3, 0);
+                var pr = v2.play(); if (pr && pr.catch) pr.catch(function(){});
+                setTimeout(function(){ var v3 = vid(); log(ad() ? 'ad still showing 2 s after moving it, paused ' + (v3 && v3.paused) : 'ad gone after moving it') }, 2000);
+                return;
+              }
+              if (tries++ < 8) setTimeout(end, 500); else log('gave up, the ad video has no length');
+            };
+            end();
           }, 400);
         },
         // Nudge a video that is not moving. Each attempt tries a different way to start it, and says which in the

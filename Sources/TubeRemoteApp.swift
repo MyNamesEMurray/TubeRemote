@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 final class AppModel: ObservableObject {
@@ -5,7 +6,9 @@ final class AppModel: ObservableObject {
     let browser: Browser
     let viewer: ViewerController
     let remote: RemoteController
+    let lock: LockScreenControls
     let pairing: Pairing
+    private var lockObs: AnyCancellable?
     @Published var mode: Mode { didSet { apply() } }
 
     init() {
@@ -16,14 +19,21 @@ final class AppModel: ObservableObject {
         let b = Browser()
         browser = b
         viewer = ViewerController(settings: s, pairing: p, browser: b)
-        remote = RemoteController(settings: s, pairing: p)
+        let r = RemoteController(settings: s, pairing: p)
+        remote = r
+        lock = LockScreenControls(settings: s, remote: r)
         mode = s.defaultMode
+        lockObs = s.$lockScreenControls.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.lock.sync() }
+        }
     }
 
     /// Idempotent: also used to restart networking when the app returns to the foreground.
     func apply() {
         Log.tag = mode == .viewer ? "V" : "R"
         Log.add("apply \(mode.rawValue)")
+        lock.remoteRole = mode == .remote
+        lock.sync()
         switch mode {
         case .viewer:
             remote.stop()
@@ -280,6 +290,11 @@ struct SettingsView: View {
                     }
                     Toggle("Mute while scanning", isOn: $settings.muteWhileScanning)
                     if model.mode == .remote {
+                        Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
+                        if settings.lockScreenControls {
+                            Text("Pauses music from other apps while a video plays on the viewer.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                         if pro.has(remote.active?.state) {
                             Toggle("Keep the queue", isOn: $settings.saveQueue)
                         } else {
