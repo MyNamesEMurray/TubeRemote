@@ -279,8 +279,17 @@ struct SettingsView: View {
                     }
                 }
                 Section("This Device") {
-                    TextField("Device name", text: $settings.deviceName)
-                        .onSubmit { model.viewer.rename() }
+                    LabeledContent("Name") {
+                        HStack(spacing: 6) {
+                            TextField("Device name", text: $settings.deviceName)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(Color.accentColor)
+                                .textInputAutocapitalization(.words)
+                                .submitLabel(.done)
+                                .onSubmit { model.viewer.rename() }
+                            Image(systemName: "pencil").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                     Picker("Use as", selection: Binding(
                         get: { model.mode },
                         set: { model.mode = $0; settings.defaultMode = $0 }
