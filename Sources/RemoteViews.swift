@@ -822,6 +822,16 @@ struct NowPlayingContent: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                Group {
+                    switch panel {
+                    case .queue: RemoteQueue(client: client).disabled(!client.connected)
+                    case .history: RemoteHistory(client: client).disabled(!client.connected)
+                    case .controls: ControlsPane(client: client, open: openPage)
+                    case .details: DetailsPane(client: client)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) {
                 if !client.connected {
                     HStack(spacing: 8) {
                         if client.needsPairing {
@@ -852,16 +862,6 @@ struct NowPlayingContent: View {
                     .padding(.top, 4)
                     .transition(.opacity)
                 }
-                Group {
-                    switch panel {
-                    case .queue: RemoteQueue(client: client).disabled(!client.connected)
-                    case .history: RemoteHistory(client: client).disabled(!client.connected)
-                    case .controls: ControlsPane(client: client, open: openPage)
-                    case .details: DetailsPane(client: client)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .top) {
                     if client.connected, let note = client.state?.notice ?? (client.state?.needsUnmute == true ? "No sound yet. Tap to Unmute on the viewer." : nil) {
                         Text(note)
                             .font(.footnote)
@@ -930,6 +930,8 @@ struct ControlsPane: View {
     @State private var scrubbing = false
     @StateObject private var storyboard = Storyboard()
     @State private var vol: Float?
+    @State private var bright: Float?
+    @State private var brightSent = Date.distantPast
     @State private var volSent = Date.distantPast
     @State private var held: (value: Double, until: Date)?
 
@@ -970,7 +972,8 @@ struct ControlsPane: View {
                             onEnd: commitSeek,
                             onCancel: { scrub = nil },
                             onActive: { scrubbing = $0 },
-                            preview: { storyboard.frame(at: $0) })
+                            preview: { storyboard.frame(at: $0) },
+                            chapters: client.details?.info?.chapters ?? [])
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
                         HStack {
                             Text(clock(pos))
@@ -1041,6 +1044,25 @@ struct ControlsPane: View {
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(.secondary)
+                    if let level = s.brightness {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sun.min.fill")
+                                .frame(width: 44, height: 44)
+                                .accessibilityHidden(true)
+                            Slider(value: Binding(get: { bright ?? level }, set: { setBrightness($0) }), in: 0...1) { editing in
+                                if !editing, let v = bright {
+                                    client.setBrightness(v)
+                                    bright = nil
+                                }
+                            }
+                            .accessibilityLabel("Brightness")
+                            .accessibilityValue("\(Int(((bright ?? level) * 100).rounded())) percent")
+                            Image(systemName: "sun.max.fill")
+                                .frame(width: 44, height: 44)
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
@@ -1053,6 +1075,8 @@ struct ControlsPane: View {
             .onChange(of: client.details?.storyboard) { _ in loadStoryboard() }
             .onChange(of: client.state?.current?.videoID) { _ in loadStoryboard() }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+        } else if pro.has(client.state), client.connected, client.state != nil, let cur = settings.savedQueue.current {
+            SavedPlayCard(client: client, saved: settings.savedQueue, cur: cur)
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
@@ -1117,6 +1141,13 @@ struct ControlsPane: View {
         client.setVolume(v)
     }
 
+    private func setBrightness(_ v: Float) {
+        bright = v
+        guard Date().timeIntervalSince(brightSent) > 0.1 else { return }
+        brightSent = Date()
+        client.setBrightness(v)
+    }
+
     private func loadStoryboard() {
         if let d = client.details, d.videoID == client.state?.current?.videoID {
             storyboard.load(spec: d.storyboard, videoID: d.videoID, duration: client.state?.duration ?? 0)
@@ -1162,6 +1193,7 @@ struct DetailsPane: View {
     @State private var showPaywall = false
     @State private var tab = 0
     @State private var top = 0
+    @State private var fraction = 0
 
     private var richOn: Bool { client.state?.richView == true }
     private var details: VideoDetails? {
@@ -1177,7 +1209,13 @@ struct DetailsPane: View {
             client.send(.setRichView(true))
             client.send(.richTab(tab))
             client.send(.richScroll(top))
+            client.send(.richPosition(fraction))
         }
+    }
+
+    private func reportPosition(_ p: Int) {
+        fraction = p
+        if richOn { client.send(.richPosition(p)) }
     }
 
     private func report(_ i: Int) {
@@ -1210,7 +1248,7 @@ struct DetailsPane: View {
             Group {
                 if tab == 0 {
                     if let info = details?.info {
-                        DescriptionLines(info: info, onTop: report, onSeek: { client.send(.seek($0)) })
+                        DescriptionLines(info: info, onTop: report, onPosition: reportPosition, onSeek: { client.send(.seek($0)) })
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -1229,6 +1267,7 @@ struct DetailsPane: View {
         .onChange(of: client.connected) { if $0 { client.send(.watchDetails(true)) } }
         .onChange(of: tab) { t in
             top = 0
+            fraction = 0
             if richOn { client.send(.richTab(t)) }
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }
@@ -1269,5 +1308,50 @@ struct RemoteHistory: View {
             onReplay: { client.send(.play($0)) },
             onRequeue: { client.send(.enqueue($0)) },
             onClear: { client.send(.clearHistory) })
+    }
+}
+
+struct SavedPlayCard: View {
+    @ObservedObject var client: RemoteClient
+    @EnvironmentObject var settings: AppSettings
+    let saved: SavedQueue
+    let cur: VideoItem
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .opacity(0.8)
+            VStack(spacing: 4) {
+                Text(cur.title).font(.title3.bold()).multilineTextAlignment(.center)
+                if !cur.channel.isEmpty { Text(cur.channel).font(.subheadline).foregroundStyle(.secondary) }
+                if saved.position > 5 {
+                    Text("Paused at \(clock(saved.position))").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("Not started").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            Button {
+                Haptics.tap()
+                client.send(.playlist(saved.items, .playNow))
+            } label: {
+                if saved.queue.isEmpty {
+                    Label("Resume on \(client.title)", systemImage: "play.fill").frame(maxWidth: .infinity)
+                } else {
+                    Label("Resume on \(client.title) (\(saved.count))", systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            Button("Discard", role: .destructive) {
+                Haptics.tap()
+                settings.savedQueue = SavedQueue()
+            }
+            .font(.footnote)
+        }
+        .padding()
+        .frame(maxWidth: 520)
+        .frame(maxHeight: .infinity)
     }
 }

@@ -36,6 +36,12 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var toastShared = false
     private var volumeObs: NSKeyValueObservation?
     private var premuteVolume: Float = 0.5
+    private var brightnessBeforeSleep: CGFloat?
+    private var lastBrightnessSet: (value: CGFloat, at: Date)?
+    private var lastBrightnessLog = Date.distantPast
+    private var activeObs: NSObjectProtocol?
+    private var brightnessObs: NSObjectProtocol?
+    private var screen: UIScreen? { UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen }.first }
     private var running = false
     private var interruptObs: NSObjectProtocol?
     private var wasPlaying = false
@@ -62,6 +68,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published private(set) var richView = false
     @Published private(set) var richTab = 0
     @Published private(set) var richScroll = 0
+    @Published private(set) var richPosition: Int?
     @Published private(set) var details: VideoDetails?
     private var watching = false
     private var infoTries = 0
@@ -112,7 +119,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, sr = 0, pm = null, wc = null, wq = null, tc = 0, tq = 0, errored = false;
+      var wl = '', wr = 1, sr = 0, pm = null, wc = null, wq = null, tc = 0, tq = 0, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -120,7 +127,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       // The caption list loads some time after the module is asked for, and asking again restarts the load,
       // so the module is requested once and later calls only look for the list.
       function pick(l){
-        var lang = (navigator.language || 'en').slice(0,2), best = null;
+        var lang = (wl || navigator.language || 'en').slice(0,2), best = null;
         for (var i = 0; i < l.length; i++) {
           if ((l[i].languageCode || '').slice(0,2) !== lang) continue;
           if (l[i].kind !== 'asr') return l[i];
@@ -401,7 +408,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             try { localStorage.removeItem('yt-player-quality') } catch(e) {}
             try { mp().setPlaybackQualityRange('auto','auto') } catch(e) {}
           }
-          wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
+          wl = o.lang || ''; wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
       };
       document.addEventListener('playing', function(e){
         if (e.target.tagName !== 'VIDEO') return;
@@ -534,6 +541,14 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             self?.tickSleep()
             self?.broadcast()
         }
+        activeObs = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            if let s = self?.screen { Log.add("app active, brightness \(Int((s.brightness * 100).rounded()))%") }
+        }
+        brightnessObs = NotificationCenter.default.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let s = self.screen else { return }
+            if let l = self.lastBrightnessSet, Date().timeIntervalSince(l.at) < 1.5, abs(l.value - s.brightness) < 0.02 { return }
+            Log.add("brightness changed by the system or the user: \(Int((s.brightness * 100).rounded()))%")
+        }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
@@ -581,6 +596,11 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         volumeObs = nil
         if let o = interruptObs { NotificationCenter.default.removeObserver(o) }
         interruptObs = nil
+        if let o = activeObs { NotificationCenter.default.removeObserver(o) }
+        activeObs = nil
+        if let o = brightnessObs { NotificationCenter.default.removeObserver(o) }
+        brightnessObs = nil
+        restoreBrightness()
         let rc = MPRemoteCommandCenter.shared()
         [rc.playCommand, rc.pauseCommand, rc.nextTrackCommand, rc.previousTrackCommand,
          rc.changePlaybackPositionCommand].forEach { $0.removeTarget(nil) }
@@ -652,6 +672,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             js("__tr.pause()")
             return "Paused"
         case .resume:
+            restoreBrightness()
             isPlaying = true
             wantPlaying = true
             if running { UIApplication.shared.isIdleTimerDisabled = true }
@@ -671,6 +692,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return "Previous"
         case .setVolume(let v):
             setSystemVolume(v)
+            return nil
+        case .setBrightness(let v):
+            brightnessBeforeSleep = nil
+            setScreenBrightness(CGFloat(min(max(v, 0), 1)), why: "remote")
             return nil
         case .setMuted(let m):
             if m {
@@ -723,11 +748,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             richView = on
             richTab = 0
             richScroll = 0
+            richPosition = nil
             if on { ensureDetails() }
             return nil
         case .richScroll(let i):
             guard richView else { return nil }
             richScroll = min(max(i, 0), 5000)
+            return nil
+        case .richPosition(let p):
+            guard richView else { return nil }
+            richPosition = min(max(p, 0), 1000)
             return nil
         case .scan(let d, let mute):
             guard current != nil else { return nil }
@@ -772,6 +802,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             guard richView else { return nil }
             richTab = min(max(i, 0), 1)
             richScroll = 0
+            richPosition = nil
             return nil
         case .watchDetails(let on):
             watching = on
@@ -873,10 +904,31 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         _ = apply(.pause)
         // iOS has no call to lock the screen. Letting go of the "stay awake" hold makes the device lock after its Auto-Lock time.
         UIApplication.shared.isIdleTimerDisabled = false
+        if brightnessBeforeSleep == nil, let s = screen {
+            brightnessBeforeSleep = s.brightness
+            setScreenBrightness(0, why: "sleep timer")
+        }
         flash("Sleep timer ended")
     }
 
+    private func restoreBrightness() {
+        guard let b = brightnessBeforeSleep else { return }
+        brightnessBeforeSleep = nil
+        setScreenBrightness(b, why: "put back")
+    }
+
+    private func setScreenBrightness(_ v: CGFloat, why: String) {
+        guard let s = screen else { return }
+        lastBrightnessSet = (v, Date())
+        s.brightness = v
+        if why != "remote" || Date().timeIntervalSince(lastBrightnessLog) > 1 {
+            lastBrightnessLog = Date()
+            Log.add("brightness set to \(Int((v * 100).rounded()))% (\(why))")
+        }
+    }
+
     private func start(_ item: VideoItem, pushPrevious: Bool = true, auto: Bool = false) {
+        restoreBrightness()
         server.videoChanged()
         autoplayStreak = auto ? autoplayStreak + 1 : 0
         live = false
@@ -894,6 +946,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         replyTokens = [:]
         replyLoading = []
         richScroll = 0
+        richPosition = nil
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
         let at = item.startAt.flatMap { $0.isFinite && $0 > 5 ? min($0, 86_400) : nil }
@@ -1115,10 +1168,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Player bridge
 
-    private func pushSettings() {
+    func pushSettings() {
         let cc = wantCaptions.map { "\($0)" } ?? "null"
         let q = wantQuality.map { "'\($0)'" } ?? "null"
-        js("__tr.set({rate:\(wantSpeed),cc:\(cc),q:\(q)})")
+        js("__tr.set({rate:\(wantSpeed),cc:\(cc),q:\(q),lang:'\(settings.captionLanguage)'})")
     }
 
     /// `__tr` only exists on a watch page; calls made on any other page do nothing.
@@ -1327,7 +1380,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
                     autoplay: settings.autoplay, autoplayNext: autoplayNext,
                     richView: richView, richTab: richTab, live: live, liveHead: atLiveHead,
-                    needsUnmute: needsUnmute ? true : nil, notice: toastShared ? toast : nil)
+                    needsUnmute: needsUnmute ? true : nil, notice: toastShared ? toast : nil,
+                    brightness: screen.map { Float($0.brightness) })
     }
 
     private func broadcast() {

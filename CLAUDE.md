@@ -19,6 +19,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 - `Sources/ViewerViews.swift`, `RemoteViews.swift`, `SharedViews.swift`, `Pro.swift`, `TubeRemoteApp.swift` (root, Settings, onboarding), `Browser.swift` (the remote's YouTube browser and the viewer's cookie sharing).
 - `Sources/LockScreenControls.swift`: the remote's lock screen and Control Center controls through a silent sound. `Sources/NowPlayingBridge.swift`, `Sources/NowPlayingShared.swift` and `NowPlayingExtension/`: the iOS 27 Now Playing remote session, which shows the viewer on the Lock Screen and sends the system's commands to it.
 - `Sources/Storyboard.swift`: seek preview frames. `Sources/QueueKeeper.swift`: the remote's saved queue. `Share/`: the share extension, which compiles `Models.swift`, `Transport.swift`, `Log.swift` and `SharedConfig.swift`.
+- `Localization/`: String Catalogs (`Localizable.xcstrings`, `InfoPlist.xcstrings`) for es, fr, de, pt-BR, ja, ko, machine translated and not reviewed by a native speaker. SwiftUI literals (`Text`, `Label`, `Button`, `EmptyState`) localize by their text, so changing an English literal orphans its translations. Strings passed as plain `String` (viewer toasts, error messages, labels built in code) are still English only.
 - `project.yml` is the source of the Xcode project. `Config/` is generated. `site/` is the privacy and support website, published by `pages.yml`.
 
 ## Protocol rules
@@ -30,7 +31,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 
 ## Things that depend on YouTube's pages (they will break)
 
-Each has a log line in the Debug Log. Ask the user for it when something stops working. The log is hidden: Settings, then tap the Build row five times.
+Each has a log line in the Debug Log. Ask the user for it when something stops working. The log is hidden: Settings, then tap the Build row five times. It starts with the app version, iOS version and device model, and also shows what the extensions wrote (tag `N` for the Now Playing extension, `?` for Share), which lives in `nowplaying/extension.log` in the App Group folder. Lines never hold names or video titles.
 
 - Player control and ads: `#movie_player`, `.ad-showing`, `.ytp-*` in `bridge`.
 - Skip Ad from the remote: YouTube ignores a script's click, so the bridge sends a full press and then moves the ad to its end. Log: `page: skip ad: ...` lines say which step ran and whether the ad went away.
@@ -53,6 +54,7 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 - Hold to scan uses `ScanRamp` on both devices. On release the remote sends how long it was held and the viewer seeks to where that distance leaves it, so a late stop does not overshoot.
 - The hidden volume slider must stay inside the window, in the top-left corner. Do not move it off screen: iOS then shows its own volume HUD.
 - Lock screen controls (Pro, Settings, off by default) play a silent looping sound so iOS treats the remote as the Now Playing app, and that also keeps it connected in the background. It must not mix with other audio or iOS ignores it, and `VolumeKeys` must not change the audio category while it runs. Pausing the silent sound makes iOS drop the controls within seconds, and while it plays Control Center shows pause even when the video is paused. On iOS 27 and later the silent sound is not used: the Now Playing framework's remote session replaces it (no audio, state taken from what the app reports), and the silent sound stays only for older iOS. On iOS 27 and later the app plays a silent sound that mixes with other audio while a session is on, only to stay running in the background so it can keep the card current; it does not take over Now Playing or pause other apps, and `VolumeKeys` must not change the audio category while it plays. The extension (`NowPlayingExtension/`, bundle id `com.exaltedpixels.TubeRemote.NowPlaying`, App Group) signs in as this device, so it replaces the app's own connection to the viewer; it opens the link per burst of commands and closes it after 8 seconds.
+- The viewer's brightness slider (free) sets the real system brightness. The sleep timer drops it to the lowest and puts the old value back when playback resumes, a video starts or the viewer stops, but not when the app becomes active, because pulling Control Center counts as that and would undo a brightness the person just chose. Apple says a brightness change lasts until the device is locked and the system restores the user's setting at the next unlock; reports say setting it also switches Auto-Brightness off until then. The Debug Log lines `brightness set to N% (why)` and `brightness changed by the system or the user` show who moved it.
 - Do not use `UIScreen.main`, the device idiom, or orientation to lay out. Apple's iPhone Duo guidance asks for width and size from the container.
 
 ## Not verified on a device

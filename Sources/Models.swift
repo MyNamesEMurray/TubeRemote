@@ -56,7 +56,7 @@ extension Command {
 
     var logsOften: Bool {
         switch self {
-        case .setVolume, .richScroll, .scan, .seek: return true
+        case .setVolume, .setBrightness, .richScroll, .richPosition, .scan, .seek: return true
         default: return false
         }
     }
@@ -121,6 +121,7 @@ struct ViewerState: Codable, Equatable {
     var liveHead: Bool?
     var needsUnmute: Bool?
     var notice: String?
+    var brightness: Float?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -134,6 +135,8 @@ struct VideoInfo: Codable, Equatable {
     var description: String
 
     var lines: [String] { description.components(separatedBy: "\n") }
+
+    var chapters: [Chapter] { Chapter.parse(description) }
 
     var stats: String {
         var parts: [String] = []
@@ -196,6 +199,7 @@ enum Command: Codable {
     case seek(Double), skip(Double)
     case next, previous
     case setVolume(Float), setMuted(Bool)
+    case setBrightness(Float)
     case remove(UUID), reorder([UUID]), playQueueItem(UUID)
     case clearQueue, clearHistory
     case setSpeed(Double), setCaptions(Bool), setQuality(String)
@@ -215,6 +219,7 @@ enum Command: Codable {
     case scan(Int, mute: Bool)
     case scanEnd(Double)
     case richScroll(Int)
+    case richPosition(Int)
     case playlist([VideoItem], QueueAction)
 }
 
@@ -339,5 +344,33 @@ enum VideoMetadata {
             channel = o.author_name
         }
         return VideoItem(videoID: videoID, title: title, channel: channel, duration: duration)
+    }
+}
+
+struct Chapter: Equatable {
+    let start: Double
+    let title: String
+
+    private static let line = try? NSRegularExpression(pattern: #"^\s*[\(\[]?(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[\)\]]?\s*[-–—:|.]*\s*(\S.*)$"#)
+
+    /// YouTube's own rule: the list starts at 0:00 and has at least three entries in ascending order.
+    static func parse(_ text: String) -> [Chapter] {
+        guard let re = line else { return [] }
+        var out: [Chapter] = []
+        for l in text.components(separatedBy: "\n") {
+            let range = NSRange(l.startIndex..., in: l)
+            guard let m = re.firstMatch(in: l, range: range) else { continue }
+            func part(_ i: Int) -> Double { Range(m.range(at: i), in: l).flatMap { Double(l[$0]) } ?? 0 }
+            let t = part(1) * 3600 + part(2) * 60 + part(3)
+            guard let r = Range(m.range(at: 4), in: l) else { continue }
+            if let last = out.last, t <= last.start { continue }
+            out.append(Chapter(start: t, title: String(l[r]).trimmingCharacters(in: .whitespaces)))
+        }
+        guard out.count >= 3, out[0].start == 0 else { return [] }
+        return out
+    }
+
+    static func title(at t: Double, in list: [Chapter]) -> String? {
+        list.last { $0.start <= t }?.title
     }
 }

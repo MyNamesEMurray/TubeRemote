@@ -28,8 +28,12 @@ final class ViewerLink {
         maintainer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             guard let self else { return }
             if NowPlayingMailbox.appIsActive {
-                if self.conn != nil && self.pending.isEmpty { self.close() }
+                if self.conn != nil && self.pending.isEmpty {
+                    Log.add("np link: the app is running, closing the link")
+                    self.close()
+                }
             } else if self.conn == nil && self.browser == nil {
+                Log.add("np link: the app is not running, opening the link")
                 self.begin()
             }
         }
@@ -37,9 +41,11 @@ final class ViewerLink {
 
     func send(_ command: Command) async throws {
         if NowPlayingMailbox.appIsActive {
+            Log.add("np command \(command.logName): handed to the app")
             NowPlayingMailbox.post(command)
             return
         }
+        Log.add("np command \(command.logName): sending from the extension")
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             DispatchQueue.main.async { self.enqueue(command, cont) }
         }
@@ -54,6 +60,7 @@ final class ViewerLink {
         guard let cfg = SharedConfig.read(), let d = cfg.paired.first(where: { $0.key == key }) else { return fail(.unpaired) }
         config = cfg
         device = d
+        Log.add("np link: looking for \(Log.who(key))")
         let b = NWBrowser(for: .bonjour(type: Transport.serviceType, domain: nil), using: .tcp)
         b.browseResultsChangedHandler = { [weak self] results, _ in self?.found(results) }
         b.start(queue: .main)
@@ -67,6 +74,7 @@ final class ViewerLink {
         guard conn == nil else { return }
         for r in results {
             if case let .service(name, _, _, _) = r.endpoint, name.hasSuffix("#" + key) {
+                Log.add("np link: found the viewer, connecting")
                 connect(r.endpoint)
                 return
             }
@@ -81,8 +89,12 @@ final class ViewerLink {
         c.stateUpdateHandler = { [weak self, weak c] s in
             guard let self, let c, self.conn === c else { return }
             switch s {
-            case .ready: self.signIn()
-            case .failed: self.fail(.dropped)
+            case .ready:
+                Log.add("np link: connected, signing in")
+                self.signIn()
+            case .failed:
+                Log.add("np link: connection failed")
+                self.fail(.dropped)
             default: break
             }
         }
@@ -112,6 +124,7 @@ final class ViewerLink {
         case .sealed(let box):
             guard let body = channel?.open(box), case .state(let st)? = try? JSONDecoder().decode(ServerMessage.self, from: body) else { return }
             if !ready {
+                Log.add("np link: signed in, first state received")
                 ready = true
                 giveUp?.cancel()
                 flush()
@@ -146,6 +159,7 @@ final class ViewerLink {
     }
 
     private func fail(_ error: LinkError) {
+        Log.add("np link: failed (\(error)), \(pending.count) commands waiting")
         let items = pending
         pending = []
         close()

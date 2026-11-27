@@ -24,8 +24,8 @@ struct Thumb: View {
 
 struct EmptyState: View {
     let symbol: String
-    let title: String
-    let message: String
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
 
     var body: some View {
         VStack(spacing: 8) {
@@ -155,6 +155,7 @@ struct ScrubBar: View {
     let onCancel: () -> Void
     var onActive: (Bool) -> Void = { _ in }
     var preview: (Double) -> UIImage? = { _ in nil }
+    var chapters: [Chapter] = []
     @State private var active = false
     @State private var current = 0.0
     @State private var startValue = 0.0
@@ -187,6 +188,11 @@ struct ScrubBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.3)).frame(height: 4)
                 Capsule().fill(Color.accentColor).frame(width: w * frac, height: 4)
+                ForEach(chapters.dropFirst(), id: \.start) { c in
+                    Rectangle().fill(Color(.systemBackground)).opacity(0.85)
+                        .frame(width: 2, height: 4)
+                        .offset(x: min(max(w * c.start / top, 0), w) - 1)
+                }
                 Circle()
                     .fill(Color.white)
                     .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
@@ -209,14 +215,47 @@ struct ScrubBar: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if active, tier != Self.cancelTier, let image = preview(shown) {
+                if active, tier > 0, tier != Self.cancelTier {
+                    let tw = min(72, w / 5 - 2)
+                    let th = tw * 9 / 16
+                    let step = tw * top / w * Self.tiers[tier].factor
+                    VStack(spacing: 3) {
+                        HStack(spacing: 2) {
+                            ForEach(-2...2, id: \.self) { i in
+                                let t = shown + Double(i) * step
+                                Group {
+                                    if t >= 0, t <= top, let image = preview(t) {
+                                        Image(uiImage: image).resizable()
+                                    } else {
+                                        Color.black.opacity(0.5)
+                                    }
+                                }
+                                .frame(width: tw, height: th)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(i == 0 ? 0.95 : 0.3), lineWidth: i == 0 ? 2 : 1))
+                                .opacity(i == 0 ? 1 : 0.65)
+                            }
+                        }
+                        Text(clock(shown) + (Chapter.title(at: shown, in: chapters).map { " · " + $0 } ?? ""))
+                            .lineLimit(1)
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.7), in: Capsule())
+                    }
+                    .frame(width: (tw + 2) * 5)
+                    .offset(x: min(max(w * frac - (tw + 2) * 2.5, 0), max(w - (tw + 2) * 5, 0)), y: -th - 56)
+                    .allowsHitTesting(false)
+                } else if active, tier != Self.cancelTier, let image = preview(shown) {
                     VStack(spacing: 3) {
                         Image(uiImage: image)
                             .resizable()
                             .frame(width: 160, height: 90)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.6), lineWidth: 1))
-                        Text(clock(shown))
+                        Text(clock(shown) + (Chapter.title(at: shown, in: chapters).map { " · " + $0 } ?? ""))
+                            .lineLimit(1)
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
@@ -231,7 +270,7 @@ struct ScrubBar: View {
                 DragGesture(minimumDistance: 0)
                     .updating($touching) { _, state, _ in state = true }
                     .onChanged { v in
-                        let x = min(max(v.location.x, 0), w)
+                        let x = active ? v.location.x : min(max(v.location.x, 0), w)
                         if !active {
                             active = true
                             onActive(true)
@@ -399,31 +438,93 @@ func linkified(_ line: String) -> AttributedString {
 struct DescriptionLines: View {
     let info: VideoInfo
     var follow: Int?
+    var position: Int?
     var onTop: ((Int) -> Void)?
+    var onPosition: ((Int) -> Void)?
     var onSeek: ((Double) -> Void)?
 
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(info.title).font(.headline)
+            Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
+            if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text.isEmpty ? AttributedString(" ") : linkified(text))
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .environment(\.openURL, OpenURLAction { url in
+                guard let onSeek else { return .discarded }
+                if url.scheme == "tubeseek", let s = Double(url.host ?? "") {
+                    onSeek(s)
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+
     var body: some View {
-        let lines = info.lines
-        FollowScroll(count: lines.count, follow: follow, onTop: onTop, header: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(info.title).font(.headline)
-                Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
-                if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
+        if #available(iOS 18.0, *) {
+            ProportionalScroll(position: position, onPosition: onPosition) {
+                VStack(alignment: .leading, spacing: 4) {
+                    header
+                    ForEach(Array(info.lines.enumerated()), id: \.offset) { _, text in line(text) }
+                }
             }
-            .padding(.bottom, 8)
-        }, row: { i in
-            Text(lines[i].isEmpty ? AttributedString(" ") : linkified(lines[i]))
-                .font(.callout)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .environment(\.openURL, OpenURLAction { url in
-                    guard let onSeek else { return .discarded }
-                    if url.scheme == "tubeseek", let s = Double(url.host ?? "") {
-                        onSeek(s)
-                        return .handled
-                    }
-                    return .systemAction
-                })
-        })
+        } else {
+            let lines = info.lines
+            FollowScroll(count: lines.count, follow: follow, onTop: onTop, header: { header }, row: { i in line(lines[i]) })
+        }
+    }
+}
+
+/// Both screens scroll by how far down the text is, as a fraction, because they wrap it at different widths. A row number
+/// would put the phone halfway through a long paragraph while the iPad showed its first line.
+@available(iOS 18.0, *)
+struct ProportionalScroll<Content: View>: View {
+    var position: Int?
+    var onPosition: ((Int) -> Void)?
+    @ViewBuilder let content: Content
+    private final class Throttle {
+        var last = Date.distantPast
+        var work: DispatchWorkItem?
+    }
+    @State private var scroll = ScrollPosition(edge: .top)
+    @State private var maxOffset: CGFloat = 0
+    @State private var throttle = Throttle()
+
+    private func report(_ p: Int) {
+        guard let onPosition else { return }
+        throttle.work?.cancel()
+        let box = throttle
+        let wait = max(0, 0.1 - Date().timeIntervalSince(box.last))
+        let w = DispatchWorkItem {
+            box.last = Date()
+            onPosition(p)
+        }
+        box.work = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: w)
+    }
+
+    private func follow(_ p: Int?) {
+        guard let p, maxOffset > 0 else { return }
+        withAnimation(.easeOut(duration: 0.25)) { scroll.scrollTo(y: CGFloat(p) / 1000 * maxOffset) }
+    }
+
+    var body: some View {
+        ScrollView { content.padding() }
+            .scrollPosition($scroll)
+            .onScrollGeometryChange(for: CGFloat.self, of: { max($0.contentSize.height - $0.containerSize.height, 0) },
+                                    action: { _, v in maxOffset = v })
+            .onScrollGeometryChange(for: Int.self, of: { g in
+                let range = max(g.contentSize.height - g.containerSize.height, 1)
+                return Int((min(max(g.contentOffset.y, 0) / range, 1) * 1000).rounded())
+            }, action: { _, p in report(p) })
+            .onChange(of: position) { _, p in follow(p) }
+            .onChange(of: maxOffset) { _, _ in follow(position) }
     }
 }
 

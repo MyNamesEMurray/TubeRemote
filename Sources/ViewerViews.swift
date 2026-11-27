@@ -418,7 +418,8 @@ struct ViewerControls: View {
                         onScrub: { scrub = $0; touched() },
                         onEnd: commitSeek,
                         onCancel: { scrub = nil },
-                        preview: { storyboard.frame(at: $0) })
+                        preview: { storyboard.frame(at: $0) },
+                        chapters: viewer.details?.info?.chapters ?? [])
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {
@@ -626,7 +627,7 @@ struct RichPanel: View {
                     CommentsList(details: viewer.details, follow: viewer.richScroll,
                                  solo: true, onToggle: { viewer.handle(.toggleComment($0), from: nil) })
                 } else if let info = viewer.details?.info {
-                    DescriptionLines(info: info, follow: viewer.richScroll)
+                    DescriptionLines(info: info, follow: viewer.richScroll, position: viewer.richPosition)
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

@@ -15,6 +15,7 @@ final class NowPlayingBridge {
     private var sentAt = Date()
     private var foregroundObs: NSObjectProtocol?
     private var keepAlive: AVAudioPlayer?
+    private var lastReason = ""
 
     init(settings: AppSettings, remote: RemoteController) {
         self.settings = settings
@@ -87,16 +88,30 @@ final class NowPlayingBridge {
         if keepAlive != nil { startKeepAlive() }
         guard !busy else { return }
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else {
+            let reason = remote.active == nil ? "no viewer selected" : remote.active?.connected != true ? "viewer not connected"
+                : remote.active?.state == nil ? "no state from the viewer yet" : remote.active?.state?.current == nil ? "nothing playing"
+                : "Pro is off"
+            if reason != lastReason {
+                lastReason = reason
+                Log.add("now playing idle: \(reason)")
+            }
             if session != nil { Task { await endSession() } }
             return
         }
+        lastReason = ""
         let a = NowPlayingAttributes(
             id: c.key, viewerName: c.title, videoID: cur.videoID, title: cur.title, channel: cur.channel,
             isPlaying: s.isPlaying, position: s.position, timestamp: Date(), duration: s.duration,
             speed: Float(s.speed ?? 1), live: s.live == true, volume: s.volume, skip: Double(settings.skipSeconds))
-        let key = "\(a.id)|\(a.videoID)|\(a.isPlaying)|\(Int(a.duration))|\(Int(a.volume * 100))"
+        let key = "\(a.id)|\(a.videoID)|\(a.isPlaying)|\(Int(a.duration))|\(Int(a.volume * 100))|\(Int(a.skip))|\(Int(a.speed * 100))|\(a.live)"
         let expected = sentPosition + (a.isPlaying ? Date().timeIntervalSince(sentAt) * Double(a.speed) : 0)
         guard session == nil || key != sentKey || abs(a.position - expected) > 1.5 else { return }
+        let names = ["viewer", "video", "playing", "length", "volume", "skip", "speed", "live"]
+        let changed = zip(names, zip(key.split(separator: "|", omittingEmptySubsequences: false),
+                                      sentKey.split(separator: "|", omittingEmptySubsequences: false)))
+            .filter { $0.1.0 != $0.1.1 }.map(\.0)
+        let why = session == nil ? "starting" : changed.isEmpty ? "position drifted by \(Int(a.position - expected)) s" : changed.joined(separator: ", ")
+        Log.add("now playing push (\(why)): \(a.isPlaying ? "playing" : "paused") at \(Int(a.position)) of \(Int(a.duration)), skip \(Int(a.skip)), speed \(a.speed), volume \(Int(a.volume * 100))")
         busy = true
         Task {
             await push(a, key: key)

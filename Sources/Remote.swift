@@ -11,6 +11,13 @@ final class RemoteClient: ObservableObject, Identifiable {
     private var lists: (queue: [VideoItem], history: [VideoItem]) = ([], [])
 
     private var volumeHold: (value: Float, until: Date)?
+    private var brightnessHold: (value: Float, until: Date)?
+
+    func setBrightness(_ v: Float) {
+        brightnessHold = (v, Date().addingTimeInterval(1.5))
+        state?.brightness = v
+        send(.setBrightness(v))
+    }
 
     func setVolume(_ v: Float) {
         volumeHold = (v, Date().addingTimeInterval(1.5))
@@ -145,6 +152,7 @@ final class RemoteClient: ObservableObject, Identifiable {
                 st.queue = lists.queue
                 st.history = lists.history
                 if let h = volumeHold, Date() < h.until { st.volume = h.value }
+                if let h = brightnessHold, Date() < h.until { st.brightness = h.value }
                 if !connected { Log.add("first state from \(tag)") }
                 let previous = connected ? state : nil
                 state = st

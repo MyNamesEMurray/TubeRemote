@@ -5,6 +5,7 @@ options:
     icon:
       file: true
       buildPhase: resources
+  developmentLanguage: en
   deploymentTarget:
     iOS: "16.0"
 settings:
@@ -22,6 +23,7 @@ targets:
     sources:
       - Sources
       - Assets
+      - Localization
       - path: Privacy/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
@@ -38,6 +40,7 @@ targets:
       path: Config/Info.plist
       properties:
         CFBundleDisplayName: TubeRemote
+        CFBundleLocalizations: [en, es, fr, de, pt-BR, ja, ko]
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         ITSAppUsesNonExemptEncryption: false

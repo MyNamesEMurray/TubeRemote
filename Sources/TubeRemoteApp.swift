@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import SwiftUI
 
@@ -25,6 +26,20 @@ final class AppModel: ObservableObject {
         lock = LockScreenControls(settings: s, remote: r)
         mode = s.defaultMode
         lockObs = s.$lockScreenControls.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } }
+        Log.add("launch: \(Log.header), \(s.defaultMode.rawValue), \(s.paired.count) paired")
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { n in
+            let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).map { "\($0)" } ?? "?"
+            let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ",")
+            Log.add("audio route changed (reason \(reason)): \(outputs)")
+        }
+        nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { n in
+            let kind = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue ? "began" : "ended"
+            Log.add("audio interruption \(kind)")
+        }
+        nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+            Log.add("memory warning")
+        }
     }
 
     private func refreshLock() {
@@ -110,6 +125,7 @@ struct RootView: View {
         .onChange(of: settings.paired.count) { _ in settings.mirrorForShare(pro: pro.isPro) }
         .onChange(of: pro.isPro) { _ in settings.mirrorForShare(pro: pro.isPro) }
         .onChange(of: phase) {
+            Log.add("app \(String(describing: $0))")
             switch $0 {
             case .active:
                 model.apply()
@@ -306,6 +322,15 @@ struct SettingsView: View {
                         RemoteQualityRow(client: c, showPaywall: $showPaywall)
                     } else {
                         Text("Choose a viewer first").foregroundStyle(.secondary)
+                    }
+                    if model.mode == .viewer {
+                        Picker("Caption language", selection: $settings.captionLanguage) {
+                            Text("Device language").tag("")
+                            ForEach(["en", "es", "fr", "de", "it", "pt", "nl", "sv", "pl", "tr", "ru", "uk", "ar", "hi", "id", "th", "vi", "ja", "ko", "zh"], id: \.self) {
+                                Text(Locale.current.localizedString(forLanguageCode: $0) ?? $0).tag($0)
+                            }
+                        }
+                        .onChange(of: settings.captionLanguage) { _ in model.viewer.pushSettings() }
                     }
                     Picker("Skip buttons", selection: $settings.skipSeconds) {
                         ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }

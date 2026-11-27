@@ -5,6 +5,11 @@ import Observation
 
 @main
 struct TubeRemoteNowPlaying: RemoteMediaSessionExtension {
+    init() {
+        Log.tag = "N"
+        Log.add("np extension started")
+    }
+
     var configuration: RemoteMediaSessionExtensionConfiguration<Self> {
         RemoteMediaSessionExtensionConfiguration(extension: self)
     }
@@ -24,12 +29,14 @@ final class ViewerSession: RemoteMediaSessionRepresentable {
     init(attributes: NowPlayingAttributes) {
         id = attributes.id
         self.attributes = attributes
+        Log.add("np session created for \(Log.who(attributes.id)), skip \(Int(attributes.skip))")
         link = ViewerLink(key: attributes.id)
         link.onState = { [weak self] state in self?.apply(state) }
         link.maintain()
     }
 
     func update(_ attributes: NowPlayingAttributes) {
+        Log.add("np update from the app: \(attributes.isPlaying ? "playing" : "paused") at \(Int(attributes.position)), skip \(Int(attributes.skip))")
         self.attributes = attributes
     }
 
@@ -46,6 +53,9 @@ final class ViewerSession: RemoteMediaSessionRepresentable {
     }
 
     private func apply(_ s: ViewerState) {
+        if s.current?.videoID != attributes.videoID || s.isPlaying != attributes.isPlaying {
+            Log.add("np state from the viewer: \(s.isPlaying ? "playing" : "paused") at \(Int(s.position)), \(s.current?.videoID != attributes.videoID ? "new video" : "same video")")
+        }
         var a = attributes
         a.isPlaying = s.isPlaying
         a.position = s.position
