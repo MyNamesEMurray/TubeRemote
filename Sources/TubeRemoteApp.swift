@@ -293,7 +293,7 @@ struct SettingsView: View {
                         if pro.has(remote.active?.state) {
                             Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
                             if settings.lockScreenControls {
-                                Toggle("Test: pause the sound with the video", isOn: $settings.lockScreenPausesAudio)
+                                Toggle("Test: system player mode", isOn: $settings.lockScreenPausesAudio)
                             }
                             Toggle("Keep the queue", isOn: $settings.saveQueue)
                         } else {
