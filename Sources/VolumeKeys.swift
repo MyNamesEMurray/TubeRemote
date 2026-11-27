@@ -38,7 +38,7 @@ final class VolumeKeys {
         guard obs == nil else { return }
         let session = AVAudioSession.sharedInstance()
         // Volume changes are only reported to an active session; ambient does not interrupt other audio.
-        if !LockScreenControls.active { try? session.setCategory(.ambient) }
+        if !LockScreenControls.active && !KeepAlive.active { try? session.setCategory(.ambient) }
         try? session.setActive(true)
         original = session.outputVolume
         base = original

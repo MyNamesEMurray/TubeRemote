@@ -166,7 +166,7 @@ final class LockScreenControls {
         }
     }
 
-    private static func silence() -> Data {
+    static func silence() -> Data {
         let rate: UInt32 = 8000
         let bytes = rate * 2
         var d = Data("RIFF".utf8)
@@ -181,3 +181,5 @@ final class LockScreenControls {
         return d
     }
 }
+
+enum KeepAlive { static var active = false }
