@@ -36,6 +36,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var toastShared = false
     private var volumeObs: NSKeyValueObservation?
     private var premuteVolume: Float = 0.5
+    private var brightnessBeforeSleep: CGFloat?
+    private var activeObs: NSObjectProtocol?
+    private var screen: UIScreen? { UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen }.first }
     private var running = false
     private var interruptObs: NSObjectProtocol?
     private var wasPlaying = false
@@ -535,6 +538,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             self?.tickSleep()
             self?.broadcast()
         }
+        activeObs = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.restoreBrightness()
+        }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
@@ -582,6 +588,9 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         volumeObs = nil
         if let o = interruptObs { NotificationCenter.default.removeObserver(o) }
         interruptObs = nil
+        if let o = activeObs { NotificationCenter.default.removeObserver(o) }
+        activeObs = nil
+        restoreBrightness()
         let rc = MPRemoteCommandCenter.shared()
         [rc.playCommand, rc.pauseCommand, rc.nextTrackCommand, rc.previousTrackCommand,
          rc.changePlaybackPositionCommand].forEach { $0.removeTarget(nil) }
@@ -653,6 +662,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             js("__tr.pause()")
             return "Paused"
         case .resume:
+            restoreBrightness()
             isPlaying = true
             wantPlaying = true
             if running { UIApplication.shared.isIdleTimerDisabled = true }
@@ -672,6 +682,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return "Previous"
         case .setVolume(let v):
             setSystemVolume(v)
+            return nil
+        case .setBrightness(let v):
+            brightnessBeforeSleep = nil
+            screen?.brightness = CGFloat(min(max(v, 0), 1))
             return nil
         case .setMuted(let m):
             if m {
@@ -880,10 +894,23 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         _ = apply(.pause)
         // iOS has no call to lock the screen. Letting go of the "stay awake" hold makes the device lock after its Auto-Lock time.
         UIApplication.shared.isIdleTimerDisabled = false
+        if brightnessBeforeSleep == nil, let s = screen {
+            brightnessBeforeSleep = s.brightness
+            s.brightness = 0
+            Log.add("sleep timer: brightness set to the lowest")
+        }
         flash("Sleep timer ended")
     }
 
+    private func restoreBrightness() {
+        guard let b = brightnessBeforeSleep else { return }
+        brightnessBeforeSleep = nil
+        screen?.brightness = b
+        Log.add("brightness put back")
+    }
+
     private func start(_ item: VideoItem, pushPrevious: Bool = true, auto: Bool = false) {
+        restoreBrightness()
         server.videoChanged()
         autoplayStreak = auto ? autoplayStreak + 1 : 0
         live = false
@@ -1335,7 +1362,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
                     autoQuality: autoQuality, captionsStatus: captionsStatus, sessionPro: sessionPro,
                     autoplay: settings.autoplay, autoplayNext: autoplayNext,
                     richView: richView, richTab: richTab, live: live, liveHead: atLiveHead,
-                    needsUnmute: needsUnmute ? true : nil, notice: toastShared ? toast : nil)
+                    needsUnmute: needsUnmute ? true : nil, notice: toastShared ? toast : nil,
+                    brightness: screen.map { Float($0.brightness) })
     }
 
     private func broadcast() {

@@ -930,6 +930,8 @@ struct ControlsPane: View {
     @State private var scrubbing = false
     @StateObject private var storyboard = Storyboard()
     @State private var vol: Float?
+    @State private var bright: Float?
+    @State private var brightSent = Date.distantPast
     @State private var volSent = Date.distantPast
     @State private var held: (value: Double, until: Date)?
 
@@ -1041,6 +1043,25 @@ struct ControlsPane: View {
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(.secondary)
+                    if let level = s.brightness {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sun.min.fill")
+                                .frame(width: 44, height: 44)
+                                .accessibilityHidden(true)
+                            Slider(value: Binding(get: { bright ?? level }, set: { setBrightness($0) }), in: 0...1) { editing in
+                                if !editing, let v = bright {
+                                    client.setBrightness(v)
+                                    bright = nil
+                                }
+                            }
+                            .accessibilityLabel("Brightness")
+                            .accessibilityValue("\(Int(((bright ?? level) * 100).rounded())) percent")
+                            Image(systemName: "sun.max.fill")
+                                .frame(width: 44, height: 44)
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
@@ -1115,6 +1136,13 @@ struct ControlsPane: View {
         guard Date().timeIntervalSince(volSent) > 0.1 else { return }
         volSent = Date()
         client.setVolume(v)
+    }
+
+    private func setBrightness(_ v: Float) {
+        bright = v
+        guard Date().timeIntervalSince(brightSent) > 0.1 else { return }
+        brightSent = Date()
+        client.setBrightness(v)
     }
 
     private func loadStoryboard() {

@@ -56,7 +56,7 @@ extension Command {
 
     var logsOften: Bool {
         switch self {
-        case .setVolume, .richScroll, .richPosition, .scan, .seek: return true
+        case .setVolume, .setBrightness, .richScroll, .richPosition, .scan, .seek: return true
         default: return false
         }
     }
@@ -121,6 +121,7 @@ struct ViewerState: Codable, Equatable {
     var liveHead: Bool?
     var needsUnmute: Bool?
     var notice: String?
+    var brightness: Float?
 
     var muted: Bool { volume < 0.01 }
 }
@@ -196,6 +197,7 @@ enum Command: Codable {
     case seek(Double), skip(Double)
     case next, previous
     case setVolume(Float), setMuted(Bool)
+    case setBrightness(Float)
     case remove(UUID), reorder([UUID]), playQueueItem(UUID)
     case clearQueue, clearHistory
     case setSpeed(Double), setCaptions(Bool), setQuality(String)
