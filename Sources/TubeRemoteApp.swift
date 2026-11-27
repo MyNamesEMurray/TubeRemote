@@ -248,7 +248,9 @@ struct SettingsView: View {
     @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
     @State private var showPaywall = false
-    @AppStorage("useGlass") private var useGlass = true
+    @State private var logTaps = 0
+    @State private var lastLogTap = Date.distantPast
+    @State private var showLog = false
 
     private var version: String {
         let i = Bundle.main.infoDictionary
@@ -323,16 +325,22 @@ struct SettingsView: View {
                         Toggle("Hide the status bar", isOn: $settings.hideStatusBar)
                     }
                 }
-                Section {
+                Section("Interface") {
                     Toggle("Haptic feedback", isOn: $settings.haptics)
-                    if #available(iOS 26.0, *) { Toggle("Liquid Glass", isOn: $useGlass) }
-                } header: {
-                    Text("Interface")
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)
                     LabeledContent("Build", value: build)
-                    NavigationLink("Debug Log") { DebugLogView() }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            logTaps = Date().timeIntervalSince(lastLogTap) > 2 ? 1 : logTaps + 1
+                            lastLogTap = Date()
+                            if logTaps >= 5 {
+                                logTaps = 0
+                                Haptics.success()
+                                showLog = true
+                            }
+                        }
                 }
             }
             .navigationTitle("Settings")
@@ -342,6 +350,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+            .navigationDestination(isPresented: $showLog) { DebugLogView() }
         }
         .onDisappear { model.viewer.rename() }
     }

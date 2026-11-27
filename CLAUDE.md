@@ -30,7 +30,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 
 ## Things that depend on YouTube's pages (they will break)
 
-Each has a log line in the Debug Log. Ask the user for it when something stops working.
+Each has a log line in the Debug Log. Ask the user for it when something stops working. The log is hidden: Settings, then tap the Build row five times.
 
 - Player control and ads: `#movie_player`, `.ad-showing`, `.ytp-*` in `bridge`.
 - Skip Ad from the remote: YouTube ignores a script's click, so the bridge sends a full press and then moves the ad to its end. Log: `page: skip ad: ...` lines say which step ran and whether the ad went away.
@@ -45,7 +45,7 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 
 - Toggle pills keep their label and fill with the accent colour when on. One `Pill` view styles them all.
 - The viewer stage is dark through the environment and `preferredColorScheme(.dark)`, except while Settings, Browse or Pair is open. Do not hide the status bar in light mode on iPad: it hides the iPadOS menu bar and window controls. Hiding is the user's setting.
-- Floating controls use `glassBackground` (Liquid Glass on iOS 26 and later, a switch in Settings). Docked side panels stay on material.
+- Floating controls use `glassBackground` (Liquid Glass on iOS 26 and later, no switch). Docked side panels stay on material.
 - Docked or floating side panel is decided by width (700 points), not size class, because the iPhone Duo's inner display reports regular size classes.
 - Panels slide by transform and the web view scales. Resizing the web view per frame makes the video judder.
 - The viewer controls card stays laid out and fades by opacity and offset. Inserting and removing it makes the blur and the pills appear out of step.
