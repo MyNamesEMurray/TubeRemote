@@ -45,7 +45,7 @@ final class LockScreenControls {
     }
 
     private func tick() {
-        guard let c = remote.active, c.connected, let s = c.state, let cur = s.current else { return stopPlayback() }
+        guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else { return stopPlayback() }
         startPlayback()
         wire()
         let key = "\(cur.videoID)|\(s.isPlaying)|\(Int(s.duration))|\(artworkFor == cur.videoID)"

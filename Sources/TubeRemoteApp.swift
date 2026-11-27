@@ -290,19 +290,17 @@ struct SettingsView: View {
                     }
                     Toggle("Mute while scanning", isOn: $settings.muteWhileScanning)
                     if model.mode == .remote {
-                        Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
-                        if settings.lockScreenControls {
-                            Text("Pauses music from other apps while a video plays on the viewer.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
                         if pro.has(remote.active?.state) {
+                            Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
                             Toggle("Keep the queue", isOn: $settings.saveQueue)
                         } else {
-                            Button { showPaywall = true } label: {
-                                HStack {
-                                    Text("Keep the queue").foregroundStyle(.primary)
-                                    GatedBadge()
-                                    Spacer()
+                            ForEach(["Lock screen controls", "Keep the queue"], id: \.self) { title in
+                                Button { showPaywall = true } label: {
+                                    HStack {
+                                        Text(title).foregroundStyle(.primary)
+                                        GatedBadge()
+                                        Spacer()
+                                    }
                                 }
                             }
                         }
