@@ -543,7 +543,6 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         }
         activeObs = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             if let s = self?.screen { Log.add("app active, brightness \(Int((s.brightness * 100).rounded()))%") }
-            self?.restoreBrightness()
         }
         brightnessObs = NotificationCenter.default.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self, let s = self.screen else { return }
