@@ -37,7 +37,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private var volumeObs: NSKeyValueObservation?
     private var premuteVolume: Float = 0.5
     private var brightnessBeforeSleep: CGFloat?
+    private var lastBrightnessSet: (value: CGFloat, at: Date)?
+    private var lastBrightnessLog = Date.distantPast
     private var activeObs: NSObjectProtocol?
+    private var brightnessObs: NSObjectProtocol?
     private var screen: UIScreen? { UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen }.first }
     private var running = false
     private var interruptObs: NSObjectProtocol?
@@ -539,7 +542,13 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             self?.broadcast()
         }
         activeObs = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            if let s = self?.screen { Log.add("app active, brightness \(Int((s.brightness * 100).rounded()))%") }
             self?.restoreBrightness()
+        }
+        brightnessObs = NotificationCenter.default.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, let s = self.screen else { return }
+            if let l = self.lastBrightnessSet, Date().timeIntervalSince(l.at) < 1.5, abs(l.value - s.brightness) < 0.02 { return }
+            Log.add("brightness changed by the system or the user: \(Int((s.brightness * 100).rounded()))%")
         }
         interruptObs = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
             guard let self, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
@@ -590,6 +599,8 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         interruptObs = nil
         if let o = activeObs { NotificationCenter.default.removeObserver(o) }
         activeObs = nil
+        if let o = brightnessObs { NotificationCenter.default.removeObserver(o) }
+        brightnessObs = nil
         restoreBrightness()
         let rc = MPRemoteCommandCenter.shared()
         [rc.playCommand, rc.pauseCommand, rc.nextTrackCommand, rc.previousTrackCommand,
@@ -685,7 +696,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             return nil
         case .setBrightness(let v):
             brightnessBeforeSleep = nil
-            screen?.brightness = CGFloat(min(max(v, 0), 1))
+            setScreenBrightness(CGFloat(min(max(v, 0), 1)), why: "remote")
             return nil
         case .setMuted(let m):
             if m {
@@ -896,8 +907,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         UIApplication.shared.isIdleTimerDisabled = false
         if brightnessBeforeSleep == nil, let s = screen {
             brightnessBeforeSleep = s.brightness
-            s.brightness = 0
-            Log.add("sleep timer: brightness set to the lowest")
+            setScreenBrightness(0, why: "sleep timer")
         }
         flash("Sleep timer ended")
     }
@@ -905,8 +915,17 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     private func restoreBrightness() {
         guard let b = brightnessBeforeSleep else { return }
         brightnessBeforeSleep = nil
-        screen?.brightness = b
-        Log.add("brightness put back")
+        setScreenBrightness(b, why: "put back")
+    }
+
+    private func setScreenBrightness(_ v: CGFloat, why: String) {
+        guard let s = screen else { return }
+        lastBrightnessSet = (v, Date())
+        s.brightness = v
+        if why != "remote" || Date().timeIntervalSince(lastBrightnessLog) > 1 {
+            lastBrightnessLog = Date()
+            Log.add("brightness set to \(Int((v * 100).rounded()))% (\(why))")
+        }
     }
 
     private func start(_ item: VideoItem, pushPrevious: Bool = true, auto: Bool = false) {
