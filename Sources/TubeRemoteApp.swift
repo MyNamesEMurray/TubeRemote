@@ -290,7 +290,7 @@ struct SettingsView: View {
                             Image(systemName: "pencil").font(.footnote).foregroundStyle(.secondary)
                         }
                     }
-                    Picker("Use this device as", selection: Binding(
+                    Picker("Use as", selection: Binding(
                         get: { model.mode },
                         set: { model.mode = $0; settings.defaultMode = $0 }
                     )) {
@@ -305,9 +305,9 @@ struct SettingsView: View {
                     } else if let c = remote.active {
                         RemoteQualityRow(client: c, showPaywall: $showPaywall)
                     } else {
-                        Text("Pick a viewer to change this").foregroundStyle(.secondary)
+                        Text("Choose a viewer first").foregroundStyle(.secondary)
                     }
-                    Picker("Skip button length", selection: $settings.skipSeconds) {
+                    Picker("Skip buttons", selection: $settings.skipSeconds) {
                         ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
                     }
                     if model.mode == .remote {
