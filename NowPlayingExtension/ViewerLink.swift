@@ -18,10 +18,28 @@ final class ViewerLink {
     private var pending: [(Command, CheckedContinuation<Void, Error>)] = []
     private var idle: DispatchWorkItem?
     private var giveUp: DispatchWorkItem?
+    private var maintainer: Timer?
 
     init(key: String) { self.key = key }
 
+    /// While the app is suspended nothing else keeps the card current, so hold a link open. While the app runs it owns
+    /// the connection, because signing in here would drop its.
+    func maintain() {
+        maintainer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if NowPlayingMailbox.appIsActive {
+                if self.conn != nil && self.pending.isEmpty { self.close() }
+            } else if self.conn == nil && self.browser == nil {
+                self.begin()
+            }
+        }
+    }
+
     func send(_ command: Command) async throws {
+        if NowPlayingMailbox.appIsActive {
+            NowPlayingMailbox.post(command)
+            return
+        }
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             DispatchQueue.main.async { self.enqueue(command, cont) }
         }
@@ -120,6 +138,7 @@ final class ViewerLink {
             Transport.send(ClientMessage.sealed(out), on: c)
             cont.resume()
         }
+        guard maintainer == nil else { return }
         idle?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.close() }
         idle = w

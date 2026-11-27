@@ -26,6 +26,7 @@ final class ViewerSession: RemoteMediaSessionRepresentable {
         self.attributes = attributes
         link = ViewerLink(key: attributes.id)
         link.onState = { [weak self] state in self?.apply(state) }
+        link.maintain()
     }
 
     func update(_ attributes: NowPlayingAttributes) {

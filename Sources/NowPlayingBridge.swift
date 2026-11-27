@@ -30,18 +30,36 @@ final class NowPlayingBridge {
             }
             foregroundObs = NotificationCenter.default.addObserver(
                 forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                NowPlayingMailbox.markActive()
                 Task { @MainActor in await self?.makePrimary() }
             }
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), Unmanaged.passUnretained(self).toOpaque(),
+                                            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let bridge = Unmanaged<NowPlayingBridge>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in bridge.drainMailbox() }
+            }, NowPlayingMailbox.notification as CFString, nil, .deliverImmediately)
         } else {
             loop?.cancel()
             loop = nil
             foregroundObs.map(NotificationCenter.default.removeObserver)
             foregroundObs = nil
+            CFNotificationCenterRemoveObserver(CFNotificationCenterGetDarwinNotifyCenter(), Unmanaged.passUnretained(self).toOpaque(),
+                                               CFNotificationName(NowPlayingMailbox.notification as CFString), nil)
             Task { await endSession() }
         }
     }
 
+    func drainMailbox() {
+        for command in NowPlayingMailbox.take() {
+            guard let c = remote.active, c.connected else { continue }
+            Log.add("now playing command \(command.logName)")
+            if case .setVolume(let v) = command { c.setVolume(v) } else { c.send(command) }
+        }
+    }
+
     private func tick() {
+        NowPlayingMailbox.markActive()
         guard !busy else { return }
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else {
             if session != nil { Task { await endSession() } }
