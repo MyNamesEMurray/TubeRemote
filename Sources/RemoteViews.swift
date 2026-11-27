@@ -972,7 +972,8 @@ struct ControlsPane: View {
                             onEnd: commitSeek,
                             onCancel: { scrub = nil },
                             onActive: { scrubbing = $0 },
-                            preview: { storyboard.frame(at: $0) })
+                            preview: { storyboard.frame(at: $0) },
+                            chapters: client.details?.info?.chapters ?? [])
                         .animation(scrub == nil ? .linear(duration: 1) : nil, value: pos)
                         HStack {
                             Text(clock(pos))

@@ -323,6 +323,15 @@ struct SettingsView: View {
                     } else {
                         Text("Choose a viewer first").foregroundStyle(.secondary)
                     }
+                    if model.mode == .viewer {
+                        Picker("Caption language", selection: $settings.captionLanguage) {
+                            Text("Device language").tag("")
+                            ForEach(["en", "es", "fr", "de", "it", "pt", "nl", "sv", "pl", "tr", "ru", "uk", "ar", "hi", "id", "th", "vi", "ja", "ko", "zh"], id: \.self) {
+                                Text(Locale.current.localizedString(forLanguageCode: $0) ?? $0).tag($0)
+                            }
+                        }
+                        .onChange(of: settings.captionLanguage) { _ in model.viewer.pushSettings() }
+                    }
                     Picker("Skip buttons", selection: $settings.skipSeconds) {
                         ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
                     }

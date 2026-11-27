@@ -418,7 +418,8 @@ struct ViewerControls: View {
                         onScrub: { scrub = $0; touched() },
                         onEnd: commitSeek,
                         onCancel: { scrub = nil },
-                        preview: { storyboard.frame(at: $0) })
+                        preview: { storyboard.frame(at: $0) },
+                        chapters: viewer.details?.info?.chapters ?? [])
                     if viewer.live {
                         LivePill(atHead: viewer.atLiveHead, action: { touched(); viewer.handle(.goLive, from: nil) }, onDark: true)
                     } else {

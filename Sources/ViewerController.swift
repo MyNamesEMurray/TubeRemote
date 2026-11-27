@@ -119,7 +119,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       if (location.host.indexOf('youtube.com') < 0 || location.pathname !== '/watch') return;
       var post = function(o){ webkit.messageHandlers.yt.postMessage(o) };
       var want = true, started = false, alive = false, failed = false, ticks = 0;
-      var wr = 1, sr = 0, pm = null, wc = null, wq = null, tc = 0, tq = 0, errored = false;
+      var wl = '', wr = 1, sr = 0, pm = null, wc = null, wq = null, tc = 0, tq = 0, errored = false;
       function mp(){ return document.getElementById('movie_player') }
       function cc(){
         try { return !!mp().isSubtitlesOn() } catch(e) {}
@@ -127,7 +127,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
       // The caption list loads some time after the module is asked for, and asking again restarts the load,
       // so the module is requested once and later calls only look for the list.
       function pick(l){
-        var lang = (navigator.language || 'en').slice(0,2), best = null;
+        var lang = (wl || navigator.language || 'en').slice(0,2), best = null;
         for (var i = 0; i < l.length; i++) {
           if ((l[i].languageCode || '').slice(0,2) !== lang) continue;
           if (l[i].kind !== 'asr') return l[i];
@@ -408,7 +408,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             try { localStorage.removeItem('yt-player-quality') } catch(e) {}
             try { mp().setPlaybackQualityRange('auto','auto') } catch(e) {}
           }
-          wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
+          wl = o.lang || ''; wr = o.rate; wc = o.cc; wq = o.q; tc = 0; tq = 0 }
       };
       document.addEventListener('playing', function(e){
         if (e.target.tagName !== 'VIDEO') return;
@@ -1168,10 +1168,10 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // MARK: Player bridge
 
-    private func pushSettings() {
+    func pushSettings() {
         let cc = wantCaptions.map { "\($0)" } ?? "null"
         let q = wantQuality.map { "'\($0)'" } ?? "null"
-        js("__tr.set({rate:\(wantSpeed),cc:\(cc),q:\(q)})")
+        js("__tr.set({rate:\(wantSpeed),cc:\(cc),q:\(q),lang:'\(settings.captionLanguage)'})")
     }
 
     /// `__tr` only exists on a watch page; calls made on any other page do nothing.

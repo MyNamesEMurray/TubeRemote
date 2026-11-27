@@ -28,6 +28,12 @@ final class AppSettings: ObservableObject {
             Log.add("setting skipSeconds = \(skipSeconds)")
         }
     }
+    @Published var captionLanguage: String {
+        didSet {
+            UserDefaults.standard.set(captionLanguage, forKey: "captionLanguage")
+            Log.add("setting captionLanguage = \(captionLanguage.isEmpty ? "device" : captionLanguage)")
+        }
+    }
     @Published var hideStatusBar: Bool {
         didSet {
             UserDefaults.standard.set(hideStatusBar, forKey: "hideStatusBar")
@@ -84,6 +90,7 @@ final class AppSettings: ObservableObject {
         lockScreenControls = d.bool(forKey: "lockScreenControls")
         hideStatusBar = d.bool(forKey: "hideStatusBar")
         skipSeconds = min(max(d.object(forKey: "skipSeconds") as? Int ?? 10, 5), 30)
+        captionLanguage = d.string(forKey: "captionLanguage") ?? ""
         hasOnboarded = d.bool(forKey: "hasOnboarded")
         paired = Store.read("paired.json").flatMap { try? JSONDecoder().decode([PairedDevice].self, from: $0) } ?? []
         if let k = d.string(forKey: "deviceKey") {

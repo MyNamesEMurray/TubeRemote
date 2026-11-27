@@ -155,6 +155,7 @@ struct ScrubBar: View {
     let onCancel: () -> Void
     var onActive: (Bool) -> Void = { _ in }
     var preview: (Double) -> UIImage? = { _ in nil }
+    var chapters: [Chapter] = []
     @State private var active = false
     @State private var current = 0.0
     @State private var startValue = 0.0
@@ -187,6 +188,11 @@ struct ScrubBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.secondary.opacity(0.3)).frame(height: 4)
                 Capsule().fill(Color.accentColor).frame(width: w * frac, height: 4)
+                ForEach(chapters.dropFirst(), id: \.start) { c in
+                    Rectangle().fill(Color(.systemBackground)).opacity(0.85)
+                        .frame(width: 2, height: 4)
+                        .offset(x: min(max(w * c.start / top, 0), w) - 1)
+                }
                 Circle()
                     .fill(Color.white)
                     .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
@@ -230,7 +236,8 @@ struct ScrubBar: View {
                                 .opacity(i == 0 ? 1 : 0.65)
                             }
                         }
-                        Text(clock(shown))
+                        Text(clock(shown) + (Chapter.title(at: shown, in: chapters).map { " · " + $0 } ?? ""))
+                            .lineLimit(1)
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
@@ -247,7 +254,8 @@ struct ScrubBar: View {
                             .frame(width: 160, height: 90)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.6), lineWidth: 1))
-                        Text(clock(shown))
+                        Text(clock(shown) + (Chapter.title(at: shown, in: chapters).map { " · " + $0 } ?? ""))
+                            .lineLimit(1)
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
