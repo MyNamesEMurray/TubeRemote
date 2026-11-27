@@ -94,7 +94,7 @@ final class NowPlayingBridge {
             id: c.key, viewerName: c.title, videoID: cur.videoID, title: cur.title, channel: cur.channel,
             isPlaying: s.isPlaying, position: s.position, timestamp: Date(), duration: s.duration,
             speed: Float(s.speed ?? 1), live: s.live == true, volume: s.volume, skip: Double(settings.skipSeconds))
-        let key = "\(a.id)|\(a.videoID)|\(a.isPlaying)|\(Int(a.duration))|\(Int(a.volume * 100))"
+        let key = "\(a.id)|\(a.videoID)|\(a.isPlaying)|\(Int(a.duration))|\(Int(a.volume * 100))|\(Int(a.skip))|\(Int(a.speed * 100))|\(a.live)"
         let expected = sentPosition + (a.isPlaying ? Date().timeIntervalSince(sentAt) * Double(a.speed) : 0)
         guard session == nil || key != sentKey || abs(a.position - expected) > 1.5 else { return }
         busy = true
