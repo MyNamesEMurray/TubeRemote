@@ -103,7 +103,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
 
     // Runs inside the real YouTube watch page. Playing the page itself (not an embed) keeps the YouTube
     // sign-in, so Premium applies and videos that forbid embedding still play.
-    static let maxQueue = 500
+    static let maxQueue = 1000
     static let maxComments = 200
     static let maxScanRate = 8.0
 

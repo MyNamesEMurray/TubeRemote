@@ -39,7 +39,7 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 - Seek previews: `storyboards.playerStoryboardSpecRenderer.spec`. Log: `storyboard: WxH, N frames`.
 - Autoplay next: `ytInitialData` autoplay sets, then the first related link. Log: `autoplay candidate <id>` or `null`.
 - Live streams: `getVideoData().isLive`, `getProgressState().isAtLiveHead`, `seekToLiveHead`. A stream that stops moving for 20 seconds is reloaded once as a video.
-- Playlists are read from the signed-in page, up to 200 videos.
+- Playlists are read from the signed-in page, up to 1000 videos. That is also `ViewerController.maxQueue`: the queue goes to every remote in one message of at most 1 MiB, and a video takes about 250 to 400 bytes, so do not raise it past about 1500 without sending the queue in pieces.
 
 ## Decisions that are easy to undo by accident
 

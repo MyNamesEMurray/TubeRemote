@@ -158,7 +158,7 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
     }
 
     // Reads a playlist the way YouTube's own page does, from the signed-in page, so private playlists work too.
-    // Up to 200 videos. It depends on YouTube's page data, which changes now and then.
+    // Up to 1000 videos, the viewer's queue limit. It depends on YouTube's page data, which changes now and then.
     private static let playlistScript = #"""
     const origin = location.origin;
     const textOf = (t) => t ? (t.content || t.simpleText || (t.runs && t.runs.map((r) => r.text).join('')) || '') : '';
@@ -229,7 +229,7 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
     const key = keyMatch ? keyMatch[1] : (cfg && cfg.get('INNERTUBE_API_KEY'));
     const context = (cfg && cfg.get('INNERTUBE_CONTEXT')) ||
       {client: {clientName: 'MWEB', clientVersion: (cfg && cfg.get('INNERTUBE_CLIENT_VERSION')) || '2.20250101.00.00', hl: 'en', gl: 'US'}};
-    for (let n = 0; token && key && items.length < 200 && n < 10; n++) {
+    for (let n = 0; token && key && items.length < 1000 && n < 12; n++) {
       const r = await fetch(origin + '/youtubei/v1/browse?key=' + key + '&prettyPrint=false',
         {method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({context, continuation: token})});
       if (!r.ok) break;
@@ -238,7 +238,7 @@ final class Browser: NSObject, ObservableObject, WKHTTPCookieStoreObserver, WKSc
       items.push(...more);
       token = next[0];
     }
-    return JSON.stringify({items: items.filter((x) => /^[A-Za-z0-9_-]{6,20}$/.test(x.videoID)).slice(0, 200), truncated: !!token});
+    return JSON.stringify({items: items.filter((x) => /^[A-Za-z0-9_-]{6,20}$/.test(x.videoID)).slice(0, 1000), truncated: !!token});
     """#
 
     private struct PlaylistResult: Decodable {

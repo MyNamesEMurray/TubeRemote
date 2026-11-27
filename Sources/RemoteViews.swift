@@ -163,7 +163,7 @@ struct RemoteView: View {
             c.send(.playlist(items, action))
             browser.pause()
             Haptics.success()
-            // Only the first 200 can be read, so a reversed long playlist does not start from its true last video.
+            // Only the first 1000 can be read, so a reversed long playlist does not start from its true last video.
             show("Sent \(items.count) videos to \(c.title)" + (read.truncated ? (reversed ? ". Only the first \(items.count) could be read, so the reverse starts there." : ". Only the first \(items.count) could be read.") : ""))
         }
     }
