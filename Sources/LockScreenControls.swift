@@ -64,8 +64,9 @@ final class LockScreenControls {
     private func tick() {
         guard !yielded else { return }
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else { return stopPlayback() }
-        startPlayback()
+        startPlayback(playing: s.isPlaying || !settings.lockScreenPausesAudio)
         wire()
+        MPNowPlayingInfoCenter.default().playbackState = s.isPlaying ? .playing : .paused
         let key = "\(cur.videoID)|\(s.isPlaying)|\(Int(s.duration))|\(artworkFor == cur.videoID)"
         let expected = shownPosition + (s.isPlaying ? Date().timeIntervalSince(shownAt) * (s.speed ?? 1) : 0)
         guard key != shownKey || abs(s.position - expected) > 1.5 else { return }
@@ -83,6 +84,7 @@ final class LockScreenControls {
         if artworkFor == cur.videoID, let artwork { info[MPMediaItemPropertyArtwork] = artwork } else { loadArtwork(cur) }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = s.isPlaying ? .playing : .paused
+        Log.add("lock screen shows \(s.isPlaying ? "playing" : "paused") at \(Int(s.position))")
     }
 
     private func loadArtwork(_ item: VideoItem) {
@@ -99,18 +101,24 @@ final class LockScreenControls {
         }.resume()
     }
 
-    private func startPlayback() {
-        if let player, player.isPlaying { return }
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback)
-        try? session.setActive(true)
-        if player == nil {
-            player = try? AVAudioPlayer(data: Self.silence())
-            player?.numberOfLoops = -1
+    private func startPlayback(playing: Bool) {
+        if player == nil || !Self.active {
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback)
+            try? session.setActive(true)
+            if player == nil {
+                player = try? AVAudioPlayer(data: Self.silence())
+                player?.numberOfLoops = -1
+            }
+            if !Self.active { Log.add("lock screen controls on") }
+            Self.active = true
         }
-        player?.play()
-        Self.active = true
-        Log.add("lock screen controls on")
+        if playing, player?.isPlaying != true {
+            player?.play()
+        } else if !playing, player?.isPlaying == true {
+            player?.pause()
+            Log.add("lock screen controls: silent sound paused")
+        }
     }
 
     private func stopPlayback() {
