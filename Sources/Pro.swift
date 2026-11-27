@@ -306,7 +306,7 @@ struct QualityRow: View {
 
     var body: some View {
         if pro.isPro || unlocked {
-            Picker("Preferred quality", selection: Binding(get: { value }, set: set)) {
+            Picker("Video quality", selection: Binding(get: { value }, set: set)) {
                 ForEach(preferredQualityChoices, id: \.id) { Text($0.label).tag($0.id) }
             }
             .pickerStyle(.menu)
@@ -314,7 +314,7 @@ struct QualityRow: View {
         } else {
             Button { showPaywall = true } label: {
                 HStack {
-                    Text("Preferred quality").foregroundStyle(.primary)
+                    Text("Video quality").foregroundStyle(.primary)
                     GatedBadge()
                     Spacer()
                     Text(preferredQualityChoices.first { $0.id == value }?.label ?? "Auto").foregroundStyle(.secondary)

@@ -290,7 +290,7 @@ struct SettingsView: View {
                             Image(systemName: "pencil").font(.footnote).foregroundStyle(.secondary)
                         }
                     }
-                    Picker("Use as", selection: Binding(
+                    Picker("Use this device as", selection: Binding(
                         get: { model.mode },
                         set: { model.mode = $0; settings.defaultMode = $0 }
                     )) {
@@ -305,18 +305,18 @@ struct SettingsView: View {
                     } else if let c = remote.active {
                         RemoteQualityRow(client: c, showPaywall: $showPaywall)
                     } else {
-                        Text("Choose a viewer first").foregroundStyle(.secondary)
+                        Text("Pick a viewer to change this").foregroundStyle(.secondary)
                     }
-                    Picker("Skip buttons", selection: $settings.skipSeconds) {
+                    Picker("Skip button length", selection: $settings.skipSeconds) {
                         ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
                     }
-                    Toggle("Mute while scanning", isOn: $settings.muteWhileScanning)
+                    Toggle("Mute when fast-forwarding", isOn: $settings.muteWhileScanning)
                     if model.mode == .remote {
                         if pro.has(remote.active?.state) {
                             Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
-                            Toggle("Keep the queue", isOn: $settings.saveQueue)
+                            Toggle("Remember my queue", isOn: $settings.saveQueue)
                         } else {
-                            ForEach(["Lock screen controls", "Keep the queue"], id: \.self) { title in
+                            ForEach(["Lock screen controls", "Remember my queue"], id: \.self) { title in
                                 Button { showPaywall = true } label: {
                                     HStack {
                                         Text(title).foregroundStyle(.primary)
@@ -330,7 +330,7 @@ struct SettingsView: View {
                 }
                 if model.mode == .viewer {
                     Section("Viewer") {
-                        Toggle("Let the screen lock after the sleep timer", isOn: $settings.lockOnSleep)
+                        Toggle("Lock the screen when the sleep timer ends", isOn: $settings.lockOnSleep)
                         Toggle("Hide the status bar", isOn: $settings.hideStatusBar)
                     }
                 }
