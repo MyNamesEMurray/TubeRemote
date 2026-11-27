@@ -12,6 +12,8 @@ final class LockScreenControls {
     private var player: AVAudioPlayer?
     private var wired = false
     private var interruptObs: NSObjectProtocol?
+    private var foregroundObs: NSObjectProtocol?
+    private var yielded = false
     private var shownKey = ""
     private var shownPosition = 0.0
     private var shownAt = Date()
@@ -29,10 +31,22 @@ final class LockScreenControls {
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
             interruptObs = NotificationCenter.default.addObserver(
                 forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] n in
-                guard Self.active, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                      AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
-                try? AVAudioSession.sharedInstance().setActive(true)
-                self?.player?.play()
+                guard let self, Self.active || self.yielded, let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+                if type == .began {
+                    Log.add("lock screen controls: another app took the audio")
+                    self.yielded = true
+                    self.stopPlayback()
+                } else if let o = n.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
+                          AVAudioSession.InterruptionOptions(rawValue: o).contains(.shouldResume) {
+                    self.yielded = false
+                    self.tick()
+                }
+            }
+            foregroundObs = NotificationCenter.default.addObserver(
+                forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.yielded = false
+                self?.tick()
             }
             tick()
         } else {
@@ -40,11 +54,15 @@ final class LockScreenControls {
             timer = nil
             interruptObs.map(NotificationCenter.default.removeObserver)
             interruptObs = nil
+            foregroundObs.map(NotificationCenter.default.removeObserver)
+            foregroundObs = nil
+            yielded = false
             stopPlayback()
         }
     }
 
     private func tick() {
+        guard !yielded else { return }
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else { return stopPlayback() }
         startPlayback()
         wire()
