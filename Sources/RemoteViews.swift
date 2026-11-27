@@ -48,7 +48,7 @@ struct RemoteView: View {
                     if let c = remote.active {
                         RemoteBar(client: c, canSend: browser.videoID != nil, pageVideoID: browser.videoID, hasPlaylist: browser.playlistID != nil,
                                   sending: sending, open: { showNow = true }, send: { send($0, to: c) }, play: { playTapped() },
-                                  sendPlaylist: { sendPlaylist($0, reversed: $1, to: c) }, here: { browser.play() })
+                                  sendPlaylist: { sendPlaylist($0, part: $1, to: c) }, here: { browser.play() })
                     } else if browser.videoID != nil {
                         Button { showPicker = true } label: {
                             Label("Choose a Viewer", systemImage: "tv").frame(maxWidth: .infinity)
@@ -126,7 +126,7 @@ struct RemoteView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { if note == text { note = nil } }
     }
 
-    private func sendPlaylist(_ action: QueueAction, reversed: Bool, to c: RemoteClient) {
+    private func sendPlaylist(_ action: QueueAction, part: PlaylistPart, to c: RemoteClient) {
         guard pro.has(c.state) else { showPaywall = true; return }
         if c.needsPairing {
             Haptics.tap()
@@ -148,7 +148,18 @@ struct RemoteView: View {
                 show("Couldn't read this playlist. It may be private, or YouTube changed its page.")
                 return
             }
-            let items = reversed ? Array(read.items.reversed()) : read.items
+            var items = read.items
+            switch part {
+            case .all: break
+            case .reversed: items.reverse()
+            case .fromHere:
+                guard let i = items.firstIndex(where: { $0.videoID == browser.videoID }) else {
+                    Haptics.warning()
+                    return show("This video isn't in the first \(items.count) videos of the playlist.")
+                }
+                items = Array(items[i...])
+            }
+            let reversed = part == .reversed
             c.send(.playlist(items, action))
             browser.pause()
             Haptics.success()
@@ -276,7 +287,7 @@ struct RemoteBar: View {
     let open: () -> Void
     let send: (QueueAction) -> Void
     let play: () -> Void
-    let sendPlaylist: (QueueAction, Bool) -> Void
+    let sendPlaylist: (QueueAction, PlaylistPart) -> Void
     let here: () -> Void
 
     private var fraction: Double {
@@ -349,7 +360,7 @@ struct RemoteBar: View {
                     }
                 }
                 if hasPlaylist {
-                    PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), send: sendPlaylist)
+                    PlaylistMenu(target: client.key, active: client.connected || client.needsPairing, locked: !pro.has(client.state), fromHere: canSend, send: sendPlaylist)
                         .equatable()
                 }
                 if canSend && !client.needsPairing {
@@ -456,24 +467,36 @@ struct SavedQueueSheet: View {
 
 /// Adds the whole playlist the open page belongs to. Compared by the viewer and two flags only: the bar is redrawn each time the
 /// viewer reports its position, and a menu that is redrawn while open pulses.
+enum PlaylistPart { case all, reversed, fromHere }
+
 struct PlaylistMenu: View, Equatable {
     let target: String
     let active: Bool
     let locked: Bool
-    let send: (QueueAction, Bool) -> Void
+    let fromHere: Bool
+    let send: (QueueAction, PlaylistPart) -> Void
 
-    static func == (a: PlaylistMenu, b: PlaylistMenu) -> Bool { a.target == b.target && a.active == b.active && a.locked == b.locked }
+    static func == (a: PlaylistMenu, b: PlaylistMenu) -> Bool {
+        a.target == b.target && a.active == b.active && a.locked == b.locked && a.fromHere == b.fromHere
+    }
 
     var body: some View {
         Menu {
+            if fromHere {
+                Section("From this video on") {
+                    ForEach(QueueAction.allCases) { a in
+                        Button { Haptics.tap(); send(a, .fromHere) } label: { Label(a.playlistTitle, systemImage: "arrow.down.to.line") }
+                    }
+                }
+            }
             Section("In playlist order") {
                 ForEach(QueueAction.allCases) { a in
-                    Button { Haptics.tap(); send(a, false) } label: { Label(a.playlistTitle, systemImage: a.icon) }
+                    Button { Haptics.tap(); send(a, .all) } label: { Label(a.playlistTitle, systemImage: a.icon) }
                 }
             }
             Section("Reversed") {
                 ForEach(QueueAction.allCases) { a in
-                    Button { Haptics.tap(); send(a, true) } label: { Label(a.playlistTitle, systemImage: "arrow.up.arrow.down") }
+                    Button { Haptics.tap(); send(a, .reversed) } label: { Label(a.playlistTitle, systemImage: "arrow.up.arrow.down") }
                 }
             }
         } label: {
