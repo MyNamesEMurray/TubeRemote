@@ -8,7 +8,7 @@ final class AppModel: ObservableObject {
     let remote: RemoteController
     let lock: LockScreenControls
     let pairing: Pairing
-    private var lockObs: [AnyCancellable] = []
+    private var lockObs: AnyCancellable?
     private var nowBridge: AnyObject?
     @Published var mode: Mode { didSet { apply() } }
 
@@ -24,21 +24,19 @@ final class AppModel: ObservableObject {
         remote = r
         lock = LockScreenControls(settings: s, remote: r)
         mode = s.defaultMode
-        lockObs = [
-            s.$lockScreenControls.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } },
-            s.$nowPlayingExtension.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } },
-        ]
+        lockObs = s.$lockScreenControls.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } }
     }
 
     private func refreshLock() {
-        lock.remoteRole = mode == .remote
-        lock.sync()
         if #available(iOS 27.0, *) {
             MainActor.assumeIsolated {
                 let bridge = nowBridge as? NowPlayingBridge ?? NowPlayingBridge(settings: settings, remote: remote)
                 nowBridge = bridge
-                bridge.sync(on: mode == .remote && settings.lockScreenControls && settings.nowPlayingExtension)
+                bridge.sync(on: mode == .remote && settings.lockScreenControls)
             }
+        } else {
+            lock.remoteRole = mode == .remote
+            lock.sync()
         }
     }
 
@@ -250,7 +248,9 @@ struct SettingsView: View {
     @EnvironmentObject var pro: ProStore
     @Environment(\.dismiss) private var dismiss
     @State private var showPaywall = false
-    @AppStorage("useGlass") private var useGlass = true
+    @State private var logTaps = 0
+    @State private var lastLogTap = Date.distantPast
+    @State private var showLog = false
 
     private var version: String {
         let i = Bundle.main.infoDictionary
@@ -279,8 +279,17 @@ struct SettingsView: View {
                     }
                 }
                 Section("This Device") {
-                    TextField("Device name", text: $settings.deviceName)
-                        .onSubmit { model.viewer.rename() }
+                    LabeledContent("Name") {
+                        HStack(spacing: 6) {
+                            TextField("Device name", text: $settings.deviceName)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(Color.accentColor)
+                                .textInputAutocapitalization(.words)
+                                .submitLabel(.done)
+                                .onSubmit { model.viewer.rename() }
+                            Image(systemName: "pencil").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                     Picker("Use as", selection: Binding(
                         get: { model.mode },
                         set: { model.mode = $0; settings.defaultMode = $0 }
@@ -301,22 +310,15 @@ struct SettingsView: View {
                     Picker("Skip buttons", selection: $settings.skipSeconds) {
                         ForEach([5, 10, 15, 20, 25, 30], id: \.self) { Text("\($0) seconds").tag($0) }
                     }
-                    Toggle("Mute while scanning", isOn: $settings.muteWhileScanning)
                     if model.mode == .remote {
                         if pro.has(remote.active?.state) {
                             Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
-                            if #available(iOS 27.0, *), settings.lockScreenControls {
-                                Toggle("Test: Now Playing extension", isOn: $settings.nowPlayingExtension)
-                            }
-                            Toggle("Keep the queue", isOn: $settings.saveQueue)
                         } else {
-                            ForEach(["Lock screen controls", "Keep the queue"], id: \.self) { title in
-                                Button { showPaywall = true } label: {
-                                    HStack {
-                                        Text(title).foregroundStyle(.primary)
-                                        GatedBadge()
-                                        Spacer()
-                                    }
+                            Button { showPaywall = true } label: {
+                                HStack {
+                                    Text("Lock screen controls").foregroundStyle(.primary)
+                                    GatedBadge()
+                                    Spacer()
                                 }
                             }
                         }
@@ -324,20 +326,25 @@ struct SettingsView: View {
                 }
                 if model.mode == .viewer {
                     Section("Viewer") {
-                        Toggle("Let the screen lock after the sleep timer", isOn: $settings.lockOnSleep)
                         Toggle("Hide the status bar", isOn: $settings.hideStatusBar)
                     }
                 }
-                Section {
+                Section("Interface") {
                     Toggle("Haptic feedback", isOn: $settings.haptics)
-                    if #available(iOS 26.0, *) { Toggle("Liquid Glass", isOn: $useGlass) }
-                } header: {
-                    Text("Interface")
                 }
                 Section("About") {
                     LabeledContent("Version", value: version)
                     LabeledContent("Build", value: build)
-                    NavigationLink("Debug Log") { DebugLogView() }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            logTaps = Date().timeIntervalSince(lastLogTap) > 2 ? 1 : logTaps + 1
+                            lastLogTap = Date()
+                            if logTaps >= 5 {
+                                logTaps = 0
+                                Haptics.success()
+                                showLog = true
+                            }
+                        }
                 }
             }
             .navigationTitle("Settings")
@@ -347,6 +354,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+            .navigationDestination(isPresented: $showLog) { DebugLogView() }
         }
         .onDisappear { model.viewer.rename() }
     }

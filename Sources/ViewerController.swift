@@ -872,7 +872,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         sleepAtQueueEnd = false
         _ = apply(.pause)
         // iOS has no call to lock the screen. Letting go of the "stay awake" hold makes the device lock after its Auto-Lock time.
-        if settings.lockOnSleep { UIApplication.shared.isIdleTimerDisabled = false }
+        UIApplication.shared.isIdleTimerDisabled = false
         flash("Sleep timer ended")
     }
 

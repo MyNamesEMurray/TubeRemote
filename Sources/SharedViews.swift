@@ -63,10 +63,9 @@ struct VideoRow: View {
 struct GlassBackground<S: Shape>: ViewModifier {
     let shape: S
     let material: Material
-    @AppStorage("useGlass") private var useGlass = true
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *), useGlass {
+        if #available(iOS 26.0, *) {
             content.glassEffect(.regular, in: shape)
         } else {
             content.background(material, in: shape)

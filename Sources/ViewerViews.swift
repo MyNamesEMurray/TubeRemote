@@ -291,7 +291,7 @@ struct ViewerControls: View {
         }
         .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
         .modifier(HoldToScan(direction: forward ? 1 : -1,
-                             send: { touched(); viewer.handle(.scan($0, mute: settings.muteWhileScanning), from: nil) },
+                             send: { touched(); viewer.handle(.scan($0, mute: true), from: nil) },
                              end: { touched(); viewer.handle(.scanEnd($0), from: nil) }))
     }
 

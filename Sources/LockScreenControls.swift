@@ -26,7 +26,7 @@ final class LockScreenControls {
     }
 
     func sync() {
-        if remoteRole && settings.lockScreenControls && !settings.nowPlayingExtension {
+        if remoteRole && settings.lockScreenControls {
             guard timer == nil else { return }
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
             interruptObs = NotificationCenter.default.addObserver(

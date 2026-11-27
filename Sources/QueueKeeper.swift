@@ -25,7 +25,7 @@ final class QueueKeeper {
     /// `previous` is the last state of this same connection. A viewer that goes from active to idle while connected was
     /// emptied on purpose or finished, so nothing is left to resume.
     func observe(_ st: ViewerState, previous: ViewerState?, key: String) {
-        guard settings.saveQueue, ProStore.shared.has(st), key == settings.lastViewerKey else { return }
+        guard ProStore.shared.has(st), key == settings.lastViewerKey else { return }
         guard let new = Self.snapshot(st) else {
             if let previous, Self.snapshot(previous) != nil { settings.savedQueue = SavedQueue() }
             return

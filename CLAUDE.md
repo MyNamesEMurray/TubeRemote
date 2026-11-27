@@ -30,7 +30,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 
 ## Things that depend on YouTube's pages (they will break)
 
-Each has a log line in the Debug Log. Ask the user for it when something stops working.
+Each has a log line in the Debug Log. Ask the user for it when something stops working. The log is hidden: Settings, then tap the Build row five times.
 
 - Player control and ads: `#movie_player`, `.ad-showing`, `.ytp-*` in `bridge`.
 - Skip Ad from the remote: YouTube ignores a script's click, so the bridge sends a full press and then moves the ad to its end. Log: `page: skip ad: ...` lines say which step ran and whether the ad went away.
@@ -45,16 +45,16 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 
 - Toggle pills keep their label and fill with the accent colour when on. One `Pill` view styles them all.
 - The viewer stage is dark through the environment and `preferredColorScheme(.dark)`, except while Settings, Browse or Pair is open. Do not hide the status bar in light mode on iPad: it hides the iPadOS menu bar and window controls. Hiding is the user's setting.
-- Floating controls use `glassBackground` (Liquid Glass on iOS 26 and later, a switch in Settings). Docked side panels stay on material.
+- Floating controls use `glassBackground` (Liquid Glass on iOS 26 and later, no switch). Docked side panels stay on material.
 - Docked or floating side panel is decided by width (700 points), not size class, because the iPhone Duo's inner display reports regular size classes.
 - Panels slide by transform and the web view scales. Resizing the web view per frame makes the video judder.
 - The viewer controls card stays laid out and fades by opacity and offset. Inserting and removing it makes the blur and the pills appear out of step.
 - A single tap on the video waits 320 ms so a second tap can be a double tap.
 - Hold to scan uses `ScanRamp` on both devices. On release the remote sends how long it was held and the viewer seeks to where that distance leaves it, so a late stop does not overshoot.
 - The hidden volume slider must stay inside the window, in the top-left corner. Do not move it off screen: iOS then shows its own volume HUD.
-- Lock screen controls (Pro, Settings, off by default) play a silent looping sound so iOS treats the remote as the Now Playing app, and that also keeps it connected in the background. It must not mix with other audio or iOS ignores it, and `VolumeKeys` must not change the audio category while it runs. Pausing the silent sound makes iOS drop the controls within seconds, and while it plays Control Center shows pause even when the video is paused. The Settings test switch "Test: Now Playing extension" (iOS 27 and later) replaces the silent sound with the Now Playing framework's remote session: no audio, state taken from what the app reports. The extension (`NowPlayingExtension/`, bundle id `com.exaltedpixels.TubeRemote.NowPlaying`, App Group) signs in as this device, so it replaces the app's own connection to the viewer; it opens the link per burst of commands and closes it after 8 seconds.
+- Lock screen controls (Pro, Settings, off by default) play a silent looping sound so iOS treats the remote as the Now Playing app, and that also keeps it connected in the background. It must not mix with other audio or iOS ignores it, and `VolumeKeys` must not change the audio category while it runs. Pausing the silent sound makes iOS drop the controls within seconds, and while it plays Control Center shows pause even when the video is paused. On iOS 27 and later the silent sound is not used: the Now Playing framework's remote session replaces it (no audio, state taken from what the app reports), and the silent sound stays only for older iOS. The extension (`NowPlayingExtension/`, bundle id `com.exaltedpixels.TubeRemote.NowPlaying`, App Group) signs in as this device, so it replaces the app's own connection to the viewer; it opens the link per burst of commands and closes it after 8 seconds.
 - Do not use `UIScreen.main`, the device idiom, or orientation to lay out. Apple's iPhone Duo guidance asks for width and size from the container.
 
 ## Not verified on a device
 
-Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls through the silent sound work on a device; the Now Playing extension is unverified (whether iOS shows the session, whether the commands and volume slider reach the viewer, how the app's own link recovers after the extension replaces it); App Review's view of the silent audio is unknown. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
+Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls work on a device through the Now Playing extension (iOS 27 and later); the silent-sound mode for older iOS is only verified up to the Control Center icon issue, and App Review's view of the silent audio is unknown. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
