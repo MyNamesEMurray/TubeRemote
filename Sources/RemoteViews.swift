@@ -152,19 +152,19 @@ struct RemoteView: View {
             switch part {
             case .all: break
             case .reversed: items.reverse()
-            case .fromHere:
+            case .fromHere, .fromHereBack:
                 guard let i = items.firstIndex(where: { $0.videoID == browser.videoID }) else {
                     Haptics.warning()
                     return show("This video isn't in the first \(items.count) videos of the playlist.")
                 }
-                items = Array(items[i...])
+                items = part == .fromHere ? Array(items[i...]) : Array(items[...i].reversed())
             }
             let reversed = part == .reversed
             c.send(.playlist(items, action))
             browser.pause()
             Haptics.success()
             // Only the first 1000 can be read, so a reversed long playlist does not start from its true last video.
-            show("Sent \(items.count) videos to \(c.title)" + (read.truncated ? (reversed ? ". Only the first \(items.count) could be read, so the reverse starts there." : ". Only the first \(items.count) could be read.") : ""))
+            show("Sent \(items.count) videos to \(c.title)" + (read.truncated ? (reversed ? ". Only the first \(read.items.count) could be read, so the reverse starts there." : ". Only the first \(read.items.count) could be read.") : ""))
         }
     }
 
@@ -467,7 +467,7 @@ struct SavedQueueSheet: View {
 
 /// Adds the whole playlist the open page belongs to. Compared by the viewer and two flags only: the bar is redrawn each time the
 /// viewer reports its position, and a menu that is redrawn while open pulses.
-enum PlaylistPart { case all, reversed, fromHere }
+enum PlaylistPart { case all, reversed, fromHere, fromHereBack }
 
 struct PlaylistMenu: View, Equatable {
     let target: String
@@ -486,6 +486,11 @@ struct PlaylistMenu: View, Equatable {
                 Section("From this video on") {
                     ForEach(QueueAction.allCases) { a in
                         Button { Haptics.tap(); send(a, .fromHere) } label: { Label(a.playlistTitle, systemImage: "arrow.down.to.line") }
+                    }
+                }
+                Section("From this video back") {
+                    ForEach(QueueAction.allCases) { a in
+                        Button { Haptics.tap(); send(a, .fromHereBack) } label: { Label(a.playlistTitle, systemImage: "arrow.up.to.line") }
                     }
                 }
             }
