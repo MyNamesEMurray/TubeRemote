@@ -66,6 +66,7 @@ final class LockScreenControls {
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else { return stopPlayback() }
         startPlayback()
         wire()
+        MPNowPlayingInfoCenter.default().playbackState = s.isPlaying ? .playing : .paused
         let key = "\(cur.videoID)|\(s.isPlaying)|\(Int(s.duration))|\(artworkFor == cur.videoID)"
         let expected = shownPosition + (s.isPlaying ? Date().timeIntervalSince(shownAt) * (s.speed ?? 1) : 0)
         guard key != shownKey || abs(s.position - expected) > 1.5 else { return }
@@ -83,6 +84,7 @@ final class LockScreenControls {
         if artworkFor == cur.videoID, let artwork { info[MPMediaItemPropertyArtwork] = artwork } else { loadArtwork(cur) }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState = s.isPlaying ? .playing : .paused
+        Log.add("lock screen shows \(s.isPlaying ? "playing" : "paused") at \(Int(s.position))")
     }
 
     private func loadArtwork(_ item: VideoItem) {
