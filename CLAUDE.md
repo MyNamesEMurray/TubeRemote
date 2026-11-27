@@ -57,4 +57,4 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 
 ## Not verified on a device
 
-Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls are unverified: whether iOS shows them, how long the link survives a locked phone, and App Review's view of the silent audio. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
+Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls work on a device; App Review's view of the silent audio is unknown. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
