@@ -8,7 +8,7 @@ final class AppModel: ObservableObject {
     let remote: RemoteController
     let lock: LockScreenControls
     let pairing: Pairing
-    private var lockObs: [AnyCancellable] = []
+    private var lockObs: AnyCancellable?
     private var nowBridge: AnyObject?
     @Published var mode: Mode { didSet { apply() } }
 
@@ -24,21 +24,19 @@ final class AppModel: ObservableObject {
         remote = r
         lock = LockScreenControls(settings: s, remote: r)
         mode = s.defaultMode
-        lockObs = [
-            s.$lockScreenControls.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } },
-            s.$nowPlayingExtension.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } },
-        ]
+        lockObs = s.$lockScreenControls.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } }
     }
 
     private func refreshLock() {
-        lock.remoteRole = mode == .remote
-        lock.sync()
         if #available(iOS 27.0, *) {
             MainActor.assumeIsolated {
                 let bridge = nowBridge as? NowPlayingBridge ?? NowPlayingBridge(settings: settings, remote: remote)
                 nowBridge = bridge
-                bridge.sync(on: mode == .remote && settings.lockScreenControls && settings.nowPlayingExtension)
+                bridge.sync(on: mode == .remote && settings.lockScreenControls)
             }
+        } else {
+            lock.remoteRole = mode == .remote
+            lock.sync()
         }
     }
 
@@ -305,9 +303,6 @@ struct SettingsView: View {
                     if model.mode == .remote {
                         if pro.has(remote.active?.state) {
                             Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
-                            if #available(iOS 27.0, *), settings.lockScreenControls {
-                                Toggle("Test: Now Playing extension", isOn: $settings.nowPlayingExtension)
-                            }
                             Toggle("Keep the queue", isOn: $settings.saveQueue)
                         } else {
                             ForEach(["Lock screen controls", "Keep the queue"], id: \.self) { title in
