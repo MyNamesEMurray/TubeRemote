@@ -52,9 +52,9 @@ Each has a log line in the Debug Log. Ask the user for it when something stops w
 - A single tap on the video waits 320 ms so a second tap can be a double tap.
 - Hold to scan uses `ScanRamp` on both devices. On release the remote sends how long it was held and the viewer seeks to where that distance leaves it, so a late stop does not overshoot.
 - The hidden volume slider must stay inside the window, in the top-left corner. Do not move it off screen: iOS then shows its own volume HUD.
-- Lock screen controls (Settings, off by default) play a silent looping sound so iOS treats the remote as the Now Playing app, and that also keeps it connected in the background. It must not mix with other audio or iOS ignores it, and `VolumeKeys` must not change the audio category while it runs.
+- Lock screen controls (Pro, Settings, off by default) play a silent looping sound so iOS treats the remote as the Now Playing app, and that also keeps it connected in the background. It must not mix with other audio or iOS ignores it, and `VolumeKeys` must not change the audio category while it runs.
 - Do not use `UIScreen.main`, the device idiom, or orientation to lay out. Apple's iPhone Duo guidance asks for width and size from the container.
 
 ## Not verified on a device
 
-Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls are unverified: whether iOS shows them, how long the link survives a locked phone, and App Review's view of the silent audio. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.
+Storyboard parsing, autoplay candidate, the 8x scan rate, the viewer's light-mode status bar and menu bar on iPad, and anything on an iPhone Duo. Lock screen controls work on a device; App Review's view of the silent audio is unknown. Also unchecked: the viewer's web view recovery after a failed load or a killed web process, hold-to-scan stopping when its button disappears, and the Speed and Quality menus no longer redrawing while open.

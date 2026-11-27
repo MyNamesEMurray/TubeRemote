@@ -97,6 +97,7 @@ struct PaywallView: View {
         ("list.bullet.rectangle", "Add a whole playlist to the queue"),
         ("square.and.arrow.up", "Share a video to the viewer from other apps"),
         ("person.2.fill", "Several remotes on one viewer. Pro on the viewer or on any one remote is enough for everyone connected"),
+        ("lock.rectangle.fill", "Lock screen and headphone controls for the viewer"),
         ("tray.and.arrow.down.fill", "Keep your queue on the remote, and resume it where you left off"),
         ("text.alignleft", "Rich video view: the description or comments beside the video on the viewer, scrolled from your remote"),
         ("infinity", "Autoplay: keep going with what YouTube suggests when the queue runs out"),
