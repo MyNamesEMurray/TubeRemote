@@ -8,25 +8,43 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(defaultMode.rawValue, forKey: "defaultMode") }
     }
     @Published var preferredQuality: String {
-        didSet { UserDefaults.standard.set(preferredQuality, forKey: "preferredQuality") }
+        didSet {
+            UserDefaults.standard.set(preferredQuality, forKey: "preferredQuality")
+            Log.add("setting preferredQuality = \(preferredQuality)")
+        }
     }
     @Published var savedQueue: SavedQueue {
         didSet { Store.write("queue.json", try? JSONEncoder().encode(savedQueue)) }
     }
     @Published var autoplay: Bool {
-        didSet { UserDefaults.standard.set(autoplay, forKey: "autoplay") }
+        didSet {
+            UserDefaults.standard.set(autoplay, forKey: "autoplay")
+            Log.add("setting autoplay = \(autoplay)")
+        }
     }
     @Published var skipSeconds: Int {
-        didSet { UserDefaults.standard.set(skipSeconds, forKey: "skipSeconds") }
+        didSet {
+            UserDefaults.standard.set(skipSeconds, forKey: "skipSeconds")
+            Log.add("setting skipSeconds = \(skipSeconds)")
+        }
     }
     @Published var hideStatusBar: Bool {
-        didSet { UserDefaults.standard.set(hideStatusBar, forKey: "hideStatusBar") }
+        didSet {
+            UserDefaults.standard.set(hideStatusBar, forKey: "hideStatusBar")
+            Log.add("setting hideStatusBar = \(hideStatusBar)")
+        }
     }
     @Published var lockScreenControls: Bool {
-        didSet { UserDefaults.standard.set(lockScreenControls, forKey: "lockScreenControls") }
+        didSet {
+            UserDefaults.standard.set(lockScreenControls, forKey: "lockScreenControls")
+            Log.add("setting lockScreenControls = \(lockScreenControls)")
+        }
     }
     @Published var haptics: Bool {
-        didSet { UserDefaults.standard.set(haptics, forKey: "haptics") }
+        didSet {
+            UserDefaults.standard.set(haptics, forKey: "haptics")
+            Log.add("setting haptics = \(haptics)")
+        }
     }
     @Published var hasOnboarded: Bool {
         didSet { UserDefaults.standard.set(hasOnboarded, forKey: "hasOnboarded") }

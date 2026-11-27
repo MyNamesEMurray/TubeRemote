@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import SwiftUI
 
@@ -25,6 +26,20 @@ final class AppModel: ObservableObject {
         lock = LockScreenControls(settings: s, remote: r)
         mode = s.defaultMode
         lockObs = s.$lockScreenControls.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { self?.refreshLock() } }
+        Log.add("launch: \(Log.header), \(s.defaultMode.rawValue), \(s.paired.count) paired")
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { n in
+            let reason = (n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).map { "\($0)" } ?? "?"
+            let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ",")
+            Log.add("audio route changed (reason \(reason)): \(outputs)")
+        }
+        nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { n in
+            let kind = (n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue ? "began" : "ended"
+            Log.add("audio interruption \(kind)")
+        }
+        nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+            Log.add("memory warning")
+        }
     }
 
     private func refreshLock() {
@@ -110,6 +125,7 @@ struct RootView: View {
         .onChange(of: settings.paired.count) { _ in settings.mirrorForShare(pro: pro.isPro) }
         .onChange(of: pro.isPro) { _ in settings.mirrorForShare(pro: pro.isPro) }
         .onChange(of: phase) {
+            Log.add("app \(String(describing: $0))")
             switch $0 {
             case .active:
                 model.apply()

@@ -30,7 +30,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 
 ## Things that depend on YouTube's pages (they will break)
 
-Each has a log line in the Debug Log. Ask the user for it when something stops working. The log is hidden: Settings, then tap the Build row five times.
+Each has a log line in the Debug Log. Ask the user for it when something stops working. The log is hidden: Settings, then tap the Build row five times. It starts with the app version, iOS version and device model, and also shows what the extensions wrote (tag `N` for the Now Playing extension, `?` for Share), which lives in `nowplaying/extension.log` in the App Group folder. Lines never hold names or video titles.
 
 - Player control and ads: `#movie_player`, `.ad-showing`, `.ytp-*` in `bridge`.
 - Skip Ad from the remote: YouTube ignores a script's click, so the bridge sends a full press and then moves the ad to its end. Log: `page: skip ad: ...` lines say which step ran and whether the ad went away.
