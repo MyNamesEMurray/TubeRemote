@@ -397,7 +397,7 @@ struct ResumeQueueBar: View {
     }
 
     var body: some View {
-        if settings.saveQueue, pro.has(client.state), client.connected, let s = client.state,
+        if pro.has(client.state), client.connected, let s = client.state,
            s.current == nil, s.queue.isEmpty, !settings.savedQueue.isEmpty {
             HStack(spacing: 8) {
                 Button(action: resume) {
@@ -1138,7 +1138,7 @@ struct ControlsPane: View {
         }
         .accessibilityLabel(forward ? "Forward \(n) seconds" : "Back \(n) seconds")
         .accessibilityHint("Touch and hold to scan")
-        .modifier(HoldToScan(direction: forward ? 1 : -1, send: { client.send(.scan($0, mute: settings.muteWhileScanning)) }, end: { client.send(.scanEnd($0)) }))
+        .modifier(HoldToScan(direction: forward ? 1 : -1, send: { client.send(.scan($0, mute: true)) }, end: { client.send(.scanEnd($0)) }))
     }
 
     private func transport(_ symbol: String, _ label: String, size: CGFloat, action: @escaping () -> Void) -> some View {

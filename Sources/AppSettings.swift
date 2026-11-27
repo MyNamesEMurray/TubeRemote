@@ -10,17 +10,8 @@ final class AppSettings: ObservableObject {
     @Published var preferredQuality: String {
         didSet { UserDefaults.standard.set(preferredQuality, forKey: "preferredQuality") }
     }
-    @Published var saveQueue: Bool {
-        didSet {
-            UserDefaults.standard.set(saveQueue, forKey: "saveQueue")
-            if !saveQueue { savedQueue = SavedQueue() }
-        }
-    }
     @Published var savedQueue: SavedQueue {
         didSet { Store.write("queue.json", try? JSONEncoder().encode(savedQueue)) }
-    }
-    @Published var lockOnSleep: Bool {
-        didSet { UserDefaults.standard.set(lockOnSleep, forKey: "lockOnSleep") }
     }
     @Published var autoplay: Bool {
         didSet { UserDefaults.standard.set(autoplay, forKey: "autoplay") }
@@ -30,9 +21,6 @@ final class AppSettings: ObservableObject {
     }
     @Published var hideStatusBar: Bool {
         didSet { UserDefaults.standard.set(hideStatusBar, forKey: "hideStatusBar") }
-    }
-    @Published var muteWhileScanning: Bool {
-        didSet { UserDefaults.standard.set(muteWhileScanning, forKey: "muteWhileScanning") }
     }
     @Published var lockScreenControls: Bool {
         didSet { UserDefaults.standard.set(lockScreenControls, forKey: "lockScreenControls") }
@@ -70,15 +58,12 @@ final class AppSettings: ObservableObject {
         deviceName = d.string(forKey: "deviceName") ?? UIDevice.current.name
         defaultMode = Mode(rawValue: d.string(forKey: "defaultMode") ?? "") ?? .remote
         preferredQuality = d.string(forKey: "preferredQuality") ?? "auto"
-        saveQueue = d.object(forKey: "saveQueue") as? Bool ?? true
         let stored = Store.read("queue.json")
         savedQueue = stored.flatMap { try? JSONDecoder().decode(SavedQueue.self, from: $0) }
             ?? SavedQueue(queue: stored.flatMap { try? JSONDecoder().decode([VideoItem].self, from: $0) } ?? [])
-        lockOnSleep = d.object(forKey: "lockOnSleep") as? Bool ?? true
         autoplay = d.bool(forKey: "autoplay")
         haptics = d.object(forKey: "haptics") as? Bool ?? true
         lockScreenControls = d.bool(forKey: "lockScreenControls")
-        muteWhileScanning = d.object(forKey: "muteWhileScanning") as? Bool ?? true
         hideStatusBar = d.bool(forKey: "hideStatusBar")
         skipSeconds = min(max(d.object(forKey: "skipSeconds") as? Int ?? 10, 5), 30)
         hasOnboarded = d.bool(forKey: "hasOnboarded")
