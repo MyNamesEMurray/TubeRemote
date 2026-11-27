@@ -56,7 +56,7 @@ extension Command {
 
     var logsOften: Bool {
         switch self {
-        case .setVolume, .richScroll, .scan, .seek: return true
+        case .setVolume, .richScroll, .richPosition, .scan, .seek: return true
         default: return false
         }
     }
@@ -215,6 +215,7 @@ enum Command: Codable {
     case scan(Int, mute: Bool)
     case scanEnd(Double)
     case richScroll(Int)
+    case richPosition(Int)
     case playlist([VideoItem], QueueAction)
 }
 

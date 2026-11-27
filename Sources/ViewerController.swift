@@ -62,6 +62,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
     @Published private(set) var richView = false
     @Published private(set) var richTab = 0
     @Published private(set) var richScroll = 0
+    @Published private(set) var richPosition: Int?
     @Published private(set) var details: VideoDetails?
     private var watching = false
     private var infoTries = 0
@@ -723,11 +724,16 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             richView = on
             richTab = 0
             richScroll = 0
+            richPosition = nil
             if on { ensureDetails() }
             return nil
         case .richScroll(let i):
             guard richView else { return nil }
             richScroll = min(max(i, 0), 5000)
+            return nil
+        case .richPosition(let p):
+            guard richView else { return nil }
+            richPosition = min(max(p, 0), 1000)
             return nil
         case .scan(let d, let mute):
             guard current != nil else { return nil }
@@ -772,6 +778,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
             guard richView else { return nil }
             richTab = min(max(i, 0), 1)
             richScroll = 0
+            richPosition = nil
             return nil
         case .watchDetails(let on):
             watching = on
@@ -894,6 +901,7 @@ final class ViewerController: NSObject, ObservableObject, WKScriptMessageHandler
         replyTokens = [:]
         replyLoading = []
         richScroll = 0
+        richPosition = nil
         if pushPrevious, let c = current { pushHistory(c) }
         // A resumed video starts where it left off. It arrives over the network, so only a sensible time is used.
         let at = item.startAt.flatMap { $0.isFinite && $0 > 5 ? min($0, 86_400) : nil }

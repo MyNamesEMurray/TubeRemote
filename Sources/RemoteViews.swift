@@ -1162,6 +1162,7 @@ struct DetailsPane: View {
     @State private var showPaywall = false
     @State private var tab = 0
     @State private var top = 0
+    @State private var fraction = 0
 
     private var richOn: Bool { client.state?.richView == true }
     private var details: VideoDetails? {
@@ -1177,7 +1178,13 @@ struct DetailsPane: View {
             client.send(.setRichView(true))
             client.send(.richTab(tab))
             client.send(.richScroll(top))
+            client.send(.richPosition(fraction))
         }
+    }
+
+    private func reportPosition(_ p: Int) {
+        fraction = p
+        if richOn { client.send(.richPosition(p)) }
     }
 
     private func report(_ i: Int) {
@@ -1210,7 +1217,7 @@ struct DetailsPane: View {
             Group {
                 if tab == 0 {
                     if let info = details?.info {
-                        DescriptionLines(info: info, onTop: report, onSeek: { client.send(.seek($0)) })
+                        DescriptionLines(info: info, onTop: report, onPosition: reportPosition, onSeek: { client.send(.seek($0)) })
                     } else {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -1229,6 +1236,7 @@ struct DetailsPane: View {
         .onChange(of: client.connected) { if $0 { client.send(.watchDetails(true)) } }
         .onChange(of: tab) { t in
             top = 0
+            fraction = 0
             if richOn { client.send(.richTab(t)) }
         }
         .sheet(isPresented: $showPaywall) { PaywallView() }

@@ -626,7 +626,7 @@ struct RichPanel: View {
                     CommentsList(details: viewer.details, follow: viewer.richScroll,
                                  solo: true, onToggle: { viewer.handle(.toggleComment($0), from: nil) })
                 } else if let info = viewer.details?.info {
-                    DescriptionLines(info: info, follow: viewer.richScroll)
+                    DescriptionLines(info: info, follow: viewer.richScroll, position: viewer.richPosition)
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

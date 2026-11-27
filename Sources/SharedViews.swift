@@ -399,31 +399,93 @@ func linkified(_ line: String) -> AttributedString {
 struct DescriptionLines: View {
     let info: VideoInfo
     var follow: Int?
+    var position: Int?
     var onTop: ((Int) -> Void)?
+    var onPosition: ((Int) -> Void)?
     var onSeek: ((Double) -> Void)?
 
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(info.title).font(.headline)
+            Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
+            if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text.isEmpty ? AttributedString(" ") : linkified(text))
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .environment(\.openURL, OpenURLAction { url in
+                guard let onSeek else { return .discarded }
+                if url.scheme == "tubeseek", let s = Double(url.host ?? "") {
+                    onSeek(s)
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+
     var body: some View {
-        let lines = info.lines
-        FollowScroll(count: lines.count, follow: follow, onTop: onTop, header: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(info.title).font(.headline)
-                Text(info.channel).font(.subheadline).foregroundStyle(.secondary)
-                if !info.stats.isEmpty { Text(info.stats).font(.caption).foregroundStyle(.secondary) }
+        if #available(iOS 18.0, *) {
+            ProportionalScroll(position: position, onPosition: onPosition) {
+                VStack(alignment: .leading, spacing: 4) {
+                    header
+                    ForEach(Array(info.lines.enumerated()), id: \.offset) { _, text in line(text) }
+                }
             }
-            .padding(.bottom, 8)
-        }, row: { i in
-            Text(lines[i].isEmpty ? AttributedString(" ") : linkified(lines[i]))
-                .font(.callout)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .environment(\.openURL, OpenURLAction { url in
-                    guard let onSeek else { return .discarded }
-                    if url.scheme == "tubeseek", let s = Double(url.host ?? "") {
-                        onSeek(s)
-                        return .handled
-                    }
-                    return .systemAction
-                })
-        })
+        } else {
+            let lines = info.lines
+            FollowScroll(count: lines.count, follow: follow, onTop: onTop, header: { header }, row: { i in line(lines[i]) })
+        }
+    }
+}
+
+/// Both screens scroll by how far down the text is, as a fraction, because they wrap it at different widths. A row number
+/// would put the phone halfway through a long paragraph while the iPad showed its first line.
+@available(iOS 18.0, *)
+struct ProportionalScroll<Content: View>: View {
+    var position: Int?
+    var onPosition: ((Int) -> Void)?
+    @ViewBuilder let content: Content
+    private final class Throttle {
+        var last = Date.distantPast
+        var work: DispatchWorkItem?
+    }
+    @State private var scroll = ScrollPosition(edge: .top)
+    @State private var maxOffset: CGFloat = 0
+    @State private var throttle = Throttle()
+
+    private func report(_ p: Int) {
+        guard let onPosition else { return }
+        throttle.work?.cancel()
+        let box = throttle
+        let wait = max(0, 0.1 - Date().timeIntervalSince(box.last))
+        let w = DispatchWorkItem {
+            box.last = Date()
+            onPosition(p)
+        }
+        box.work = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: w)
+    }
+
+    private func follow(_ p: Int?) {
+        guard let p, maxOffset > 0 else { return }
+        withAnimation(.easeOut(duration: 0.25)) { scroll.scrollTo(y: CGFloat(p) / 1000 * maxOffset) }
+    }
+
+    var body: some View {
+        ScrollView { content.padding() }
+            .scrollPosition($scroll)
+            .onScrollGeometryChange(for: CGFloat.self, of: { max($0.contentSize.height - $0.containerSize.height, 0) },
+                                    action: { _, v in maxOffset = v })
+            .onScrollGeometryChange(for: Int.self, of: { g in
+                let range = max(g.contentSize.height - g.containerSize.height, 1)
+                return Int((min(max(g.contentOffset.y, 0) / range, 1) * 1000).rounded())
+            }, action: { _, p in report(p) })
+            .onChange(of: position) { _, p in follow(p) }
+            .onChange(of: maxOffset) { _, _ in follow(position) }
     }
 }
 
