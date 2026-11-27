@@ -822,6 +822,16 @@ struct NowPlayingContent: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                Group {
+                    switch panel {
+                    case .queue: RemoteQueue(client: client).disabled(!client.connected)
+                    case .history: RemoteHistory(client: client).disabled(!client.connected)
+                    case .controls: ControlsPane(client: client, open: openPage)
+                    case .details: DetailsPane(client: client)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .top) {
                 if !client.connected {
                     HStack(spacing: 8) {
                         if client.needsPairing {
@@ -852,16 +862,6 @@ struct NowPlayingContent: View {
                     .padding(.top, 4)
                     .transition(.opacity)
                 }
-                Group {
-                    switch panel {
-                    case .queue: RemoteQueue(client: client).disabled(!client.connected)
-                    case .history: RemoteHistory(client: client).disabled(!client.connected)
-                    case .controls: ControlsPane(client: client, open: openPage)
-                    case .details: DetailsPane(client: client)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .top) {
                     if client.connected, let note = client.state?.notice ?? (client.state?.needsUnmute == true ? "No sound yet. Tap to Unmute on the viewer." : nil) {
                         Text(note)
                             .font(.footnote)
@@ -1074,6 +1074,8 @@ struct ControlsPane: View {
             .onChange(of: client.details?.storyboard) { _ in loadStoryboard() }
             .onChange(of: client.state?.current?.videoID) { _ in loadStoryboard() }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+        } else if pro.has(client.state), client.connected, client.state != nil, let cur = settings.savedQueue.current {
+            SavedPlayCard(client: client, saved: settings.savedQueue, cur: cur)
         } else {
             EmptyState(symbol: "play.circle", title: "Nothing Playing", message: "Send a video from the browser to start.")
         }
@@ -1305,5 +1307,44 @@ struct RemoteHistory: View {
             onReplay: { client.send(.play($0)) },
             onRequeue: { client.send(.enqueue($0)) },
             onClear: { client.send(.clearHistory) })
+    }
+}
+
+struct SavedPlayCard: View {
+    @ObservedObject var client: RemoteClient
+    @EnvironmentObject var settings: AppSettings
+    let saved: SavedQueue
+    let cur: VideoItem
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .opacity(0.8)
+            VStack(spacing: 4) {
+                Text(cur.title).font(.title3.bold()).multilineTextAlignment(.center)
+                if !cur.channel.isEmpty { Text(cur.channel).font(.subheadline).foregroundStyle(.secondary) }
+                Text(saved.position > 5 ? "Paused at \(clock(saved.position))" : "Not started")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Button {
+                Haptics.tap()
+                client.send(.playlist(saved.items, .playNow))
+            } label: {
+                Label("Resume on \(client.title)" + (saved.queue.isEmpty ? "" : " (\(saved.count))"), systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            Button("Discard", role: .destructive) {
+                Haptics.tap()
+                settings.savedQueue = SavedQueue()
+            }
+            .font(.footnote)
+        }
+        .padding()
+        .frame(maxWidth: 520)
+        .frame(maxHeight: .infinity)
     }
 }
