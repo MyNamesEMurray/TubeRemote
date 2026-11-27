@@ -24,8 +24,8 @@ struct Thumb: View {
 
 struct EmptyState: View {
     let symbol: String
-    let title: String
-    let message: String
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
 
     var body: some View {
         VStack(spacing: 8) {

@@ -19,6 +19,7 @@ iPhone and iPad app (SwiftUI, iOS 16+, built with the newest Xcode). One app, tw
 - `Sources/ViewerViews.swift`, `RemoteViews.swift`, `SharedViews.swift`, `Pro.swift`, `TubeRemoteApp.swift` (root, Settings, onboarding), `Browser.swift` (the remote's YouTube browser and the viewer's cookie sharing).
 - `Sources/LockScreenControls.swift`: the remote's lock screen and Control Center controls through a silent sound. `Sources/NowPlayingBridge.swift`, `Sources/NowPlayingShared.swift` and `NowPlayingExtension/`: the iOS 27 Now Playing remote session, which shows the viewer on the Lock Screen and sends the system's commands to it.
 - `Sources/Storyboard.swift`: seek preview frames. `Sources/QueueKeeper.swift`: the remote's saved queue. `Share/`: the share extension, which compiles `Models.swift`, `Transport.swift`, `Log.swift` and `SharedConfig.swift`.
+- `Localization/`: String Catalogs (`Localizable.xcstrings`, `InfoPlist.xcstrings`) for es, fr, de, pt-BR, ja, ko, machine translated and not reviewed by a native speaker. SwiftUI literals (`Text`, `Label`, `Button`, `EmptyState`) localize by their text, so changing an English literal orphans its translations. Strings passed as plain `String` (viewer toasts, error messages, labels built in code) are still English only.
 - `project.yml` is the source of the Xcode project. `Config/` is generated. `site/` is the privacy and support website, published by `pages.yml`.
 
 ## Protocol rules

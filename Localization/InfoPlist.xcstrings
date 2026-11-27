@@ -1,0 +1,46 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "NSLocalNetworkUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encuentra y controla tus otros dispositivos con TubeRemote en tu red Wi-Fi."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trouvez et contrôlez vos autres appareils TubeRemote sur votre réseau Wi-Fi."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finde und steuere deine anderen Geräte mit TubeRemote in deinem WLAN."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encontre e controle seus outros dispositivos com TubeRemote na sua rede Wi-Fi."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fiネットワーク上のTubeRemoteを使った他のデバイスを探して操作します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fi 네트워크에서 TubeRemote를 실행 중인 다른 기기를 찾고 제어합니다."
+          }
+        }
+      }
+    }
+  }
+}

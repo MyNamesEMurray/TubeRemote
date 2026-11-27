@@ -1325,15 +1325,21 @@ struct SavedPlayCard: View {
             VStack(spacing: 4) {
                 Text(cur.title).font(.title3.bold()).multilineTextAlignment(.center)
                 if !cur.channel.isEmpty { Text(cur.channel).font(.subheadline).foregroundStyle(.secondary) }
-                Text(saved.position > 5 ? "Paused at \(clock(saved.position))" : "Not started")
-                    .font(.footnote).foregroundStyle(.secondary)
+                if saved.position > 5 {
+                    Text("Paused at \(clock(saved.position))").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("Not started").font(.footnote).foregroundStyle(.secondary)
+                }
             }
             Button {
                 Haptics.tap()
                 client.send(.playlist(saved.items, .playNow))
             } label: {
-                Label("Resume on \(client.title)" + (saved.queue.isEmpty ? "" : " (\(saved.count))"), systemImage: "play.fill")
-                    .frame(maxWidth: .infinity)
+                if saved.queue.isEmpty {
+                    Label("Resume on \(client.title)", systemImage: "play.fill").frame(maxWidth: .infinity)
+                } else {
+                    Label("Resume on \(client.title) (\(saved.count))", systemImage: "play.fill").frame(maxWidth: .infinity)
+                }
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
