@@ -209,7 +209,38 @@ struct ScrubBar: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                if active, tier != Self.cancelTier, let image = preview(shown) {
+                if active, tier > 0, tier != Self.cancelTier {
+                    let tw = min(72, w / 5 - 2)
+                    let th = tw * 9 / 16
+                    let step = tw * top / w * Self.tiers[tier].factor
+                    VStack(spacing: 3) {
+                        HStack(spacing: 2) {
+                            ForEach(-2...2, id: \.self) { i in
+                                let t = shown + Double(i) * step
+                                Group {
+                                    if t >= 0, t <= top, let image = preview(t) {
+                                        Image(uiImage: image).resizable()
+                                    } else {
+                                        Color.black.opacity(0.5)
+                                    }
+                                }
+                                .frame(width: tw, height: th)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(i == 0 ? 0.95 : 0.3), lineWidth: i == 0 ? 2 : 1))
+                                .opacity(i == 0 ? 1 : 0.65)
+                            }
+                        }
+                        Text(clock(shown))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.black.opacity(0.7), in: Capsule())
+                    }
+                    .frame(width: (tw + 2) * 5)
+                    .offset(x: min(max(w * frac - (tw + 2) * 2.5, 0), max(w - (tw + 2) * 5, 0)), y: -th - 56)
+                    .allowsHitTesting(false)
+                } else if active, tier != Self.cancelTier, let image = preview(shown) {
                     VStack(spacing: 3) {
                         Image(uiImage: image)
                             .resizable()
@@ -231,7 +262,7 @@ struct ScrubBar: View {
                 DragGesture(minimumDistance: 0)
                     .updating($touching) { _, state, _ in state = true }
                     .onChanged { v in
-                        let x = min(max(v.location.x, 0), w)
+                        let x = active ? v.location.x : min(max(v.location.x, 0), w)
                         if !active {
                             active = true
                             onActive(true)
