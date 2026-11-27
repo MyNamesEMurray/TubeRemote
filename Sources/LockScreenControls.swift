@@ -10,10 +10,6 @@ final class LockScreenControls {
     private unowned let remote: RemoteController
     private var timer: Timer?
     private var player: AVAudioPlayer?
-    private var avPlayer: AVPlayer?
-    private var nowSession: MPNowPlayingSession?
-    private var loopObs: NSObjectProtocol?
-    private var sessionMode = false
     private var wired = false
     private var interruptObs: NSObjectProtocol?
     private var foregroundObs: NSObjectProtocol?
@@ -30,7 +26,7 @@ final class LockScreenControls {
     }
 
     func sync() {
-        if remoteRole && settings.lockScreenControls {
+        if remoteRole && settings.lockScreenControls && !settings.nowPlayingExtension {
             guard timer == nil else { return }
             timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
             interruptObs = NotificationCenter.default.addObserver(
@@ -68,10 +64,9 @@ final class LockScreenControls {
     private func tick() {
         guard !yielded else { return }
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else { return stopPlayback() }
-        if Self.active, sessionMode != settings.lockScreenPausesAudio { stopPlayback() }
-        startPlayback(playing: s.isPlaying)
+        startPlayback()
         wire()
-        if nowSession == nil { center.playbackState = s.isPlaying ? .playing : .paused }
+        center.playbackState = s.isPlaying ? .playing : .paused
         let key = "\(cur.videoID)|\(s.isPlaying)|\(Int(s.duration))|\(artworkFor == cur.videoID)"
         let expected = shownPosition + (s.isPlaying ? Date().timeIntervalSince(shownAt) * (s.speed ?? 1) : 0)
         guard key != shownKey || abs(s.position - expected) > 1.5 else { return }
@@ -88,7 +83,7 @@ final class LockScreenControls {
         if s.duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = s.duration }
         if artworkFor == cur.videoID, let artwork { info[MPMediaItemPropertyArtwork] = artwork } else { loadArtwork(cur) }
         center.nowPlayingInfo = info
-        if nowSession == nil { center.playbackState = s.isPlaying ? .playing : .paused }
+        center.playbackState = s.isPlaying ? .playing : .paused
         Log.add("lock screen shows \(s.isPlaying ? "playing" : "paused") at \(Int(s.position))")
     }
 
@@ -106,51 +101,20 @@ final class LockScreenControls {
         }.resume()
     }
 
-    private var center: MPNowPlayingInfoCenter { nowSession?.nowPlayingInfoCenter ?? MPNowPlayingInfoCenter.default() }
-    private var commands: MPRemoteCommandCenter { nowSession?.remoteCommandCenter ?? MPRemoteCommandCenter.shared() }
+    private var center: MPNowPlayingInfoCenter { MPNowPlayingInfoCenter.default() }
+    private var commands: MPRemoteCommandCenter { MPRemoteCommandCenter.shared() }
 
-    private func startPlayback(playing: Bool) {
+    private func startPlayback() {
         if !Self.active {
             let session = AVAudioSession.sharedInstance()
             try? session.setCategory(.playback)
             try? session.setActive(true)
-            sessionMode = settings.lockScreenPausesAudio
-            if sessionMode { startSession() } else {
-                player = try? AVAudioPlayer(data: Self.silence())
-                player?.numberOfLoops = -1
-            }
+            player = try? AVAudioPlayer(data: Self.silence())
+            player?.numberOfLoops = -1
             Self.active = true
-            Log.add("lock screen controls on, \(sessionMode ? "system player" : "silent sound")")
+            Log.add("lock screen controls on")
         }
-        if sessionMode {
-            guard let avPlayer else { return }
-            if playing, avPlayer.rate == 0 {
-                avPlayer.play()
-            } else if !playing, avPlayer.rate != 0 {
-                avPlayer.pause()
-                Log.add("lock screen controls: system player paused")
-            }
-        } else if player?.isPlaying != true {
-            player?.play()
-        }
-    }
-
-    private func startSession() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("silence.wav")
-        try? Self.silence().write(to: url)
-        let p = AVPlayer(url: url)
-        p.actionAtItemEnd = .none
-        p.volume = 1
-        loopObs = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: p.currentItem, queue: .main) { [weak p] _ in
-            p?.seek(to: .zero)
-            p?.play()
-        }
-        avPlayer = p
-        let session = MPNowPlayingSession(players: [p])
-        session.automaticallyPublishesNowPlayingInfo = false
-        session.becomeActiveIfPossible { ok in Log.add("now playing session active: \(ok)") }
-        nowSession = session
+        if player?.isPlaying != true { player?.play() }
     }
 
     private func stopPlayback() {
@@ -160,11 +124,6 @@ final class LockScreenControls {
         center.nowPlayingInfo = nil
         player?.stop()
         player = nil
-        avPlayer?.pause()
-        avPlayer = nil
-        nowSession = nil
-        loopObs.map(NotificationCenter.default.removeObserver)
-        loopObs = nil
         shownKey = ""
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         Log.add("lock screen controls off")

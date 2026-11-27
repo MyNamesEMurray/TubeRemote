@@ -26,6 +26,7 @@ targets:
         buildPhase: resources
     dependencies:
       - target: TubeRemoteShare
+      - target: TubeRemoteNowPlaying
     entitlements:
       path: Config/TubeRemote.entitlements
       properties:
@@ -86,6 +87,40 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.exaltedpixels.TubeRemote.Share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+  # Now Playing: shows the viewer's playback on the remote's Lock Screen and Control Center (iOS 27) and sends the
+  # system's play, pause, skip, seek and volume commands to it. It signs in to the viewer the way the Share extension does.
+  TubeRemoteNowPlaying:
+    type: extensionkit-extension
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - NowPlayingExtension
+      - path: Privacy/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Sources/Models.swift
+      - path: Sources/Transport.swift
+      - path: Sources/Log.swift
+      - path: Sources/SharedConfig.swift
+      - path: Sources/NowPlayingShared.swift
+    entitlements:
+      path: Config/TubeRemoteNowPlaying.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.exaltedpixels.TubeRemote]
+    info:
+      path: Config/NowPlaying-Info.plist
+      properties:
+        CFBundleDisplayName: TubeRemote Now Playing
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSLocalNetworkUsageDescription: Find and control your viewers on your Wi-Fi network from the Lock Screen.
+        NSBonjourServices: ["_ytremote._tcp"]
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.nowplaying.remote-media
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.exaltedpixels.TubeRemote.NowPlaying
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
   TubeRemoteTests:

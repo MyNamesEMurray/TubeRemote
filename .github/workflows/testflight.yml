@@ -105,6 +105,9 @@ jobs:
           # App Group was dropped (the profile has it). Sign ad hoc with the entitlements; export signs again for real.
           A="$RUNNER_TEMP/TubeRemote.xcarchive/Products/Applications/TubeRemote.app"
           codesign --force --sign - --entitlements Config/TubeRemoteShare.entitlements "$A/PlugIns/TubeRemoteShare.appex"
+          for NP in "$A/Extensions/TubeRemoteNowPlaying.appex" "$A/PlugIns/TubeRemoteNowPlaying.appex"; do
+            if [ -d "$NP" ]; then codesign --force --sign - --entitlements Config/TubeRemoteNowPlaying.entitlements "$NP"; fi
+          done
           codesign --force --sign - --entitlements Config/TubeRemote.entitlements "$A"
           codesign -d --entitlements - "$A" 2>&1 | grep -a "application-groups" || echo "app has no group"
       - name: Export and upload to TestFlight
