@@ -1,3 +1,4 @@
+import AVFoundation
 import NowPlaying
 import UIKit
 
@@ -13,6 +14,7 @@ final class NowPlayingBridge {
     private var sentPosition = 0.0
     private var sentAt = Date()
     private var foregroundObs: NSObjectProtocol?
+    private var keepAlive: AVAudioPlayer?
 
     init(settings: AppSettings, remote: RemoteController) {
         self.settings = settings
@@ -58,8 +60,31 @@ final class NowPlayingBridge {
         }
     }
 
+    private func startKeepAlive() {
+        if keepAlive == nil {
+            let audio = AVAudioSession.sharedInstance()
+            try? audio.setCategory(.playback, options: [.mixWithOthers])
+            try? audio.setActive(true)
+            keepAlive = try? AVAudioPlayer(data: LockScreenControls.silence())
+            keepAlive?.numberOfLoops = -1
+            KeepAlive.active = true
+            Log.add("now playing keep-alive sound on")
+        }
+        if keepAlive?.isPlaying != true { keepAlive?.play() }
+    }
+
+    private func stopKeepAlive() {
+        guard keepAlive != nil else { return }
+        keepAlive?.stop()
+        keepAlive = nil
+        KeepAlive.active = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        Log.add("now playing keep-alive sound off")
+    }
+
     private func tick() {
         NowPlayingMailbox.markActive()
+        if keepAlive != nil { startKeepAlive() }
         guard !busy else { return }
         guard let c = remote.active, c.connected, let s = c.state, let cur = s.current, ProStore.shared.has(s) else {
             if session != nil { Task { await endSession() } }
@@ -95,6 +120,7 @@ final class NowPlayingBridge {
             sentKey = key
             sentPosition = a.position
             sentAt = a.timestamp
+            startKeepAlive()
         } catch {
             Log.add("now playing session failed: \(error)")
             session = nil
@@ -115,6 +141,7 @@ final class NowPlayingBridge {
         guard let s = session else { return }
         session = nil
         sentKey = ""
+        stopKeepAlive()
         try? await s.end()
         Log.add("now playing session ended")
     }
