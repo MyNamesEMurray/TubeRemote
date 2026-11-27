@@ -292,6 +292,9 @@ struct SettingsView: View {
                     if model.mode == .remote {
                         if pro.has(remote.active?.state) {
                             Toggle("Lock screen controls", isOn: $settings.lockScreenControls)
+                            if settings.lockScreenControls {
+                                Toggle("Test: pause the sound with the video", isOn: $settings.lockScreenPausesAudio)
+                            }
                             Toggle("Keep the queue", isOn: $settings.saveQueue)
                         } else {
                             ForEach(["Lock screen controls", "Keep the queue"], id: \.self) { title in
