@@ -883,8 +883,9 @@ struct NowPlayingContent: View {
             keys.start { step in
                 guard client.connected, let now = client.state?.volume else { return }
                 let v = min(max(now + step, 0), 1)
-                client.state?.volume = v
-                client.send(.setVolume(v))
+                Log.add("volume key \(step > 0 ? "up" : "down"): \(Int((now * 100).rounded())) to \(Int((v * 100).rounded()))")
+                guard v != now else { return }
+                client.setVolume(v)
             }
         }
         .onDisappear { keys.stop() }
@@ -1001,7 +1002,7 @@ struct ControlsPane: View {
                             in: 0...1, step: 0.0625
                         ) { editing in
                             if !editing, let v = vol {
-                                client.send(.setVolume(v))
+                                client.setVolume(v)
                                 vol = nil
                             }
                         }
@@ -1085,7 +1086,7 @@ struct ControlsPane: View {
         vol = v
         guard Date().timeIntervalSince(volSent) > 0.1 else { return }
         volSent = Date()
-        client.send(.setVolume(v))
+        client.setVolume(v)
     }
 
     private func loadStoryboard() {
