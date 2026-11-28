@@ -1010,7 +1010,7 @@ struct ControlsPane: View {
     @ViewBuilder
     private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, width: CGFloat, thumb: CGFloat?) -> some View {
         let usable = width - 48 - 24
-        return VStack(spacing: 4) {
+        VStack(spacing: 4) {
             HStack(alignment: .center, spacing: 24) {
                 VStack(spacing: 8) {
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
