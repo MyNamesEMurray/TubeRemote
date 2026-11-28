@@ -951,9 +951,10 @@ struct ControlsPane: View {
                         column(s, cur, pos, thumb: 140)
                         column(s, cur, pos, thumb: 100)
                         wideColumn(s, cur, pos, thumb: nil)
-                        wideColumn(s, cur, pos, thumb: 150)
-                        wideColumn(s, cur, pos, thumb: 110)
-                        ScrollView { wideColumn(s, cur, pos, thumb: 110) }
+                        wideColumn(s, cur, pos, thumb: 130)
+                        wideColumn(s, cur, pos, thumb: 100)
+                        wideColumn(s, cur, pos, thumb: 80)
+                        ScrollView { wideColumn(s, cur, pos, thumb: 80) }
                             .scrollDisabled(scrubbing)
                     }
                 } else {
@@ -1010,22 +1011,20 @@ struct ControlsPane: View {
     private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, thumb: CGFloat?) -> some View {
         VStack(spacing: 4) {
             HStack(alignment: .center, spacing: 24) {
-                VStack(spacing: 10) {
+                VStack(spacing: 8) {
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .frame(height: thumb)
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-                    titleBlock(cur)
+                    titleBlock(cur, compact: true)
                 }
-                .frame(maxWidth: 340)
+                .frame(maxWidth: 300)
                 VStack(spacing: 2) {
                     transportRow(s, pos)
                     adButton(s)
-                    optionRows(s)
-                    HStack(spacing: 16) {
-                        volumeRow(s)
-                        brightnessRow(s)
-                    }
+                    wideOptions(s)
+                    volumeRow(s)
+                    brightnessRow(s)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -1037,16 +1036,17 @@ struct ControlsPane: View {
     }
 
     @ViewBuilder
-    private func titleBlock(_ cur: VideoItem) -> some View {
+    private func titleBlock(_ cur: VideoItem, compact: Bool = false) -> some View {
                     Button {
                         Haptics.tap()
                         open(cur)
                     } label: {
                         VStack(spacing: 4) {
                             (Text(cur.title) + Text(" \(Image(systemName: "arrow.up.right.square"))").foregroundColor(.secondary))
-                                .font(.title3.bold()).multilineTextAlignment(.center)
+                                .font(compact ? .headline : .title3.bold()).multilineTextAlignment(.center)
+                                .lineLimit(compact ? 2 : nil)
                             if !cur.channel.isEmpty {
-                                Text(cur.channel).font(.subheadline).foregroundStyle(.secondary)
+                                Text(cur.channel).font(compact ? .footnote : .subheadline).foregroundStyle(.secondary)
                             }
                         }
                         .contentShape(Rectangle())
@@ -1134,14 +1134,30 @@ struct ControlsPane: View {
 
     @ViewBuilder
     private func optionRows(_ s: ViewerState) -> some View {
-                    if let speed = s.speed { playbackOptions(s, speed: speed) }
-                    HStack(spacing: 10) {
-                        SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
-                            .equatable()
-                        if let on = s.autoplay {
-                            AutoplayButton(on: on, unlocked: s.sessionPro == true) { client.send(.setAutoplay($0)) }
-                        }
-                    }
+        if let speed = s.speed { playbackOptions(s, speed: speed) }
+        sleepAutoplay(s)
+    }
+
+    @ViewBuilder
+    private func sleepAutoplay(_ s: ViewerState) -> some View {
+        HStack(spacing: 10) {
+            SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
+                .equatable()
+            if let on = s.autoplay {
+                AutoplayButton(on: on, unlocked: s.sessionPro == true) { client.send(.setAutoplay($0)) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func wideOptions(_ s: ViewerState) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                if let speed = s.speed { playbackOptions(s, speed: speed) }
+                sleepAutoplay(s)
+            }
+            VStack(spacing: 0) { optionRows(s) }
+        }
     }
 
     @ViewBuilder
