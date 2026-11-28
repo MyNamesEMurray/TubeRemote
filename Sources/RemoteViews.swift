@@ -939,6 +939,7 @@ struct ControlsPane: View {
     @State private var volSent = Date.distantPast
     @State private var held: (value: Double, until: Date)?
     @State private var showChapters = false
+    @State private var rightHeight: CGFloat = 0
 
     var body: some View {
         if let s = client.state, let cur = s.current {
@@ -950,11 +951,8 @@ struct ControlsPane: View {
                         column(s, cur, pos, thumb: nil)
                         column(s, cur, pos, thumb: 140)
                         column(s, cur, pos, thumb: 100)
-                        wideColumn(s, cur, pos, width: geo.size.width, thumb: nil)
-                        wideColumn(s, cur, pos, width: geo.size.width, thumb: 130)
-                        wideColumn(s, cur, pos, width: geo.size.width, thumb: 100)
-                        wideColumn(s, cur, pos, width: geo.size.width, thumb: 80)
-                        ScrollView { wideColumn(s, cur, pos, width: geo.size.width, thumb: 80) }
+                        wideColumn(s, cur, pos, width: geo.size.width)
+                        ScrollView { wideColumn(s, cur, pos, width: geo.size.width) }
                             .scrollDisabled(scrubbing)
                     }
                 } else {
@@ -1008,18 +1006,18 @@ struct ControlsPane: View {
     }
 
     @ViewBuilder
-    private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, width: CGFloat, thumb: CGFloat?) -> some View {
+    private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, width: CGFloat) -> some View {
         let usable = width - 48 - 24
         VStack(spacing: 4) {
             HStack(alignment: .center, spacing: 24) {
                 VStack(spacing: 8) {
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
-                        .frame(height: thumb)
+                        .frame(maxHeight: .infinity)
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                     titleBlock(cur, compact: true)
                 }
-                .frame(width: usable * 0.4)
+                .frame(width: usable * 0.4, height: rightHeight > 0 ? rightHeight : nil)
                 VStack(spacing: 2) {
                     transportRow(s, pos).frame(maxWidth: 340).frame(height: 50)
                     adButton(s)
@@ -1027,6 +1025,8 @@ struct ControlsPane: View {
                     volumeRow(s).frame(maxWidth: 340).frame(height: 36)
                     brightnessRow(s).frame(maxWidth: 340).frame(height: 36)
                 }
+                .background(GeometryReader { Color.clear.preference(key: RightHeightKey.self, value: $0.size.height) })
+                .onPreferenceChange(RightHeightKey.self) { rightHeight = $0 }
                 .frame(width: usable * 0.6)
             }
             progressBlock(s, pos)
@@ -1607,4 +1607,9 @@ struct LinkTitle: View {
         .onPreferenceChange(TitleHeightKey.self) { shown = $0 }
         .onPreferenceChange(TitleFullHeightKey.self) { full = $0 }
     }
+}
+
+private struct RightHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
