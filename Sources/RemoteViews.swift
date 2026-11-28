@@ -1018,13 +1018,13 @@ struct ControlsPane: View {
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                     titleBlock(cur, compact: true)
                 }
-                .frame(maxWidth: 300)
+                .frame(maxWidth: 240)
                 VStack(spacing: 2) {
                     transportRow(s, pos)
                     adButton(s)
                     wideOptions(s)
-                    volumeRow(s)
-                    brightnessRow(s)
+                    volumeRow(s).frame(height: 36)
+                    brightnessRow(s).frame(height: 36)
                 }
                 .frame(maxWidth: .infinity)
             }
