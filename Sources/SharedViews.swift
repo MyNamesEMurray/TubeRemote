@@ -200,10 +200,11 @@ struct ScrubBar: View {
                     .frame(width: knob, height: knob)
                     .offset(x: w * frac - knob / 2)
             }
+            .opacity(active && tier > 0 && tier != Self.cancelTier ? 0 : 1)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .overlay(alignment: .top) {
-                if active, tier > 0 {
+                if active, tier == Self.cancelTier {
                     Text(Self.tiers[tier].label)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.white)
@@ -214,14 +215,16 @@ struct ScrubBar: View {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .center) {
                 if active, tier > 0, tier != Self.cancelTier {
-                    let tw = min(72, w / 5 - 2)
-                    let th = tw * 9 / 16
-                    let step = tw * top / w * Self.tiers[tier].factor
-                    VStack(spacing: 3) {
-                        HStack(spacing: 2) {
-                            ForEach(-2...2, id: \.self) { i in
+                    let cw = min(w * 0.46, 170)
+                    let sw = cw * 0.55
+                    let gap: CGFloat = 4
+                    let step = ((cw + sw) / 2 + gap) * top / w * Self.tiers[tier].factor
+                    VStack(spacing: 6) {
+                        Text(Self.tiers[tier].label).font(.caption2.weight(.medium)).foregroundStyle(.white.opacity(0.8))
+                        HStack(spacing: gap) {
+                            ForEach([-1, 0, 1], id: \.self) { i in
                                 let t = shown + Double(i) * step
                                 Group {
                                     if t >= 0, t <= top, let image = preview(t) {
@@ -230,10 +233,10 @@ struct ScrubBar: View {
                                         Color.black.opacity(0.5)
                                     }
                                 }
-                                .frame(width: tw, height: th)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(i == 0 ? 0.95 : 0.3), lineWidth: i == 0 ? 2 : 1))
-                                .opacity(i == 0 ? 1 : 0.65)
+                                .frame(width: i == 0 ? cw : sw, height: (i == 0 ? cw : sw) * 9 / 16)
+                                .clipShape(RoundedRectangle(cornerRadius: i == 0 ? 8 : 5))
+                                .overlay(RoundedRectangle(cornerRadius: i == 0 ? 8 : 5).stroke(Color.white.opacity(i == 0 ? 0.95 : 0.3), lineWidth: i == 0 ? 2 : 1))
+                                .opacity(i == 0 ? 1 : 0.6)
                             }
                         }
                         Text(clock(shown) + (Chapter.title(at: shown, in: chapters).map { " · " + $0 } ?? ""))
@@ -244,10 +247,14 @@ struct ScrubBar: View {
                             .padding(.vertical, 2)
                             .background(Color.black.opacity(0.7), in: Capsule())
                     }
-                    .frame(width: (tw + 2) * 5)
-                    .offset(x: min(max(w * frac - (tw + 2) * 2.5, 0), max(w - (tw + 2) * 5, 0)), y: -th - 56)
+                    .padding(8)
+                    .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: w)
                     .allowsHitTesting(false)
-                } else if active, tier != Self.cancelTier, let image = preview(shown) {
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if active, tier == 0, let image = preview(shown) {
                     VStack(spacing: 3) {
                         Image(uiImage: image)
                             .resizable()
