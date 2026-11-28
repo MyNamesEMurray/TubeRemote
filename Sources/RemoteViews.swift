@@ -1515,14 +1515,35 @@ struct ChaptersSheet: View {
                             }
                         }
                     }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
                     .id(item.offset)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(chaptersPlate)
                 .onAppear { proxy.scrollTo(current, anchor: .center) }
             }
             .navigationTitle("Chapters")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(chaptersPlate, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
         }
         .presentationDetents([.medium, .large])
+        .modifier(ChaptersSheetPlate())
+        .preferredColorScheme(.dark)
+    }
+}
+
+private let chaptersPlate = Color(white: 0.07)
+
+private struct ChaptersSheetPlate: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.4, *) {
+            content.presentationBackground(chaptersPlate)
+        } else {
+            content
+        }
     }
 }
