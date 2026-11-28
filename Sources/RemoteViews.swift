@@ -1000,26 +1000,28 @@ struct ControlsPane: View {
 
     @ViewBuilder
     private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, thumb: CGFloat?) -> some View {
-        HStack(alignment: .center, spacing: 24) {
-            VStack(spacing: 10) {
-                Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .frame(height: thumb)
-                    .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-                titleBlock(cur)
-            }
-            .frame(maxWidth: 340)
-            VStack(spacing: 2) {
-                progressBlock(s, pos)
-                transportRow(s, pos)
-                adButton(s)
-                optionRows(s)
-                HStack(spacing: 16) {
-                    volumeRow(s)
-                    brightnessRow(s)
+        VStack(spacing: 4) {
+            HStack(alignment: .center, spacing: 24) {
+                VStack(spacing: 10) {
+                    Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
+                        .aspectRatio(16 / 9, contentMode: .fit)
+                        .frame(height: thumb)
+                        .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                    titleBlock(cur)
                 }
+                .frame(maxWidth: 340)
+                VStack(spacing: 2) {
+                    transportRow(s, pos)
+                    adButton(s)
+                    optionRows(s)
+                    HStack(spacing: 16) {
+                        volumeRow(s)
+                        brightnessRow(s)
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
+            progressBlock(s, pos)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
