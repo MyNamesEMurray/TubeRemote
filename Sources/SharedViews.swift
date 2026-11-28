@@ -115,8 +115,10 @@ struct HoldToScan: ViewModifier {
     @State private var timer: Timer?
     @State private var pressedAt = Date()
     private static var endedAt = Date.distantPast
+    private static var active = false
 
-    static var justScanned: Bool { Date().timeIntervalSince(endedAt) < 0.4 }
+    // The button's tap can land before or after the hold's release is seen, so both states count.
+    static var justScanned: Bool { active || Date().timeIntervalSince(endedAt) < 0.4 }
 
     func body(content: Content) -> some View {
         content
@@ -131,18 +133,21 @@ struct HoldToScan: ViewModifier {
                 timer?.invalidate()
                 timer = nil
                 if on {
+                    Self.active = true
                     Haptics.pop()
                     pressedAt = Date()
                     send(direction)
                     timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in send(direction) }
                 } else {
                     Self.endedAt = Date()
+                    Self.active = false
                     end(Date().timeIntervalSince(pressedAt))
                 }
             }
             .onDisappear {
                 timer?.invalidate()
                 timer = nil
+                Self.active = false
             }
     }
 }
