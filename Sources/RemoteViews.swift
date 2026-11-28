@@ -941,10 +941,10 @@ struct ControlsPane: View {
             // Right after a seek the viewer may still report the old position for a moment; keep showing where it was sent.
             let pos = scrub ?? held.flatMap { $0.until > Date() ? $0.value : nil } ?? s.position
             GeometryReader { geo in
+            let full = min(geo.size.width - 48, 520) * 9 / 16
+            let fit = geo.size.height - restHeight - 20 - 8 - 16 - 24
             ScrollView {
                 VStack(spacing: 20) {
-                    let full = min(geo.size.width - 48, 520) * 9 / 16
-                    let fit = geo.size.height - restHeight - 20 - 8 - 16
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .frame(height: restHeight > 0 ? min(max(fit, 90), full) : full)
@@ -1079,7 +1079,7 @@ struct ControlsPane: View {
                 .frame(maxWidth: .infinity)
                 .disabled(!client.connected)
             }
-            .scrollDisabled(scrubbing)
+            .scrollDisabled(scrubbing || (restHeight > 0 && fit >= 90))
             }
             .onAppear { loadStoryboard() }
             .onChange(of: client.details?.storyboard) { _ in loadStoryboard() }
