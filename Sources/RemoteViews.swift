@@ -798,6 +798,9 @@ struct NowPlayingView: View {
     }
 }
 
+// iOS shades a sheet card grey in dark mode but a full-screen presentation (iPhone landscape) black, so the grey is set explicitly.
+private let nowPlayingPlate = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.11, alpha: 1) : .systemBackground })
+
 struct NowPlayingContent: View {
     private enum Panel: Hashable { case controls, details, queue, history }
 
@@ -873,6 +876,7 @@ struct NowPlayingContent: View {
                     }
                 }
             }
+            .background(nowPlayingPlate.ignoresSafeArea())
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: client.connected)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Picker("Show", selection: $panel) {
