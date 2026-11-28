@@ -951,9 +951,10 @@ struct ControlsPane: View {
                         column(s, cur, pos, thumb: 140)
                         column(s, cur, pos, thumb: 100)
                         wideColumn(s, cur, pos, thumb: nil)
-                        wideColumn(s, cur, pos, thumb: 150)
-                        wideColumn(s, cur, pos, thumb: 110)
-                        ScrollView { wideColumn(s, cur, pos, thumb: 110) }
+                        wideColumn(s, cur, pos, thumb: 130)
+                        wideColumn(s, cur, pos, thumb: 100)
+                        wideColumn(s, cur, pos, thumb: 80)
+                        ScrollView { wideColumn(s, cur, pos, thumb: 80) }
                             .scrollDisabled(scrubbing)
                     }
                 } else {
@@ -1010,22 +1011,20 @@ struct ControlsPane: View {
     private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, thumb: CGFloat?) -> some View {
         VStack(spacing: 4) {
             HStack(alignment: .center, spacing: 24) {
-                VStack(spacing: 10) {
+                VStack(spacing: 8) {
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .frame(height: thumb)
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-                    titleBlock(cur)
+                    titleBlock(cur, compact: true)
                 }
-                .frame(maxWidth: 340)
+                .frame(maxWidth: 240)
                 VStack(spacing: 2) {
                     transportRow(s, pos)
                     adButton(s)
-                    optionRows(s)
-                    HStack(spacing: 16) {
-                        volumeRow(s)
-                        brightnessRow(s)
-                    }
+                    wideOptions(s)
+                    volumeRow(s).frame(height: 36)
+                    brightnessRow(s).frame(height: 36)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -1037,16 +1036,15 @@ struct ControlsPane: View {
     }
 
     @ViewBuilder
-    private func titleBlock(_ cur: VideoItem) -> some View {
+    private func titleBlock(_ cur: VideoItem, compact: Bool = false) -> some View {
                     Button {
                         Haptics.tap()
                         open(cur)
                     } label: {
                         VStack(spacing: 4) {
-                            (Text(cur.title) + Text(" \(Image(systemName: "arrow.up.right.square"))").foregroundColor(.secondary))
-                                .font(.title3.bold()).multilineTextAlignment(.center)
+                            LinkTitle(title: cur.title, font: compact ? .subheadline.weight(.semibold) : .title3.bold(), lines: compact ? 3 : nil)
                             if !cur.channel.isEmpty {
-                                Text(cur.channel).font(.subheadline).foregroundStyle(.secondary)
+                                Text(cur.channel).font(compact ? .footnote : .subheadline).foregroundStyle(.secondary)
                             }
                         }
                         .contentShape(Rectangle())
@@ -1134,14 +1132,30 @@ struct ControlsPane: View {
 
     @ViewBuilder
     private func optionRows(_ s: ViewerState) -> some View {
-                    if let speed = s.speed { playbackOptions(s, speed: speed) }
-                    HStack(spacing: 10) {
-                        SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
-                            .equatable()
-                        if let on = s.autoplay {
-                            AutoplayButton(on: on, unlocked: s.sessionPro == true) { client.send(.setAutoplay($0)) }
-                        }
-                    }
+        if let speed = s.speed { playbackOptions(s, speed: speed) }
+        sleepAutoplay(s)
+    }
+
+    @ViewBuilder
+    private func sleepAutoplay(_ s: ViewerState) -> some View {
+        HStack(spacing: 10) {
+            SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
+                .equatable()
+            if let on = s.autoplay {
+                AutoplayButton(on: on, unlocked: s.sessionPro == true) { client.send(.setAutoplay($0)) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func wideOptions(_ s: ViewerState) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                if let speed = s.speed { playbackOptions(s, speed: speed) }
+                sleepAutoplay(s)
+            }
+            VStack(spacing: 0) { optionRows(s) }
+        }
     }
 
     @ViewBuilder
@@ -1545,5 +1559,51 @@ private struct ChaptersSheetPlate: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+private struct TitleHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct TitleFullHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// The link arrow stays on the title's last line: attached to the last word, or at the end of the last line when the title is cut short.
+struct LinkTitle: View {
+    let title: String
+    let font: Font
+    let lines: Int?
+    @State private var shown: CGFloat = 0
+    @State private var full: CGFloat = 0
+
+    private var arrow: Text { Text(Image(systemName: "arrow.up.right.square")).foregroundColor(.secondary) }
+    private var inline: Text { Text(title) + Text("\u{00A0}") + arrow }
+
+    var body: some View {
+        Group {
+            if full > shown + 1 {
+                Text(title)
+                    .lineLimit(lines)
+                    .padding(.trailing, 22)
+                    .overlay(alignment: .bottomTrailing) { arrow }
+            } else {
+                inline.lineLimit(lines)
+            }
+        }
+        .font(font)
+        .multilineTextAlignment(.center)
+        .background(GeometryReader { Color.clear.preference(key: TitleHeightKey.self, value: $0.size.height) })
+        .background(
+            inline.font(font).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .hidden()
+                .background(GeometryReader { Color.clear.preference(key: TitleFullHeightKey.self, value: $0.size.height) })
+        )
+        .onPreferenceChange(TitleHeightKey.self) { shown = $0 }
+        .onPreferenceChange(TitleFullHeightKey.self) { full = $0 }
     }
 }
