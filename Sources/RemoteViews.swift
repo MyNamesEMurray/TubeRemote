@@ -939,12 +939,27 @@ struct ControlsPane: View {
         if let s = client.state, let cur = s.current {
             // Right after a seek the viewer may still report the old position for a moment; keep showing where it was sent.
             let pos = scrub ?? held.flatMap { $0.until > Date() ? $0.value : nil } ?? s.position
-            ViewThatFits(in: .vertical) {
-                column(s, cur, pos, thumb: nil)
-                column(s, cur, pos, thumb: 140)
-                column(s, cur, pos, thumb: 100)
-                ScrollView { column(s, cur, pos, thumb: nil) }
-                    .scrollDisabled(scrubbing)
+            GeometryReader { geo in
+                if geo.size.width >= 700 {
+                    ViewThatFits(in: .vertical) {
+                        column(s, cur, pos, thumb: nil)
+                        column(s, cur, pos, thumb: 140)
+                        column(s, cur, pos, thumb: 100)
+                        wideColumn(s, cur, pos, thumb: nil)
+                        wideColumn(s, cur, pos, thumb: 150)
+                        wideColumn(s, cur, pos, thumb: 110)
+                        ScrollView { wideColumn(s, cur, pos, thumb: 110) }
+                            .scrollDisabled(scrubbing)
+                    }
+                } else {
+                    ViewThatFits(in: .vertical) {
+                        column(s, cur, pos, thumb: nil)
+                        column(s, cur, pos, thumb: 140)
+                        column(s, cur, pos, thumb: 100)
+                        ScrollView { column(s, cur, pos, thumb: nil) }
+                            .scrollDisabled(scrubbing)
+                    }
+                }
             }
             .frame(maxHeight: .infinity, alignment: .top)
             .onAppear { loadStoryboard() }
@@ -966,7 +981,53 @@ struct ControlsPane: View {
                 .frame(height: thumb)
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                 .padding(.top, 8)
-                    VStack(spacing: 20) {
+            VStack(spacing: 20) {
+                titleBlock(cur)
+                progressBlock(s, pos)
+                transportRow(s, pos)
+                adButton(s)
+                optionRows(s)
+                volumeRow(s)
+                brightnessRow(s)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
+        .disabled(!client.connected)
+    }
+
+    @ViewBuilder
+    private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, thumb: CGFloat?) -> some View {
+        HStack(alignment: .center, spacing: 24) {
+            VStack(spacing: 10) {
+                Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .frame(height: thumb)
+                    .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                titleBlock(cur)
+            }
+            .frame(maxWidth: 340)
+            VStack(spacing: 2) {
+                progressBlock(s, pos)
+                transportRow(s, pos)
+                adButton(s)
+                optionRows(s)
+                HStack(spacing: 16) {
+                    volumeRow(s)
+                    brightnessRow(s)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .disabled(!client.connected)
+    }
+
+    @ViewBuilder
+    private func titleBlock(_ cur: VideoItem) -> some View {
                     Button {
                         Haptics.tap()
                         open(cur)
@@ -983,6 +1044,10 @@ struct ControlsPane: View {
                     .buttonStyle(.plain)
                     .accessibilityElement(children: .combine)
                     .accessibilityHint("Opens the video's page to read its description and comments")
+    }
+
+    @ViewBuilder
+    private func progressBlock(_ s: ViewerState, _ pos: Double) -> some View {
                     if s.duration <= 0, s.position > 5 {
                         LivePill(atHead: true, action: {})
                     } else {
@@ -1009,6 +1074,10 @@ struct ControlsPane: View {
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     }
+    }
+
+    @ViewBuilder
+    private func transportRow(_ s: ViewerState, _ pos: Double) -> some View {
                     HStack(spacing: 0) {
                         transport("backward.end.fill", "Previous", size: 28) { client.send(.previous) }
                         skipButton(forward: false, s, pos)
@@ -1018,6 +1087,10 @@ struct ControlsPane: View {
                         skipButton(forward: true, s, pos)
                         transport("forward.end.fill", "Next", size: 28) { client.send(.next) }
                     }
+    }
+
+    @ViewBuilder
+    private func adButton(_ s: ViewerState) -> some View {
                     if s.adSkippable == true {
                         Button {
                             Haptics.tap()
@@ -1033,6 +1106,10 @@ struct ControlsPane: View {
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
                     }
+    }
+
+    @ViewBuilder
+    private func optionRows(_ s: ViewerState) -> some View {
                     if let speed = s.speed { playbackOptions(s, speed: speed) }
                     HStack(spacing: 10) {
                         SleepTimerMenu(endsAt: s.sleepEndsAt, unlocked: s.sessionPro == true) { client.send(.setSleepTimer($0)) }
@@ -1041,6 +1118,10 @@ struct ControlsPane: View {
                             AutoplayButton(on: on, unlocked: s.sessionPro == true) { client.send(.setAutoplay($0)) }
                         }
                     }
+    }
+
+    @ViewBuilder
+    private func volumeRow(_ s: ViewerState) -> some View {
                     HStack(spacing: 12) {
                         Button {
                             Haptics.tap()
@@ -1066,6 +1147,10 @@ struct ControlsPane: View {
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func brightnessRow(_ s: ViewerState) -> some View {
                     if let level = s.brightness {
                         HStack(spacing: 12) {
                             Image(systemName: "sun.min.fill")
@@ -1085,13 +1170,6 @@ struct ControlsPane: View {
                         }
                         .foregroundStyle(.secondary)
                     }
-                    }
-        }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
-        .frame(maxWidth: 520)
-        .frame(maxWidth: .infinity)
-        .disabled(!client.connected)
     }
 
     private func jump(_ by: Double, from pos: Double, of duration: Double) {
