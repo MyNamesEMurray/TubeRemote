@@ -1043,8 +1043,8 @@ struct ControlsPane: View {
                     } label: {
                         VStack(spacing: 4) {
                             (Text(cur.title) + Text(" \(Image(systemName: "arrow.up.right.square"))").foregroundColor(.secondary))
-                                .font(compact ? .headline : .title3.bold()).multilineTextAlignment(.center)
-                                .lineLimit(compact ? 2 : nil)
+                                .font(compact ? .subheadline.weight(.semibold) : .title3.bold()).multilineTextAlignment(.center)
+                                .lineLimit(compact ? 3 : nil)
                             if !cur.channel.isEmpty {
                                 Text(cur.channel).font(compact ? .footnote : .subheadline).foregroundStyle(.secondary)
                             }
