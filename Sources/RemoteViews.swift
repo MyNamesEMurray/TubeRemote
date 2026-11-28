@@ -934,17 +934,23 @@ struct ControlsPane: View {
     @State private var brightSent = Date.distantPast
     @State private var volSent = Date.distantPast
     @State private var held: (value: Double, until: Date)?
+    @State private var restHeight: CGFloat = 0
 
     var body: some View {
         if let s = client.state, let cur = s.current {
             // Right after a seek the viewer may still report the old position for a moment; keep showing where it was sent.
             let pos = scrub ?? held.flatMap { $0.until > Date() ? $0.value : nil } ?? s.position
+            GeometryReader { geo in
             ScrollView {
                 VStack(spacing: 20) {
+                    let full = min(geo.size.width - 48, 520) * 9 / 16
+                    let fit = geo.size.height - restHeight - 20 - 8 - 16
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
                         .aspectRatio(16 / 9, contentMode: .fit)
+                        .frame(height: restHeight > 0 ? min(max(fit, 90), full) : full)
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                         .padding(.top, 8)
+                    VStack(spacing: 20) {
                     Button {
                         Haptics.tap()
                         open(cur)
@@ -1063,6 +1069,9 @@ struct ControlsPane: View {
                         }
                         .foregroundStyle(.secondary)
                     }
+                    }
+                    .background(GeometryReader { Color.clear.preference(key: RestHeightKey.self, value: $0.size.height) })
+                    .onPreferenceChange(RestHeightKey.self) { restHeight = $0 }
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
@@ -1071,6 +1080,7 @@ struct ControlsPane: View {
                 .disabled(!client.connected)
             }
             .scrollDisabled(scrubbing)
+            }
             .onAppear { loadStoryboard() }
             .onChange(of: client.details?.storyboard) { _ in loadStoryboard() }
             .onChange(of: client.state?.current?.videoID) { _ in loadStoryboard() }
@@ -1354,4 +1364,9 @@ struct SavedPlayCard: View {
         .frame(maxWidth: 520)
         .frame(maxHeight: .infinity)
     }
+}
+
+private struct RestHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
