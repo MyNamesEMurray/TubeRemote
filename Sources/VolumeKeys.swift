@@ -12,6 +12,7 @@ final class VolumeKeys {
     private var original: Float = 0.5
     private var base: Float = 0.5
     private var onStep: ((Float) -> Void)?
+    private var quietUntil = Date.distantPast
 
     func start(onStep: @escaping (Float) -> Void) {
         self.onStep = onStep
@@ -42,10 +43,18 @@ final class VolumeKeys {
         try? session.setActive(true)
         original = session.outputVolume
         base = original
+        quietUntil = Date().addingTimeInterval(1.5)
+        Log.add("volume keys on, phone volume \(Int((original * 100).rounded()))%")
         obs = session.observe(\.outputVolume) { [weak self] s, _ in
             let v = s.outputVolume
             DispatchQueue.main.async {
                 guard let self, self.obs != nil, abs(v - self.base) > 0.01 else { return }
+                // The phone's own volume settles right after the session starts and when it is held inside the ends; that is not a key press.
+                if Date() < self.quietUntil {
+                    Log.add("volume keys: ignored a settling change \(Int((self.base * 100).rounded()))% to \(Int((v * 100).rounded()))%")
+                    self.base = v
+                    return
+                }
                 self.onStep?(v > self.base ? 0.0625 : -0.0625)
                 self.set(self.base)
             }
