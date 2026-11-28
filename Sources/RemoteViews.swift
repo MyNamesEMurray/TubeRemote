@@ -934,6 +934,7 @@ struct ControlsPane: View {
     @State private var brightSent = Date.distantPast
     @State private var volSent = Date.distantPast
     @State private var held: (value: Double, until: Date)?
+    @State private var showChapters = false
 
     var body: some View {
         if let s = client.state, let cur = s.current {
@@ -966,6 +967,9 @@ struct ControlsPane: View {
             .onChange(of: client.details?.storyboard) { _ in loadStoryboard() }
             .onChange(of: client.state?.current?.videoID) { _ in loadStoryboard() }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+            .sheet(isPresented: $showChapters) {
+                ChaptersSheet(chapters: client.details?.info?.chapters ?? [], position: pos, storyboard: storyboard) { seekTo($0) }
+            }
         } else if pro.has(client.state), client.connected, client.state != nil, let cur = settings.savedQueue.current {
             SavedPlayCard(client: client, saved: settings.savedQueue, cur: cur)
         } else {
@@ -1067,6 +1071,20 @@ struct ControlsPane: View {
                         HStack {
                             Text(clock(pos))
                             Spacer()
+                            if s.live != true, !(client.details?.info?.chapters ?? []).isEmpty {
+                                Button {
+                                    Haptics.tap()
+                                    showChapters = true
+                                } label: {
+                                    Label("Chapters", systemImage: "list.bullet")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Color(.secondarySystemFill), in: Capsule())
+                                }
+                                Spacer()
+                            }
                             if s.live == true {
                                 LivePill(atHead: s.liveHead == true) { client.send(.goLive) }
                             } else {
@@ -1179,6 +1197,14 @@ struct ControlsPane: View {
         held = (t, Date().addingTimeInterval(1.5))
         client.state?.position = t
         Log.add("jump to \(Int(t)) s")
+        client.send(.seek(t))
+        Haptics.tap()
+    }
+
+    private func seekTo(_ t: Double) {
+        held = (t, Date().addingTimeInterval(1.5))
+        client.state?.position = t
+        Log.add("chapter seek to \(Int(t)) s")
         client.send(.seek(t))
         Haptics.tap()
     }
@@ -1445,5 +1471,54 @@ struct SavedPlayCard: View {
         .padding()
         .frame(maxWidth: 520)
         .frame(maxHeight: .infinity)
+    }
+}
+
+struct ChaptersSheet: View {
+    let chapters: [Chapter]
+    let position: Double
+    @ObservedObject var storyboard: Storyboard
+    let pick: (Double) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var current: Int { chapters.lastIndex { $0.start <= position } ?? 0 }
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                List(Array(chapters.enumerated()), id: \.offset) { item in
+                    Button {
+                        pick(item.element.start)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            Group {
+                                if let image = storyboard.frame(at: item.element.start) {
+                                    Image(uiImage: image).resizable()
+                                } else {
+                                    Color.secondary.opacity(0.2)
+                                }
+                            }
+                            .frame(width: 96, height: 54)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.element.title).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                                Text(clock(item.element.start)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if item.offset == current {
+                                Image(systemName: "play.fill").foregroundStyle(Color.accentColor).accessibilityLabel("Now playing")
+                            }
+                        }
+                    }
+                    .id(item.offset)
+                }
+                .onAppear { proxy.scrollTo(current, anchor: .center) }
+            }
+            .navigationTitle("Chapters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
