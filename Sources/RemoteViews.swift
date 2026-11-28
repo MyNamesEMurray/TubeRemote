@@ -950,11 +950,11 @@ struct ControlsPane: View {
                         column(s, cur, pos, thumb: nil)
                         column(s, cur, pos, thumb: 140)
                         column(s, cur, pos, thumb: 100)
-                        wideColumn(s, cur, pos, thumb: nil)
-                        wideColumn(s, cur, pos, thumb: 130)
-                        wideColumn(s, cur, pos, thumb: 100)
-                        wideColumn(s, cur, pos, thumb: 80)
-                        ScrollView { wideColumn(s, cur, pos, thumb: 80) }
+                        wideColumn(s, cur, pos, width: geo.size.width, thumb: nil)
+                        wideColumn(s, cur, pos, width: geo.size.width, thumb: 130)
+                        wideColumn(s, cur, pos, width: geo.size.width, thumb: 100)
+                        wideColumn(s, cur, pos, width: geo.size.width, thumb: 80)
+                        ScrollView { wideColumn(s, cur, pos, width: geo.size.width, thumb: 80) }
                             .scrollDisabled(scrubbing)
                     }
                 } else {
@@ -1008,8 +1008,9 @@ struct ControlsPane: View {
     }
 
     @ViewBuilder
-    private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, thumb: CGFloat?) -> some View {
-        VStack(spacing: 4) {
+    private func wideColumn(_ s: ViewerState, _ cur: VideoItem, _ pos: Double, width: CGFloat, thumb: CGFloat?) -> some View {
+        let usable = width - 48 - 24
+        return VStack(spacing: 4) {
             HStack(alignment: .center, spacing: 24) {
                 VStack(spacing: 8) {
                     Thumb(url: cur.artworkURL, fallback: cur.thumbnailURL, radius: 14)
@@ -1018,15 +1019,15 @@ struct ControlsPane: View {
                         .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                     titleBlock(cur, compact: true)
                 }
-                .frame(maxWidth: 240)
+                .frame(width: usable * 0.4)
                 VStack(spacing: 2) {
-                    transportRow(s, pos)
+                    transportRow(s, pos).frame(maxWidth: 340).frame(height: 50)
                     adButton(s)
                     wideOptions(s)
-                    volumeRow(s).frame(height: 36)
-                    brightnessRow(s).frame(height: 36)
+                    volumeRow(s).frame(maxWidth: 340).frame(height: 36)
+                    brightnessRow(s).frame(maxWidth: 340).frame(height: 36)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: usable * 0.6)
             }
             progressBlock(s, pos)
         }
